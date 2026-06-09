@@ -1,0 +1,34 @@
+{
+  "name": "@rein/policy-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Rein policy evaluation service — sandboxed declarative rule engine with hash-chained, signed decisions.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "rein-policy-engine": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "fastify": "^5.2.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
