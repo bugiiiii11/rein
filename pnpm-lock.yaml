@@ -30,6 +30,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.20)
 
+  apps/demo:
+    dependencies:
+      '@rein/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@rein/mock-rails':
+        specifier: workspace:*
+        version: link:../../services/mock-rails
+      '@rein/policy-engine':
+        specifier: workspace:*
+        version: link:../../services/policy-engine
+      '@rein/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/core:
     dependencies:
       zod:

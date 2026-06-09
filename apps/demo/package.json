@@ -1,0 +1,25 @@
+{
+  "name": "@rein/demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Rein v0.1 end-to-end demo: budget enforcement, tx cap, kill switch, shadow-spend detection.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --no-splitting --target node22 --out-dir dist",
+    "start": "node dist/index.js",
+    "demo": "pnpm build && node dist/index.js"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "@rein/mock-rails": "workspace:*",
+    "@rein/policy-engine": "workspace:*",
+    "@rein/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  }
+}
