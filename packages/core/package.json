@@ -1,6 +1,6 @@
 {
   "name": "@rein/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Canonical zod schemas and shared types for Rein — the single source of truth for DB rows, API payloads, and SDK types.",
   "license": "MIT",
   "type": "module",

@@ -1,6 +1,6 @@
 {
   "name": "@rein/policy-engine",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Rein policy evaluation service — sandboxed declarative rule engine with hash-chained, signed decisions.",
   "license": "MIT",

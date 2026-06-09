@@ -1,6 +1,6 @@
 {
   "name": "@rein/demo",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Rein v0.1 end-to-end demo: budget enforcement, tx cap, kill switch, shadow-spend detection.",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@rein/sdk",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Rein guard SDK — wrap your agent's fetch once and every x402 payment is policy-checked, receipted, and observable before a cent moves.",
   "license": "MIT",
   "type": "module",
