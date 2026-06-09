@@ -14,6 +14,7 @@ export * from './agent.js';
 export * from './intent.js';
 export * from './decision.js';
 export * from './payment.js';
+export * from './receipt.js';
 export * from './policy.js';
 export * from './reputation.js';
 export * from './events.js';
