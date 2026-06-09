@@ -1,0 +1,12 @@
+# Normalize line endings: store LF in the repo, regardless of OS.
+* text=auto eol=lf
+
+# Treat lockfiles as generated (collapsed in diffs/reviews).
+pnpm-lock.yaml linguist-generated=true -diff
+
+# Binary assets — never normalize.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pem binary
