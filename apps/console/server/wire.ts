@@ -6,7 +6,18 @@
  * `@rein/core` events into these flat, render-ready shapes.
  */
 
-export type FeedKind = 'intent' | 'decision' | 'settled' | 'shadow';
+export type FeedKind =
+  | 'intent'
+  | 'decision'
+  | 'settled'
+  | 'shadow'
+  // vendor side (gate.*): a quote issued, revenue earned, a payment turned away
+  | 'quote'
+  | 'revenue'
+  | 'gate-refused'
+  // custody tier (signature.*): a key put to work, or refused
+  | 'signature'
+  | 'sig-refused';
 export type Outcome = 'allow' | 'deny' | 'escalate';
 
 /** One row in the live activity feed. */
@@ -34,6 +45,14 @@ export interface FeedItem {
   txHash?: string;
   chain?: string;
   blockNumber?: string; // bigint serialized as string
+  // gate (vendor side)
+  method?: string;
+  route?: string;
+  payer?: string; // paying wallet address
+  // gate / signer refusal code, e.g. "payment_replayed", "decision_replayed"
+  code?: string;
+  // signer
+  sessionId?: string;
 }
 
 export interface AgentView {
@@ -74,6 +93,38 @@ export interface Stats {
   agents: number;
   chainLinks: number;
   avgLatencyMs: number;
+  // vendor side (the gate fronting the world's API)
+  revenue: string; // decimal USDC the gate has settled
+  quoted: number;
+  gateRefused: number;
+  // custody tier
+  sigReleased: number;
+  sigRefused: number;
+}
+
+export interface GateRouteStat {
+  route: string;
+  settled: number;
+  revenue: string;
+}
+
+export interface GatePayerStat {
+  payer: string; // lowercased wallet address
+  agentName?: string; // resolved when the payer is a managed wallet
+  settled: number;
+  revenue: string;
+}
+
+/** The vendor-side panel: what the world's gated API is earning. */
+export interface GateView {
+  payTo: string;
+  network: string;
+  quoted: number;
+  settled: number;
+  refused: number;
+  revenue: string; // decimal USDC
+  routes: GateRouteStat[];
+  payers: GatePayerStat[];
 }
 
 export interface DemoStatus {
@@ -87,6 +138,7 @@ export interface ConsoleState {
   agents: AgentView[];
   policies: PolicyView[];
   stats: Stats;
+  gate: GateView;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -98,4 +150,5 @@ export type ServerEvent =
   | { type: 'agents'; agents: AgentView[] }
   | { type: 'policies'; policies: PolicyView[] }
   | { type: 'stats'; stats: Stats }
+  | { type: 'gate'; gate: GateView }
   | { type: 'demo'; demo: DemoStatus };

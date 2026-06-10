@@ -255,7 +255,7 @@ button {
 /* ── Layout grid ──────────────────────────────────────────────────────────── */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 1px;
   background: var(--line);
   border-bottom: 1px solid var(--line);
@@ -296,6 +296,9 @@ button {
 }
 .kpi.is-alarm .kpi-value {
   color: var(--alarm);
+}
+.kpi.is-accent .kpi-value {
+  color: var(--accent);
 }
 
 .grid {
@@ -621,6 +624,19 @@ button {
   border-left-color: var(--alarm);
   background: var(--alarm-soft);
 }
+.feed-row[data-kind='quote'] {
+  border-left-color: var(--line-strong);
+}
+.feed-row[data-kind='revenue'] {
+  border-left-color: var(--ok);
+}
+.feed-row[data-kind='gate-refused'],
+.feed-row[data-kind='sig-refused'] {
+  border-left-color: var(--bad);
+}
+.feed-row[data-kind='signature'] {
+  border-left-color: var(--ok);
+}
 .feed-time {
   font-size: 10.5px;
   color: var(--ink-faint);
@@ -653,6 +669,13 @@ button {
 }
 .feed-verb.shadow {
   color: var(--alarm);
+}
+.feed-verb.quote {
+  color: var(--ink-dim);
+}
+.feed-verb.revenue,
+.feed-verb.signature {
+  color: var(--ok);
 }
 .feed-amt {
   color: var(--ink);
@@ -696,6 +719,94 @@ button {
   border-radius: 3px;
   background: var(--accent-soft);
   color: var(--accent);
+}
+.feed-badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.feed-badge.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.feed-badge.dim {
+  background: var(--bg-3);
+  color: var(--ink-dim);
+}
+
+/* ── Vendor gate ──────────────────────────────────────────────────────────── */
+.gate-headline {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 2px 2px;
+}
+.gate-revenue {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+}
+.gate-revenue-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.gate-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--ink-dim);
+  text-align: right;
+}
+.gate-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gate-section-title {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--line);
+}
+.gate-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+}
+.gate-row-name {
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gate-row-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.gate-row-amt {
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
 }
 
 /* ── Shadow alerts ────────────────────────────────────────────────────────── */
@@ -902,6 +1013,6 @@ button {
     display: none;
   }
   .kpis {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }

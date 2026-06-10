@@ -19,6 +19,18 @@ export function Kpis({ stats }: { stats: Stats | null }) {
       <Kpi label="Allowed" value={s?.allow ?? 0} sub="cleared to pay" tone="is-ok" />
       <Kpi label="Denied" value={s?.deny ?? 0} sub="blocked pre-pay" tone="is-bad" />
       <Kpi label="Settled" value={usd(s?.settledValue)} sub={`${s?.settled ?? 0} on-chain`} />
+      <Kpi
+        label="Gate revenue"
+        value={usd(s?.revenue)}
+        sub={`${s?.quoted ?? 0} quoted · ${s?.gateRefused ?? 0} refused`}
+        tone="is-accent"
+      />
+      <Kpi
+        label="Signatures"
+        value={s?.sigReleased ?? 0}
+        sub={`${s?.sigRefused ?? 0} refused by signer`}
+        tone="is-ok"
+      />
       <Kpi label="Shadow spend" value={s?.shadow ?? 0} sub={`${usd(s?.shadowValue)} unreconciled`} tone="is-alarm" />
       <Kpi label="Agents" value={s?.agents ?? 0} sub="under control" />
     </div>

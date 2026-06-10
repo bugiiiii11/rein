@@ -5,6 +5,11 @@ import { clockTime, latency, midHash, usd } from '../format';
 function verbOf(f: FeedItem): { text: string; cls: string } {
   if (f.kind === 'settled') return { text: 'SETTLED', cls: 'settled' };
   if (f.kind === 'shadow') return { text: 'SHADOW SPEND', cls: 'shadow' };
+  if (f.kind === 'quote') return { text: 'QUOTED', cls: 'quote' };
+  if (f.kind === 'revenue') return { text: 'REVENUE', cls: 'revenue' };
+  if (f.kind === 'gate-refused') return { text: 'TURNED AWAY', cls: 'deny' };
+  if (f.kind === 'signature') return { text: 'KEY RELEASED', cls: 'signature' };
+  if (f.kind === 'sig-refused') return { text: 'KEY REFUSED', cls: 'deny' };
   return { text: (f.outcome ?? 'decision').toUpperCase(), cls: f.outcome ?? '' };
 }
 
@@ -21,6 +26,42 @@ function Sub({ f }: { f: FeedItem }) {
     return (
       <div className="feed-sub">
         unguarded transfer · <span className="who">{who}</span> · {f.chain}
+      </div>
+    );
+  }
+  if (f.kind === 'quote') {
+    return (
+      <div className="feed-sub">
+        x402 offer to an unpaid caller · {f.method ?? 'GET'} {f.resource}
+      </div>
+    );
+  }
+  if (f.kind === 'revenue') {
+    return (
+      <div className="feed-sub">
+        route {f.route} · paid by <span className="who">{f.agentName ?? midHash(f.payer, 8, 4)}</span>
+      </div>
+    );
+  }
+  if (f.kind === 'gate-refused') {
+    return (
+      <div className="feed-sub">
+        [{f.code}] {f.reason} · <span className="who">{f.agentName ?? midHash(f.payer, 8, 4)}</span>
+      </div>
+    );
+  }
+  if (f.kind === 'signature') {
+    return (
+      <div className="feed-sub">
+        <span className="who">{who}</span> · session {midHash(f.sessionId, 6, 4)} · voucher{' '}
+        {midHash(f.decisionId, 6, 4)}
+      </div>
+    );
+  }
+  if (f.kind === 'sig-refused') {
+    return (
+      <div className="feed-sub">
+        [{f.code}] {f.reason} · <span className="who">{who}</span>
       </div>
     );
   }
@@ -41,6 +82,11 @@ function Sub({ f }: { f: FeedItem }) {
 function Right({ f }: { f: FeedItem }) {
   if (f.kind === 'decision') return <span className="mono">{latency(f.latencyMs)}</span>;
   if (f.kind === 'settled') return <span className="feed-badge">on-chain</span>;
+  if (f.kind === 'quote') return <span className="feed-badge dim">402</span>;
+  if (f.kind === 'revenue') return <span className="feed-badge ok">vendor receipt</span>;
+  if (f.kind === 'gate-refused') return <span className="feed-badge bad">gate</span>;
+  if (f.kind === 'signature') return <span className="feed-badge ok">EIP-3009</span>;
+  if (f.kind === 'sig-refused') return <span className="feed-badge bad">signer</span>;
   return <span style={{ color: 'var(--alarm)' }}>⚠ flagged</span>;
 }
 

@@ -14,12 +14,16 @@
   },
   "dependencies": {
     "@rein/core": "workspace:*",
+    "@rein/gate": "workspace:*",
     "@rein/mock-rails": "workspace:*",
     "@rein/policy-engine": "workspace:*",
     "@rein/sdk": "workspace:*",
+    "@rein/signer": "workspace:*",
+    "@rein/x402-rails": "workspace:*",
     "framer-motion": "^11.11.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "viem": "^2.47.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

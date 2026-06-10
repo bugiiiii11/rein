@@ -4,6 +4,7 @@ import { Kpis } from './components/Kpis';
 import { Agents } from './components/Agents';
 import { Policies } from './components/Policies';
 import { Feed } from './components/Feed';
+import { GatePanel } from './components/GatePanel';
 import { Shadow } from './components/Shadow';
 import { AuditChain } from './components/AuditChain';
 
@@ -31,6 +32,7 @@ export function App() {
           <Feed feed={d.feed} />
         </div>
         <div className="col right">
+          <GatePanel gate={d.gate} />
           <Shadow feed={d.feed} />
           <AuditChain feed={d.feed} publicKey={d.publicKey} chainLinks={d.stats?.chainLinks ?? 0} />
         </div>

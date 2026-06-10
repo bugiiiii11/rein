@@ -35,6 +35,9 @@ importers:
       '@rein/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rein/gate':
+        specifier: workspace:*
+        version: link:../../packages/gate
       '@rein/mock-rails':
         specifier: workspace:*
         version: link:../../services/mock-rails
@@ -44,6 +47,12 @@ importers:
       '@rein/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@rein/signer':
+        specifier: workspace:*
+        version: link:../../services/signer
+      '@rein/x402-rails':
+        specifier: workspace:*
+        version: link:../../services/x402-rails
       framer-motion:
         specifier: ^11.11.0
         version: 11.18.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -53,6 +62,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      viem:
+        specifier: ^2.47.0
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

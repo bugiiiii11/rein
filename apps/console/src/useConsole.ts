@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgentView, DemoStatus, FeedItem, PolicyView, Stats } from '../server/wire';
+import type { AgentView, DemoStatus, FeedItem, GateView, PolicyView, Stats } from '../server/wire';
 import { fetchState } from './api';
 
 export interface ConsoleData {
@@ -9,6 +9,7 @@ export interface ConsoleData {
   agents: AgentView[];
   policies: PolicyView[];
   stats: Stats | null;
+  gate: GateView | null;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -28,6 +29,7 @@ export function useConsole(): ConsoleData {
     agents: [],
     policies: [],
     stats: null,
+    gate: null,
     demo: EMPTY_DEMO,
     publicKey: '',
     startedAt: '',
@@ -51,6 +53,7 @@ export function useConsole(): ConsoleData {
           agents: s.agents,
           policies: s.policies,
           stats: s.stats,
+          gate: s.gate,
           demo: s.demo,
           publicKey: s.publicKey,
           startedAt: s.startedAt,
@@ -77,6 +80,9 @@ export function useConsole(): ConsoleData {
       );
       es.addEventListener('stats', (ev) =>
         setData((d) => ({ ...d, stats: parse<{ stats: Stats }>(ev).stats })),
+      );
+      es.addEventListener('gate', (ev) =>
+        setData((d) => ({ ...d, gate: parse<{ gate: GateView }>(ev).gate })),
       );
       es.addEventListener('demo', (ev) =>
         setData((d) => ({ ...d, demo: parse<{ demo: DemoStatus }>(ev).demo })),
