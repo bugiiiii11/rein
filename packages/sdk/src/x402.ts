@@ -32,10 +32,16 @@ export const PaymentRequired = z.object({
 });
 export type PaymentRequired = z.infer<typeof PaymentRequired>;
 
-/** x402 network ids → the chains Rein governs. Testnets map to their mainnet. */
+/**
+ * x402 network ids → the chains Rein governs. Testnets map to their mainnet.
+ * Both v1 names ("base-sepolia") and v2 CAIP-2 ids ("eip155:84532") appear in
+ * the wild, so the guard accepts either.
+ */
 const NETWORK_TO_CHAIN: Record<string, Chain> = {
   base: 'base',
   'base-sepolia': 'base',
+  'eip155:8453': 'base',
+  'eip155:84532': 'base',
   solana: 'solana',
   'solana-devnet': 'solana',
   polygon: 'polygon',

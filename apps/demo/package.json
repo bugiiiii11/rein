@@ -7,15 +7,18 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --no-splitting --target node22 --out-dir dist",
+    "build": "tsup src/index.ts src/sepolia.ts --format esm --no-splitting --target node22 --out-dir dist",
     "start": "node dist/index.js",
-    "demo": "pnpm build && node dist/index.js"
+    "demo": "pnpm build && node dist/index.js",
+    "demo:sepolia": "pnpm build && node dist/sepolia.js"
   },
   "dependencies": {
     "@rein/core": "workspace:*",
     "@rein/mock-rails": "workspace:*",
     "@rein/policy-engine": "workspace:*",
-    "@rein/sdk": "workspace:*"
+    "@rein/sdk": "workspace:*",
+    "@rein/x402-rails": "workspace:*",
+    "viem": "^2.47.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -60,9 +60,12 @@ describe('network and asset mapping', () => {
   it('maps x402 networks (testnets included) to Rein chains', () => {
     expect(networkToChain('base')).toBe('base');
     expect(networkToChain('base-sepolia')).toBe('base');
+    expect(networkToChain('eip155:8453')).toBe('base');
+    expect(networkToChain('eip155:84532')).toBe('base');
     expect(networkToChain('Solana')).toBe('solana');
     expect(networkToChain('bsc')).toBe('bnb');
     expect(networkToChain('arbitrum')).toBeUndefined();
+    expect(networkToChain('eip155:1')).toBeUndefined();
   });
 
   it('resolves assets by symbol, extra.symbol, and known addresses', () => {
