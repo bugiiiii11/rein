@@ -23,6 +23,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/core`** — the canonical zod schemas: the single source of truth for DB rows, API payloads, and SDK types, with float-free decimal money math.
 - **`@rein/mock-rails`** — a simulated payment world (x402 facilitator + on-chain ledger + indexer) that reconciles spend and flags **shadow spend**: payments that bypassed the guard.
 - **`@rein/x402-rails`** — the real-world rails: an EIP-3009 payer (gasless for the agent — the facilitator submits the tx), a client for the hosted [x402.org facilitator](https://x402.org), a strict x402-v1 vendor, and an on-chain indexer that reconciles USDC transfers back to intents via the authorization nonce — and flags everything else as shadow spend.
+- **`@rein/console`** — a live "mission control" web UI: watch every decision stream in, freeze an agent with the kill switch, inspect the tamper-evident audit chain, and see shadow spends light up red — all over a real-time event feed.
 
 **119 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the Sepolia demo settles real USDC.
 
@@ -36,6 +37,24 @@ pnpm test            # 119 tests, fully offline
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
 ```
+
+## Console — live mission control
+
+A real-time web UI for the whole Guard loop. It boots one live instance of the stack (the real policy engine over HTTP + the mock rails), merges the engine and indexer event streams, and pushes them to the browser over Server-Sent Events.
+
+```bash
+pnpm --filter @rein/console dev      # http://localhost:5173
+```
+
+What you see:
+
+- **Live activity feed** — every decision (allow / deny / escalate), settlement, and shadow spend, streaming in as it happens.
+- **Agents + kill switch** — per-agent session spend and a freeze/unfreeze toggle; hit **Ping** on a frozen agent and watch the call get denied.
+- **Policies** — the active rules in plain language.
+- **Audit chain** — the ed25519-signed, sha256-linked decision log with a live integrity check.
+- **Shadow spends** — unreconciled, guard-bypassing payments, flagged in red.
+
+Click **Run scenario** to spin up a fresh agent and play the full story — four allowed calls, a budget-cap deny, a tx-cap deny, and a shadow spend — paced so you can watch it unfold. For a production-style serve (built UI + API on one port): `pnpm --filter @rein/console build && pnpm --filter @rein/console start`.
 
 Run the policy engine standalone:
 
@@ -136,6 +155,7 @@ services/
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
 apps/
   demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia
+  console/       @rein/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
 ```
 
 ## Tech
@@ -144,6 +164,7 @@ apps/
 - **Monorepo:** pnpm workspaces + Turborepo.
 - **Schemas:** zod, in `@rein/core`, as the single source of truth for DB rows, API payloads, and SDK types.
 - **Build/test:** tsup (esm + cjs + d.ts), vitest.
+- **Console:** Vite + React + TypeScript, live updates over Server-Sent Events (no extra services to run).
 - **Chain:** viem on Base Sepolia — EIP-712/EIP-3009 signing, `getLogs` indexing, the hosted x402.org facilitator for settlement.
 - **Dev mode:** mock x402 flows + in-memory stores behind interfaces. No accounts or Docker required to run locally; Postgres + Timescale + Redis + NATS wire in later.
 

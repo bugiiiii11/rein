@@ -1,0 +1,33 @@
+{
+  "name": "@rein/console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rein Console — live mission control for the AI-agent payment control plane (decisions, kill switch, audit chain, shadow-spend alerts).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "tsx server/standalone.ts",
+    "start": "tsx server/standalone.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "@rein/mock-rails": "workspace:*",
+    "@rein/policy-engine": "workspace:*",
+    "@rein/sdk": "workspace:*",
+    "framer-motion": "^11.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0"
+  }
+}
