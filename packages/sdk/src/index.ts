@@ -22,6 +22,7 @@ export {
   resolveAsset,
   networkToChain,
   atomicToDecimal,
+  decimalToAtomic,
   requirementDecimals,
   toIntentSubmission,
   type ResolvedRequirement,

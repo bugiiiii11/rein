@@ -7,14 +7,16 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsup src/index.ts src/sepolia.ts src/signer.ts --format esm --no-splitting --target node22 --out-dir dist",
+    "build": "tsup src/index.ts src/sepolia.ts src/signer.ts src/gate.ts --format esm --no-splitting --target node22 --out-dir dist",
     "start": "node dist/index.js",
     "demo": "pnpm build && node dist/index.js",
     "demo:sepolia": "pnpm build && node dist/sepolia.js",
-    "demo:signer": "pnpm build && node dist/signer.js"
+    "demo:signer": "pnpm build && node dist/signer.js",
+    "demo:gate": "pnpm build && node dist/gate.js"
   },
   "dependencies": {
     "@rein/core": "workspace:*",
+    "@rein/gate": "workspace:*",
     "@rein/mock-rails": "workspace:*",
     "@rein/policy-engine": "workspace:*",
     "@rein/sdk": "workspace:*",

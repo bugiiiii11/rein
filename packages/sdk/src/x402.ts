@@ -102,6 +102,24 @@ export function atomicToDecimal(atomic: string, decimals: number): string {
   return fracPart.length > 0 ? `${intPart}.${fracPart}` : intPart;
 }
 
+/**
+ * The inverse of {@link atomicToDecimal}: a human-unit decimal string to atomic
+ * units without floats, e.g. ("0.05", 6) -> "50000". Throws if the value has
+ * more fraction digits than the asset carries (sub-atomic precision is a
+ * pricing bug, not something to round silently).
+ */
+export function decimalToAtomic(decimal: string, decimals: number): string {
+  if (!/^\d+(\.\d+)?$/.test(decimal)) throw new TypeError(`invalid decimal amount: ${decimal}`);
+  const dot = decimal.indexOf('.');
+  const intPart = dot === -1 ? decimal : decimal.slice(0, dot);
+  const fracPart = dot === -1 ? '' : decimal.slice(dot + 1);
+  if (fracPart.length > decimals) {
+    throw new TypeError(`amount ${decimal} has more than ${decimals} fraction digits`);
+  }
+  const atomic = intPart + fracPart.padEnd(decimals, '0');
+  return atomic.replace(/^0+(?=\d)/, '');
+}
+
 export function requirementDecimals(requirement: PaymentRequirement): number {
   const decimals = requirement.extra?.['decimals'];
   return typeof decimals === 'number' && Number.isInteger(decimals) && decimals >= 0 ? decimals : 6;

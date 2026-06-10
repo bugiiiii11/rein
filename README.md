@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — Guard.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — now ships as `@rein/signer`.
+> Status: **v0.1 — Guard, and the first cut of Gate.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. And the supply side now ships too: **`@rein/gate`**, vendor monetization middleware (Phase 2).
 
 ## Product phases
 
@@ -25,21 +25,25 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/x402-rails`** — the real-world rails: an EIP-3009 payer (gasless for the agent — the facilitator submits the tx), a client for the hosted [x402.org facilitator](https://x402.org), a strict x402-v1 vendor, and an on-chain indexer that reconciles USDC transfers back to intents via the authorization nonce — and flags everything else as shadow spend.
 - **`@rein/console`** — a live "mission control" web UI: watch every decision stream in, freeze an agent with the kill switch, inspect the tamper-evident audit chain, and see shadow spends light up red — all over a real-time event feed.
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
+- **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats.
 
-**153 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the Sepolia demo settles real USDC.
+**191 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the Sepolia demo settles real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 153 tests, fully offline
+pnpm test            # 191 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
 
 # Then watch the custody tier refuse every rogue path a stolen agent could try:
 node apps/demo/dist/signer.js
+
+# Then flip to the vendor side: price routes, screen payers, count revenue:
+node apps/demo/dist/gate.js
 ```
 
 ## Console — live mission control
@@ -102,6 +106,40 @@ pnpm --filter @rein/demo demo:signer   # six scenarios, fully offline, every sig
 ```
 
 Run it as a service (`buildSignerServer`) with the SDK's `createRemoteSessionPayer`, or in-process with `sessionPayerFor`. There is deliberately no HTTP endpoint that accepts a private key.
+
+## Gate: the vendor side of the wire
+
+Everything above governs the agent _spending_. `@rein/gate` is Phase 2 — the same loop from the vendor's seat. Price your routes once, and every x402 payment into your API is quoted, cross-checked, screened, settled, and receipted before your handler runs:
+
+```ts
+import { createGate, gateMiddleware, facilitatorClientRails } from '@rein/gate';
+
+const gate = createGate({
+  routes: [
+    { path: '/api/answer', price: '0.05', description: 'one research answer' },
+    { path: '/api/premium/*', method: 'POST', price: '0.25' },
+  ],
+  rails: facilitatorClientRails(facilitator), // or mockFacilitatorRails(...) offline
+  payTo: '0xYourTreasury…',
+  network: 'base-sepolia',
+  asset: USDC_ADDRESS,
+  screen: { denyPayers: ['0xKnownMule…'] },
+});
+
+app.use(gateMiddleware(gate)); // Express, or wrap any node:http handler
+```
+
+What the gate does that a bare 402 snippet doesn't:
+
+- **Quote consistency.** A presented payment must match the gate's own quote — scheme, network, amount, recipient — before any facilitator round-trip. Underpayment is refused at the door.
+- **Payer screening.** Allow/deny lists on the paying wallet, checked _before_ verify/settle, so a blocked payer costs you nothing.
+- **Replay protection.** Each payment settles once; the slot is burned before the async legs, so two concurrent copies can't both pass (on-chain nonce burning is a luxury the mock chain doesn't have — the gate doesn't care).
+- **Receipts + revenue.** Every settlement becomes a `GateReceipt` (`grc_` ULID); `gate.stats()` aggregates revenue by asset, route, and payer; `gate.quoted` / `gate.settled` / `gate.refused` events stream on the bus.
+- **Pluggable rails.** The same gate runs against the mock facilitator (offline tests/demos) or the real hosted x402.org facilitator client — the rails are a two-method structural seam.
+
+```bash
+pnpm --filter @rein/demo demo:gate   # six scenarios: a Rein-guarded agent paying a Rein-gated vendor over real local HTTP
+```
 
 ## The SDK one-liner
 
@@ -170,13 +208,14 @@ A policy is declarative — for example, a $0.50 per-transaction cap plus a roll
 packages/
   core/          @rein/core           — canonical zod schemas (single source of truth)   [published]
   sdk/           @rein/sdk            — agent-side guard; wraps the x402 client          [published]
+  gate/          @rein/gate           — vendor-side x402 monetization middleware         [published]
 services/
   policy-engine/ @rein/policy-engine  — Fastify policy evaluation service + audit log
   mock-rails/    @rein/mock-rails     — mock x402 facilitator + ledger + indexer
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
   signer/        @rein/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
 apps/
-  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia + signer tier
+  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia + signer tier + gate
   console/       @rein/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
 ```
 

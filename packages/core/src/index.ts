@@ -8,6 +8,7 @@
 
 export * from './chain.js';
 export * from './money.js';
+export * from './glob.js';
 export * from './ulid.js';
 export * from './ids.js';
 export * from './agent.js';
@@ -17,6 +18,7 @@ export * from './canonical.js';
 export * from './session.js';
 export * from './payment.js';
 export * from './receipt.js';
+export * from './gate-receipt.js';
 export * from './policy.js';
 export * from './reputation.js';
 export * from './events.js';

@@ -7,8 +7,8 @@ import {
   gt,
   sumDecimal,
   mulDecimal,
+  globMatchAny,
 } from '@rein/core';
-import { globMatchAny } from './glob.js';
 
 /**
  * The data the evaluator needs about an agent's history to test predicates.

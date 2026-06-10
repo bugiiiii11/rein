@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PaymentRequired,
   atomicToDecimal,
+  decimalToAtomic,
   networkToChain,
   resolveAsset,
   selectRequirement,
@@ -53,6 +54,28 @@ describe('atomicToDecimal', () => {
 
   it('rejects non-integer input', () => {
     expect(() => atomicToDecimal('1.5', 6)).toThrow(TypeError);
+  });
+});
+
+describe('decimalToAtomic', () => {
+  it('round-trips with atomicToDecimal at 6 decimals', () => {
+    expect(decimalToAtomic('0.01', 6)).toBe('10000');
+    expect(decimalToAtomic('1', 6)).toBe('1000000');
+    expect(decimalToAtomic('0.000001', 6)).toBe('1');
+    expect(decimalToAtomic('1.5', 6)).toBe('1500000');
+    expect(decimalToAtomic('0', 6)).toBe('0');
+  });
+
+  it('handles zero decimals and strips leading zeros', () => {
+    expect(decimalToAtomic('123', 0)).toBe('123');
+    expect(decimalToAtomic('007', 0)).toBe('7');
+  });
+
+  it('rejects sub-atomic precision and malformed input', () => {
+    expect(() => decimalToAtomic('0.0000001', 6)).toThrow(TypeError);
+    expect(() => decimalToAtomic('1.5', 0)).toThrow(TypeError);
+    expect(() => decimalToAtomic('-1', 6)).toThrow(TypeError);
+    expect(() => decimalToAtomic('1,5', 6)).toThrow(TypeError);
   });
 });
 

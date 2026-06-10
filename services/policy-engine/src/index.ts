@@ -18,5 +18,6 @@ export {
   parseWindowMs,
   type SpendRecord,
 } from './stores.js';
-export { globMatch, globMatchAny } from './glob.js';
+// Re-exported from @rein/core (moved there so @rein/gate shares the matcher).
+export { globMatch, globMatchAny } from '@rein/core';
 export { buildServer } from './server.js';

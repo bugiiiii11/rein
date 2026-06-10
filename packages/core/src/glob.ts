@@ -1,7 +1,8 @@
 /**
  * Minimal, safe glob matcher supporting only the `*` wildcard (matches any run
  * of characters, including none). Used for vendor host allowlists
- * (e.g. "*.trusted.io") and agent-id targeting (e.g. "agt_research_*").
+ * (e.g. "*.trusted.io"), agent-id targeting (e.g. "agt_research_*"), and
+ * Gate route pricing (e.g. "/api/reports/*").
  *
  * Deliberately NOT a regex from user input — the pattern is escaped so a
  * malicious policy value cannot inject regex behavior (ReDoS, etc.).
