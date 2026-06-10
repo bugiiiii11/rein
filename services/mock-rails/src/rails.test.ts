@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import { newId, type PaymentIntent } from '@rein/core';
+import { newId, type Decision, type PaymentIntent } from '@rein/core';
 import { PolicyEngine, buildServer } from '@rein/policy-engine';
 import { createGuard, PaymentBlockedError } from '@rein/sdk';
 import { MockLedger } from './ledger.js';
@@ -146,12 +146,14 @@ describe('mock rails end-to-end (engine + guard + facilitator + indexer)', () =>
       .catch((e: unknown) => e as PaymentBlockedError);
     expect(blocked).toBeInstanceOf(PaymentBlockedError);
 
-    // A rogue agent pays anyway, going straight to the vendor. The facilitator
-    // is not Rein-privileged, so the payment SETTLES — but the indexer sees a
-    // memo with no ALLOW decision behind it.
+    // A rogue agent pays anyway, going straight to the vendor — decision in
+    // hand says DENY, and the mock payer doesn't check (that gap is what the
+    // signer tier closes). The facilitator is not Rein-privileged, so the
+    // payment SETTLES — but the indexer sees a memo with no ALLOW behind it.
     const header = await world.facilitator.payerFor(WALLET)(
       world.vendor.requirementFor(URL_ANSWER),
       blocked!.intent,
+      blocked!.decision,
     );
     const res = await world.vendor.fetch(URL_ANSWER, { headers: { 'X-PAYMENT': header } });
 
@@ -212,8 +214,10 @@ describe('mock rails end-to-end (engine + guard + facilitator + indexer)', () =>
     const world = await rig();
     const agent = await registerAgent(world);
     const intents: PaymentIntent[] = [];
+    const decisions: Decision[] = [];
     world.engine.onEvent((e) => {
       if (e.type === 'intent.created') intents.push(e.intent);
+      if (e.type === 'decision.made') decisions.push(e.decision);
     });
     const guard = createGuard({
       engineUrl: world.engineUrl,
@@ -235,6 +239,7 @@ describe('mock rails end-to-end (engine + guard + facilitator + indexer)', () =>
     const replay = await world.facilitator.payerFor(WALLET)(
       world.vendor.requirementFor(URL_ANSWER),
       intents[0]!,
+      decisions[0]!,
     );
     await world.vendor.fetch(URL_ANSWER, { headers: { 'X-PAYMENT': replay } });
 

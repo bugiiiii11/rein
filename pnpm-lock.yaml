@@ -90,6 +90,9 @@ importers:
       '@rein/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@rein/signer':
+        specifier: workspace:*
+        version: link:../../services/signer
       '@rein/x402-rails':
         specifier: workspace:*
         version: link:../../services/x402-rails
@@ -200,6 +203,43 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.22.4
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.20)
+
+  services/signer:
+    dependencies:
+      '@rein/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@rein/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@rein/x402-rails':
+        specifier: workspace:*
+        version: link:../x402-rails
+      fastify:
+        specifier: ^5.2.0
+        version: 5.8.5
+      viem:
+        specifier: ^2.47.0
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@rein/policy-engine':
+        specifier: workspace:*
+        version: link:../policy-engine
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

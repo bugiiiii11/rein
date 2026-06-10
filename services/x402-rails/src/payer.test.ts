@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { recoverTypedDataAddress, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PaymentIntent, newId } from '@rein/core';
+import { PaymentIntent, newId, type Decision } from '@rein/core';
 import { PaymentRequirement } from '@rein/sdk';
 import { RailsError } from './errors.js';
 import { intentNonce } from './nonce.js';
@@ -43,12 +43,29 @@ const intent = (): PaymentIntent =>
     createdAt: new Date(NOW * 1000),
   });
 
+// This payer holds its own key and signs without consulting the decision —
+// that is local-custody mode. Only the session signer verifies it.
+const decision: Decision = {
+  id: newId('dec'),
+  intentId: newId('int'),
+  intentHash: 'unverified',
+  outcome: 'allow',
+  matchedRules: [],
+  policyId: 'pol_test',
+  policyVersion: '1',
+  prevHash: 'genesis',
+  hash: 'h',
+  signature: 'sig',
+  latencyMs: 0,
+  decidedAt: new Date(NOW * 1000),
+};
+
 describe('createX402Payer', () => {
   const payer = createX402Payer({ privateKey: KEY, now: () => NOW });
 
   it('builds the exact authorization the requirement asks for', async () => {
     const paid = intent();
-    const decoded = decodePaymentHeader(await payer(requirement(), paid));
+    const decoded = decodePaymentHeader(await payer(requirement(), paid, decision));
 
     expect(decoded.x402Version).toBe(1);
     expect(decoded.scheme).toBe('exact');
@@ -64,7 +81,7 @@ describe('createX402Payer', () => {
   });
 
   it('signs a valid EIP-712 TransferWithAuthorization for the USDC domain', async () => {
-    const decoded = decodePaymentHeader(await payer(requirement(), intent()));
+    const decoded = decodePaymentHeader(await payer(requirement(), intent(), decision));
     const { authorization, signature } = decoded.payload;
 
     const recovered = await recoverTypedDataAddress({
@@ -86,11 +103,11 @@ describe('createX402Payer', () => {
 
   it('honors extra.name/version and falls back to USDC/2 when absent', async () => {
     // Signature must change when the domain name changes — proves extra is used.
-    const withExtra = decodePaymentHeader(await payer(requirement(), intent()));
+    const withExtra = decodePaymentHeader(await payer(requirement(), intent(), decision));
     const mainnetish = decodePaymentHeader(
-      await payer(requirement({ extra: { name: 'USD Coin', version: '2' } }), intent()),
+      await payer(requirement({ extra: { name: 'USD Coin', version: '2' } }), intent(), decision),
     );
-    const noExtra = decodePaymentHeader(await payer(requirement({ extra: undefined }), intent()));
+    const noExtra = decodePaymentHeader(await payer(requirement({ extra: undefined }), intent(), decision));
     expect(mainnetish.payload.signature).not.toBe(withExtra.payload.signature);
     // Same domain via fallback — signatures differ only because intents differ.
     expect(noExtra.payload.authorization.from).toBe(PAYER);
@@ -99,13 +116,13 @@ describe('createX402Payer', () => {
   it('uses defaultTimeoutSeconds when the requirement has no maxTimeoutSeconds', async () => {
     const custom = createX402Payer({ privateKey: KEY, now: () => NOW, defaultTimeoutSeconds: 60 });
     const decoded = decodePaymentHeader(
-      await custom(requirement({ maxTimeoutSeconds: undefined }), intent()),
+      await custom(requirement({ maxTimeoutSeconds: undefined }), intent(), decision),
     );
     expect(decoded.payload.authorization.validBefore).toBe(String(NOW + 60));
   });
 
   it('fails closed on a network it cannot sign for', async () => {
-    await expect(payer(requirement({ network: 'solana' }), intent())).rejects.toThrowError(
+    await expect(payer(requirement({ network: 'solana' }), intent(), decision)).rejects.toThrowError(
       RailsError,
     );
   });

@@ -20,6 +20,7 @@ export const PolicyId = prefixedId('pol');
 export const IntentId = prefixedId('int');
 export const DecisionId = prefixedId('dec');
 export const ReceiptId = prefixedId('rcp');
+export const SessionId = prefixedId('ses');
 
 export type OrgId = z.infer<typeof OrgId>;
 export type AgentId = z.infer<typeof AgentId>;
@@ -27,3 +28,4 @@ export type PolicyId = z.infer<typeof PolicyId>;
 export type IntentId = z.infer<typeof IntentId>;
 export type DecisionId = z.infer<typeof DecisionId>;
 export type ReceiptId = z.infer<typeof ReceiptId>;
+export type SessionId = z.infer<typeof SessionId>;

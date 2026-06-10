@@ -13,6 +13,13 @@ export type DecisionOutcome = z.infer<typeof DecisionOutcome>;
 export const Decision = z.object({
   id: DecisionId,
   intentId: IntentId,
+  /**
+   * sha256 of the intent's canonical content (see canonical.ts). Binds the
+   * decision to the exact transfer it judged — amount, recipient, asset,
+   * chain — so a signer can verify an {intent, decision} pair offline as a
+   * self-contained spend voucher, not just a reference by id.
+   */
+  intentHash: z.string(),
   outcome: DecisionOutcome,
   /** Ids of the rules that fired, for explainability. */
   matchedRules: z.array(z.string()).default([]),

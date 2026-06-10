@@ -19,12 +19,15 @@ import {
 } from './x402.js';
 
 /**
- * Builds the `X-PAYMENT` header for an allowed intent. v0.1 ships mock payers
- * (the mock facilitator accepts them); the real x402 signer plugs in here.
+ * Builds the `X-PAYMENT` header for an allowed intent. Mock payers and the
+ * local EIP-3009 payer ignore the decision; the session-key signer tier
+ * requires it — the {intent, decision} pair is the engine-signed voucher the
+ * signer verifies before any key is put to work.
  */
 export type Payer = (
   requirement: PaymentRequirement,
   intent: PaymentIntent,
+  decision: Decision,
 ) => string | Promise<string>;
 
 export interface GuardOptions {
@@ -139,7 +142,7 @@ export class Guard {
         return res;
       }
 
-      const paymentHeader = await this.options.payer(resolved.requirement, intent);
+      const paymentHeader = await this.options.payer(resolved.requirement, intent, decision);
       const retry = await inner(input, withHeader(input, init, 'X-PAYMENT', paymentHeader));
       this.record(intent, decision, url, init, parseSettlement(retry));
       return retry;

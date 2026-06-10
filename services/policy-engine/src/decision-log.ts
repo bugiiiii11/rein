@@ -6,37 +6,18 @@ import {
   createPublicKey,
   type KeyObject,
 } from 'node:crypto';
-import { newId, type Decision, type DecisionOutcome } from '@rein/core';
+import { canonicalDecision, newId, type Decision, type DecisionOutcome } from '@rein/core';
 
 export interface DecisionInput {
   intentId: string;
+  /** sha256 of the intent's canonical content — binds the decision to the exact transfer. */
+  intentHash: string;
   outcome: DecisionOutcome;
   matchedRules: string[];
   reason: string;
   policyId: string;
   policyVersion: string;
   latencyMs: number;
-}
-
-/** Canonical bytes that get hashed and signed. Field order is fixed. */
-function canonicalize(d: {
-  intentId: string;
-  outcome: DecisionOutcome;
-  matchedRules: string[];
-  policyId: string;
-  policyVersion: string;
-  prevHash: string;
-  decidedAt: Date;
-}): string {
-  return JSON.stringify({
-    intentId: d.intentId,
-    outcome: d.outcome,
-    matchedRules: d.matchedRules,
-    policyId: d.policyId,
-    policyVersion: d.policyVersion,
-    prevHash: d.prevHash,
-    decidedAt: d.decidedAt.toISOString(),
-  });
 }
 
 /**
@@ -60,13 +41,14 @@ export class DecisionLog {
   append(input: DecisionInput): Decision {
     const decidedAt = new Date();
     const hash = createHash('sha256')
-      .update(canonicalize({ ...input, prevHash: this.prevHash, decidedAt }))
+      .update(canonicalDecision({ ...input, prevHash: this.prevHash, decidedAt }))
       .digest('hex');
     const signature = edSign(null, Buffer.from(hash), this.privateKey).toString('base64');
 
     const decision: Decision = {
       id: newId('dec'),
       intentId: input.intentId,
+      intentHash: input.intentHash,
       outcome: input.outcome,
       matchedRules: input.matchedRules,
       reason: input.reason,
@@ -97,7 +79,7 @@ export function verifyDecisionChain(
   let prev = 'genesis';
   for (const d of decisions) {
     if (d.prevHash !== prev) return false;
-    const hash = createHash('sha256').update(canonicalize(d)).digest('hex');
+    const hash = createHash('sha256').update(canonicalDecision(d)).digest('hex');
     if (hash !== d.hash) return false;
     if (!edVerify(null, Buffer.from(d.hash), publicKey, Buffer.from(d.signature, 'base64'))) {
       return false;

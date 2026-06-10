@@ -56,6 +56,7 @@ describe('ReinEvent discriminated union', () => {
     const decision = Decision.parse({
       id: newId('dec'),
       intentId: newId('int'),
+      intentHash: 'ih1',
       outcome: 'allow',
       policyId: 'pol_x',
       policyVersion: '1',

@@ -1,0 +1,32 @@
+{
+  "name": "@rein/signer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rein's session-key signer — the custody tier. Holds agent wallet keys and releases EIP-3009 signatures only against engine-signed allow decisions, under session caps.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "@rein/sdk": "workspace:*",
+    "@rein/x402-rails": "workspace:*",
+    "fastify": "^5.2.0",
+    "viem": "^2.47.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@rein/policy-engine": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

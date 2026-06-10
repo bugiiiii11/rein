@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — Guard, SDK-mode.** Advisory enforcement + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator). Signer-level (session-key) enforcement is the GA architecture.
+> Status: **v0.1 — Guard.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — now ships as `@rein/signer`.
 
 ## Product phases
 
@@ -24,18 +24,22 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/mock-rails`** — a simulated payment world (x402 facilitator + on-chain ledger + indexer) that reconciles spend and flags **shadow spend**: payments that bypassed the guard.
 - **`@rein/x402-rails`** — the real-world rails: an EIP-3009 payer (gasless for the agent — the facilitator submits the tx), a client for the hosted [x402.org facilitator](https://x402.org), a strict x402-v1 vendor, and an on-chain indexer that reconciles USDC transfers back to intents via the authorization nonce — and flags everything else as shadow spend.
 - **`@rein/console`** — a live "mission control" web UI: watch every decision stream in, freeze an agent with the kill switch, inspect the tamper-evident audit chain, and see shadow spends light up red — all over a real-time event feed.
+- **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 
-**119 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the Sepolia demo settles real USDC.
+**153 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the Sepolia demo settles real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 119 tests, fully offline
+pnpm test            # 153 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
+
+# Then watch the custody tier refuse every rogue path a stolen agent could try:
+node apps/demo/dist/signer.js
 ```
 
 ## Console — live mission control
@@ -81,6 +85,23 @@ The first run generates an agent wallet into `.env` and prints faucet instructio
 From a real run: [the settled payment](https://sepolia.basescan.org/tx/0x73c2971ac85330d1b6d21889ffb356716babb4ba740468a8f9066be6ca310689) · [the shadow spend](https://sepolia.basescan.org/tx/0x1352fae21246fefc4bc65f704a2075f121369d4d7f6fc16653f1f68c065b97f1)
 
 The live test suite (`RUN_LIVE=1 pnpm --filter @rein/x402-rails test`) exercises the same path. Behind a TLS-intercepting proxy or antivirus, point Node at your local root CA first (`NODE_EXTRA_CA_CERTS`) — see `env.example`.
+
+## The signer tier: keys the agent never holds
+
+SDK mode is honest about its limit: an agent that holds its own key can bypass the guard, and Rein _catches_ it (shadow spend). `@rein/signer` removes the limit by removing the key. The agent process gets a **session token** — capped, expiring, revocable — and the wallet lives in the signer, which releases an EIP-3009 signature only when every gate passes:
+
+1. **A valid voucher.** The engine binds each decision to the exact intent it judged (`intentHash` over amount, recipient, asset, chain), ed25519-signs it, and chains it into the audit log. The signer verifies the pair fully offline — a rogue agent can recompute every hash, but it cannot sign as the engine.
+2. **An exact match.** The 402 requirement being signed must equal what the engine judged: recipient, amount, asset, network. A real $0.01 voucher cannot authorize a $5.00 transfer.
+3. **Once.** One decision releases one signature; replays are refused — including two concurrent requests racing the same voucher.
+4. **Within the session.** Per-payment and cumulative caps, expiry, and revocation are enforced at the signing boundary, _under_ whatever policy says.
+
+Every release and refusal is emitted on the event bus (`signature.released` / `signature.refused`). The kill switch stops being advisory: freeze the agent and there is no allow, no signature, no payment.
+
+```bash
+pnpm --filter @rein/demo demo:signer   # six scenarios, fully offline, every signature verified
+```
+
+Run it as a service (`buildSignerServer`) with the SDK's `createRemoteSessionPayer`, or in-process with `sessionPayerFor`. There is deliberately no HTTP endpoint that accepts a private key.
 
 ## The SDK one-liner
 
@@ -141,7 +162,7 @@ A policy is declarative — for example, a $0.50 per-transaction cap plus a roll
 2. **Fail closed.** If the policy service is unreachable, payments above a configured floor are denied, not allowed. Ungovernable x402 offers fail closed too.
 3. **Rail-agnostic core, x402-first integration.** The policy/ledger domain model knows nothing about x402 specifically; x402 (Base, Solana) is the first adapter.
 4. **Every decision is auditable.** Each allow/deny produces a signed, hash-chained decision record linked to the eventual on-chain transaction.
-5. **Honest about its tier.** The facilitator — mock or the real hosted one — is _not_ Rein-privileged: a rogue payment still settles, and the indexer flags it as shadow spend (verified live on Base Sepolia). That gap is exactly what the GA signer tier closes.
+5. **Honest about its tier.** The facilitator — mock or the real hosted one — is _not_ Rein-privileged: in SDK mode a rogue payment still settles, and the indexer flags it as shadow spend (verified live on Base Sepolia). The session-key signer tier closes that gap: the key the rogue would need no longer exists in the agent.
 
 ## Repository layout
 
@@ -153,8 +174,9 @@ services/
   policy-engine/ @rein/policy-engine  — Fastify policy evaluation service + audit log
   mock-rails/    @rein/mock-rails     — mock x402 facilitator + ledger + indexer
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
+  signer/        @rein/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
 apps/
-  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia
+  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia + signer tier
   console/       @rein/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
 ```
 

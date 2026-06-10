@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { z } from 'zod';
 import {
+  canonicalIntent,
   newId,
   PaymentIntent,
   Vendor,
@@ -119,7 +121,8 @@ export class PolicyEngine {
     }
 
     const latencyMs = performance.now() - start;
-    const decision = this.log.append({ ...result, intentId: intent.id, latencyMs });
+    const intentHash = createHash('sha256').update(canonicalIntent(intent)).digest('hex');
+    const decision = this.log.append({ ...result, intentId: intent.id, intentHash, latencyMs });
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
     if (decision.outcome === 'allow') {

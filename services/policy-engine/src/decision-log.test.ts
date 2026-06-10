@@ -7,6 +7,7 @@ function appendSome(log: DecisionLog, n: number) {
   for (let i = 0; i < n; i++) {
     log.append({
       intentId: newId('int'),
+      intentHash: `ih-${i}`,
       outcome: i % 2 === 0 ? 'allow' : 'deny',
       matchedRules: [`rule-${i}`],
       reason: `r${i}`,

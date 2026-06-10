@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PaymentIntent, newId } from '@rein/core';
+import { PaymentIntent, newId, type Decision } from '@rein/core';
 import type { PaymentRequirement } from '@rein/sdk';
 import { MockLedger } from './ledger.js';
 import { MockFacilitator } from './facilitator.js';
@@ -26,6 +26,23 @@ const intent = PaymentIntent.parse({
   createdAt: new Date(),
 });
 
+// The Payer seam carries the decision, but mock payers ignore it — that is
+// precisely the SDK-mode gap the signer tier closes. Any decision will do.
+const decision: Decision = {
+  id: newId('dec'),
+  intentId: intent.id,
+  intentHash: 'unverified',
+  outcome: 'allow',
+  matchedRules: [],
+  policyId: 'pol_test',
+  policyVersion: '1',
+  prevHash: 'genesis',
+  hash: 'h',
+  signature: 'sig',
+  latencyMs: 0,
+  decidedAt: new Date(),
+};
+
 function rails() {
   const ledger = new MockLedger();
   return { ledger, facilitator: new MockFacilitator({ ledger }) };
@@ -44,7 +61,7 @@ const code = (fn: () => unknown): string => {
 describe('MockFacilitator', () => {
   it('payerFor() builds an X-PAYMENT header carrying the intent linkage', async () => {
     const { facilitator } = rails();
-    const header = await facilitator.payerFor('0xAGENT')(requirement, intent);
+    const header = await facilitator.payerFor('0xAGENT')(requirement, intent, decision);
 
     const decoded = decodePaymentHeader(header);
     expect(decoded.scheme).toBe('exact');
@@ -60,7 +77,7 @@ describe('MockFacilitator', () => {
 
   it('settle() writes the transfer on the ledger with the intent id as memo', async () => {
     const { ledger, facilitator } = rails();
-    const header = await facilitator.payerFor('0xAGENT')(requirement, intent);
+    const header = await facilitator.payerFor('0xAGENT')(requirement, intent, decision);
 
     const settled = facilitator.settle(header, requirement);
 
@@ -88,13 +105,13 @@ describe('MockFacilitator', () => {
     const { facilitator } = rails();
     const pay = facilitator.payerFor('0xAGENT');
 
-    const short = await pay({ ...requirement, maxAmountRequired: '5000' }, intent);
+    const short = await pay({ ...requirement, maxAmountRequired: '5000' }, intent, decision);
     expect(code(() => facilitator.settle(short, requirement))).toBe('amount_mismatch');
 
-    const elsewhere = await pay({ ...requirement, payTo: '0xATTACKER' }, intent);
+    const elsewhere = await pay({ ...requirement, payTo: '0xATTACKER' }, intent, decision);
     expect(code(() => facilitator.settle(elsewhere, requirement))).toBe('recipient_mismatch');
 
-    const otherNet = await pay({ ...requirement, network: 'polygon' }, intent);
+    const otherNet = await pay({ ...requirement, network: 'polygon' }, intent, decision);
     expect(code(() => facilitator.settle(otherNet, requirement))).toBe('network_mismatch');
   });
 
@@ -112,7 +129,7 @@ describe('MockFacilitator', () => {
     );
 
     const arbitrum = { ...requirement, network: 'arbitrum' };
-    const onArbitrum = await facilitator.payerFor('0xAGENT')(arbitrum, intent);
+    const onArbitrum = await facilitator.payerFor('0xAGENT')(arbitrum, intent, decision);
     expect(code(() => facilitator.settle(onArbitrum, arbitrum))).toBe('unsupported_network');
   });
 
