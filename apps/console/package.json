@@ -15,6 +15,7 @@
   "dependencies": {
     "@rein/core": "workspace:*",
     "@rein/gate": "workspace:*",
+    "@rein/graph": "workspace:*",
     "@rein/mock-rails": "workspace:*",
     "@rein/policy-engine": "workspace:*",
     "@rein/sdk": "workspace:*",

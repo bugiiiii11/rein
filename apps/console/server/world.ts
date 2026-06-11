@@ -23,7 +23,15 @@
 import type { AddressInfo } from 'node:net';
 import { recoverTypedDataAddress, type Hex } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
-import { newId, sumDecimal, type Agent, type Decision, type PaymentIntent } from '@rein/core';
+import {
+  newId,
+  sumDecimal,
+  type Agent,
+  type Decision,
+  type PaymentIntent,
+  type Receipt,
+  type ReputationSubject,
+} from '@rein/core';
 import { PolicyEngine, buildServer } from '@rein/policy-engine';
 import {
   createGuard,
@@ -44,6 +52,7 @@ import {
   GateError,
   type GateRails,
 } from '@rein/gate';
+import { ReputationGraph, payerCheck } from '@rein/graph';
 import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@rein/signer';
 import {
   chainIdForNetwork,
@@ -58,8 +67,10 @@ import type {
   DemoStatus,
   FeedItem,
   GateView,
+  GraphView,
   PolicyView,
   PolicyRuleView,
+  ReputationRow,
   ServerEvent,
   Stats,
 } from './wire';
@@ -80,6 +91,20 @@ const TX_CAP = '0.50';
 const HOUR_BUDGET = '0.04';
 const SESSION_CAP = '0.02';
 const FEED_CAP = 300;
+
+/** The reputation cast, seeded with BACKDATED history at boot (same-day
+ * evidence is confidence-discounted to 40%, by design — see @rein/graph):
+ * a reputable feed, a sketchy broker that pockets most payments, and a wallet
+ * that burned replay slots at OTHER vendors' gates. */
+const GOOD_VENDOR = 'good-feeds.test';
+const SKETCHY_VENDOR = 'shady-data.test';
+const OFFENDER_WALLET = '0xdefec7ed0000000000000000000000000000d00d';
+/** Floor shared by the policy rule (vendorReputationLt) and the gate's payerCheck. */
+const REP_FLOOR = 40;
+/** Scores below this confidence are never enforced — thin history stays unknown. */
+const REP_MIN_CONFIDENCE = 0.3;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -140,6 +165,12 @@ export async function createWorld(): Promise<World> {
   // The signer holds session-tier wallet keys; vouchers verify against the
   // engine's pinned public key — the same one the console's audit panel shows.
   const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+
+  // The reputation graph (Phase 3) watches every bus in this world. Scores are
+  // pure functions of the evidence it accumulates — recomputed per call, never
+  // stored — and feed back into enforcement on both sides: vendor scores sync
+  // into the engine (vendorReputationLt fires), payer scores screen the gate.
+  const graph = new ReputationGraph();
 
   // EIP-3009 nonces are keccak256(intent.id); remembering the mapping lets the
   // rails settle session-tier payments onto the ledger with the intent-id memo
@@ -258,7 +289,12 @@ export async function createWorld(): Promise<World> {
     payTo: TREASURY,
     network: 'base',
     asset: USDC_BASE,
-    screen: { denyPayers: [MULE_WALLET] },
+    screen: {
+      denyPayers: [MULE_WALLET],
+      // Dynamic screening: a confidently low-rep wallet is turned away at the
+      // door before any settle leg; unknowns and thin histories always pass.
+      check: payerCheck(graph, { denyBelow: REP_FLOOR, minConfidence: REP_MIN_CONFIDENCE }),
+    },
   });
   const gatedFetch = createGatedFetch(gate, {
     serve: ({ url }) =>
@@ -282,6 +318,10 @@ export async function createWorld(): Promise<World> {
   let seq = 0;
   let demoRuns = 0;
   let demo: DemoStatus = { running: false, phase: 'idle' };
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSyncAt: string | null = null;
+  /** Hosts whose scores the engine currently holds (pushed by syncVendors). */
+  const syncedHosts = new Set<string>();
 
   function emit(ev: ServerEvent): void {
     for (const l of listeners) l(ev);
@@ -378,6 +418,60 @@ export async function createWorld(): Promise<World> {
         agentName: agentByWallet(payer)?.name,
         ...line,
       })),
+    };
+  }
+
+  function reputationRow(subject: ReputationSubject): ReputationRow | undefined {
+    const explained = graph.explain(subject);
+    if (!explained) return undefined;
+    const { score, evidence } = explained;
+    // Engine agents (ULIDs) and paying wallets are DISJOINT subject spaces
+    // (ERC-8004 identity linking is queued) — suffix wallet-resolved names so
+    // one logical agent showing up twice reads as two id spaces, not a bug.
+    const byWallet = agentByWallet(subject.id)?.name;
+    const label =
+      subject.kind === 'agent'
+        ? agentName(subject.id) ?? (byWallet ? `${byWallet} (wallet)` : undefined)
+        : subject.id === TREASURY
+          ? 'gate treasury (payTo)'
+          : undefined;
+    return {
+      kind: subject.kind,
+      id: subject.id,
+      label,
+      score: score.score,
+      confidence: score.confidence,
+      components: score.components,
+      attempts: evidence.attempts,
+      settled: evidence.settled,
+      volume: evidence.volume,
+      refusals: Object.values(evidence.refusals).reduce((a, b) => a + b, 0),
+      shadowSpends: evidence.shadowSpends,
+      disputes: evidence.disputes,
+      endorsements: evidence.endorsements,
+      firstSeen: evidence.firstSeen.toISOString(),
+      synced: subject.kind === 'vendor' && syncedHosts.has(subject.id),
+      barred:
+        subject.kind === 'agent' &&
+        score.confidence >= REP_MIN_CONFIDENCE &&
+        score.score < REP_FLOOR,
+    };
+  }
+
+  function viewGraph(): GraphView {
+    const rows = (kind: 'vendor' | 'agent') =>
+      graph
+        .scores(kind) // best first
+        .map((s) => reputationRow(s.subject))
+        .filter((r): r is ReputationRow => r !== undefined);
+    return {
+      subjects: graph.subjects(),
+      vendors: rows('vendor'),
+      agents: rows('agent'),
+      syncedCount: syncedHosts.size,
+      lastSyncAt,
+      minConfidence: REP_MIN_CONFIDENCE,
+      denyBelow: REP_FLOOR,
     };
   }
 
@@ -551,6 +645,84 @@ export async function createWorld(): Promise<World> {
     }
   });
 
+  // ── reputation wiring ──────────────────────────────────────────────────────
+  // The graph ingests every bus. Engine-side subjects (agent ULIDs, vendor
+  // hosts) and gate-side subjects (payer wallets, payTo addresses) are disjoint
+  // id spaces, so feeding one graph from all four buses never double-counts.
+  graph.observe(engine).observe(indexer).observe(gate).observe(signer);
+
+  /** Push confident vendor scores into the engine and broadcast the panel. */
+  async function syncGraph(): Promise<void> {
+    const pushed = await graph.syncVendors(engine.spend, { minConfidence: REP_MIN_CONFIDENCE });
+    for (const p of pushed) syncedHosts.add(p.host);
+    lastSyncAt = new Date().toISOString();
+    emit({ type: 'graph', graph: viewGraph() });
+  }
+
+  // Sync is a snapshot push, not a subscription — re-push shortly after any
+  // burst of new evidence so vendorReputationLt always sees current scores.
+  function scheduleSync(): void {
+    if (syncTimer) return;
+    syncTimer = setTimeout(() => {
+      syncTimer = undefined;
+      syncGraph().catch((err: unknown) =>
+        console.error('[console] reputation sync failed:', err),
+      );
+    }, 250);
+  }
+  for (const bus of [engine, indexer, gate, signer]) bus.onEvent(() => scheduleSync());
+
+  // ── imported reputation history ────────────────────────────────────────────
+  // Live evidence is same-day and confidence-discounted, so a brand-new world
+  // would have nothing enforceable. Seed the graph with two weeks of backdated
+  // history — the receipts a deployment would have accumulated before this
+  // console booted. The world's own vendor (api.data.test) is deliberately NOT
+  // seeded: watch its confidence climb live as scenario runs accumulate.
+  function seedReputationHistory(): void {
+    const start = Date.now() - 14 * DAY_MS;
+    const historian = newId('agt'); // the fictional pre-console agent on those receipts
+    const receipt = (host: string, at: Date, settled: boolean): Receipt => ({
+      id: newId('rcp'),
+      agentId: historian,
+      intentId: newId('int'),
+      decisionId: newId('dec'),
+      outcome: 'allow',
+      url: `https://${host}/v1/query`,
+      method: 'GET',
+      vendorHost: host,
+      amount: '0.05',
+      asset: 'USDC',
+      chain: 'base',
+      taskContext: {},
+      settlement: settled ? { txHash: `0x5eed${at.getTime().toString(16)}` } : undefined,
+      createdAt: at,
+    });
+    for (let i = 0; i < 15; i += 1) {
+      const at = new Date(start + i * 22 * HOUR_MS);
+      graph.ingestReceipt(receipt(GOOD_VENDOR, at, true)); // 15/15 settled
+      graph.ingestReceipt(receipt(SKETCHY_VENDOR, at, i < 2)); // 2/15 settled
+    }
+    for (let i = 0; i < 3; i += 1) {
+      graph.report({
+        subject: { kind: 'vendor', id: SKETCHY_VENDOR },
+        kind: 'dispute',
+        at: new Date(start + (4 + i * 3) * DAY_MS),
+        note: 'chargeback reported out-of-band',
+      });
+    }
+    // The offender: one payment replayed 12 times at OTHER vendors' gates.
+    for (let i = 0; i < 12; i += 1) {
+      graph.ingest({
+        type: 'gate.refused',
+        at: new Date(start + i * 12 * HOUR_MS),
+        code: 'payment_replayed',
+        reason: 'replay of an already-settled payment',
+        resource: 'https://other-vendor.example/api/answer',
+        payer: OFFENDER_WALLET,
+      });
+    }
+  }
+
   // ── agent provisioning ───────────────────────────────────────────────────
   // Engine writes return promises for durable stores; this world is in-memory,
   // where the effect lands synchronously before the (already-resolved) promise,
@@ -570,6 +742,9 @@ export async function createWorld(): Promise<World> {
       rules: [
         { id: 'tx-cap', deny: { amountGt: TX_CAP } },
         { id: 'hour-budget', deny: { rollingSum: { window: '1h', gt: HOUR_BUDGET } } },
+        // Fires only on a KNOWN bad score — the graph withholds low-confidence
+        // scores at sync, so unknown vendors stay ungoverned by this rule.
+        { id: 'reputation-gate', deny: { vendorReputationLt: REP_FLOOR } },
       ],
       default: 'allow',
     });
@@ -717,6 +892,26 @@ export async function createWorld(): Promise<World> {
     await session.fetch(VENDOR_URL).catch(swallowGoverned);
     await sleep(gap);
 
+    // 12 — reputation closes the loop on the engine: a fresh agent probes a
+    //      vendor the network already burned — denied before any payment exists
+    setPhase(`reputation check: ${SKETCHY_VENDOR}`);
+    const proc = provisionAgent(`procurement-agent-${demoRuns}`);
+    await proc.fetch(`https://${SKETCHY_VENDOR}/v1/query`).catch(swallowGoverned);
+    await sleep(gap);
+
+    // 13 — same agent, same policy, same price, reputable vendor: business as usual
+    setPhase(`reputation check: ${GOOD_VENDOR}`);
+    await proc.fetch(`https://${GOOD_VENDOR}/v1/query`);
+    await sleep(gap);
+
+    // 14 — the offender wallet presents a fresh, valid payment; it never
+    //      wronged THIS vendor, but evidence from other gates bars the door
+    setPhase('low-reputation payer at the door');
+    await gatedFetch(VENDOR_URL, {
+      headers: { 'X-PAYMENT': craftPayment(OFFENDER_WALLET, PRICE_ATOMIC) },
+    });
+    await sleep(gap);
+
     demo = { running: false, phase: 'idle' };
     emit({ type: 'demo', demo });
   }
@@ -764,6 +959,7 @@ export async function createWorld(): Promise<World> {
       policies: viewPolicies(),
       stats: computeStats(),
       gate: viewGate(),
+      graph: viewGraph(),
       demo,
       publicKey: engine.publicKeyPem,
       startedAt,
@@ -776,10 +972,15 @@ export async function createWorld(): Promise<World> {
   }
 
   async function close(): Promise<void> {
+    if (syncTimer) clearTimeout(syncTimer);
     await app.close();
   }
 
-  // Seed an initial story so the console is alive on first load.
+  // Seed an initial story so the console is alive on first load. Reputation
+  // history lands first and is synced into the engine BEFORE the scenario,
+  // so the reputation-gate beats evaluate against current scores.
+  seedReputationHistory();
+  await syncGraph();
   await playScenario(false);
 
   return { getState, subscribe, freeze, unfreeze, pingAgent, runDemo, close };

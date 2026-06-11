@@ -23,7 +23,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/core`** — the canonical zod schemas: the single source of truth for DB rows, API payloads, and SDK types, with float-free decimal money math.
 - **`@rein/mock-rails`** — a simulated payment world (x402 facilitator + on-chain ledger + indexer) that reconciles spend and flags **shadow spend**: payments that bypassed the guard.
 - **`@rein/x402-rails`** — the real-world rails: an EIP-3009 payer (gasless for the agent — the facilitator submits the tx), a client for the hosted [x402.org facilitator](https://x402.org), a strict x402-v1 vendor, and an on-chain indexer that reconciles USDC transfers back to intents via the authorization nonce — and flags everything else as shadow spend.
-- **`@rein/console`** — a live "mission control" web UI over the whole stack: decisions, vendor-gate quotes/receipts/refusals, signer releases, settlements, and shadow spends streaming in real time; kill switch, vendor revenue panel, and the tamper-evident audit chain.
+- **`@rein/console`** — a live "mission control" web UI over the whole stack: decisions, vendor-gate quotes/receipts/refusals, signer releases, settlements, and shadow spends streaming in real time; kill switch, vendor revenue panel, the live reputation scoreboard (scores, confidence, and the evidence behind them), and the tamper-evident audit chain.
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
 - **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam.
@@ -53,7 +53,7 @@ node apps/demo/dist/graph.js
 
 ## Console — live mission control
 
-A real-time web UI for the **whole stack at once**: the real policy engine (over HTTP), a real `@rein/gate` fronting the world's vendor API, the session-key signer holding a custodied wallet, and the mock rails standing in for the chain. Every bus — engine, indexer, gate, signer — is merged and pushed to the browser over Server-Sent Events.
+A real-time web UI for the **whole stack at once**: the real policy engine (over HTTP), a real `@rein/gate` fronting the world's vendor API, the session-key signer holding a custodied wallet, the reputation graph observing every bus, and the mock rails standing in for the chain. Every bus — engine, indexer, gate, signer — is merged and pushed to the browser over Server-Sent Events.
 
 ```bash
 pnpm --filter @rein/console dev      # http://localhost:5173
@@ -63,12 +63,13 @@ What you see:
 
 - **Live activity feed** — decisions (allow / deny / escalate), x402 quotes, vendor receipts, payments turned away at the gate, EIP-3009 signatures released or refused by the signer, settlements, and shadow spends — streaming in as they happen.
 - **Vendor gate** — what the world's gated API is earning: revenue headline, per-route and per-payer breakdowns from real gate receipts.
+- **Reputation** — the live scoreboard from `@rein/graph`: every vendor and payer the world has evidence on, with confidence, click-to-expand explanations (five components + the raw counts behind them), "→ engine" on vendor scores synced into policy, and "barred" on wallets the gate turns away. The graph re-syncs after every burst of evidence, so watch the world's own vendor cross the confidence floor as scenario runs accumulate.
 - **Agents + kill switch** — both custody tiers side by side (`sdk` and `session-key`), per-agent session spend, and a freeze/unfreeze toggle; hit **Ping** on a frozen agent and watch the call get denied.
 - **Policies** — the active rules in plain language.
 - **Audit chain** — the ed25519-signed, sha256-linked decision log with a live integrity check.
 - **Shadow spends** — unreconciled, guard-bypassing payments, flagged in red.
 
-Click **Run scenario** to play the full two-sided story, paced so you can watch it unfold: a fresh SDK-tier agent makes four paid calls (quote → allow → vendor receipt → settle), trips the budget cap and the tx cap, then bypasses the guard (shadow spend); an unpaid crawler gets quoted; a replayed payment and a denylisted mule get turned away at the gate; then a session-key agent — wallet held by the signer — makes voucher-gated EIP-3009 purchases, a stolen voucher is replayed straight at the signer and refused, and finally the engine *allows* a payment the session cap still refuses: defense in depth, live.
+Click **Run scenario** to play the full two-sided story, paced so you can watch it unfold: a fresh SDK-tier agent makes four paid calls (quote → allow → vendor receipt → settle), trips the budget cap and the tx cap, then bypasses the guard (shadow spend); an unpaid crawler gets quoted; a replayed payment and a denylisted mule get turned away at the gate; then a session-key agent — wallet held by the signer — makes voucher-gated EIP-3009 purchases, a stolen voucher is replayed straight at the signer and refused, and the engine *allows* a payment the session cap still refuses: defense in depth, live. The finale closes the reputation loop on both sides: a procurement agent is denied at a sketchy vendor by the `reputation-gate` policy rule, served at a reputable one on the same policy, and a wallet that replayed payments at *other* vendors' gates two weeks ago presents a fresh, valid payment — and is turned away on reputation alone.
 
 The session-key payments in this world are real EIP-3009 signatures, verified cryptographically (signature recovery against the quoted USDC contract domain) before the gate settles them — a forged or tampered authorization genuinely fails. For a production-style serve (built UI + API on one port): `pnpm --filter @rein/console build && pnpm --filter @rein/console start`.
 
@@ -206,7 +207,7 @@ createGate({ screen: { check: payerCheck(graph, { denyBelow: 40 }) }, ... });
 pnpm --filter @rein/demo demo:graph   # five scenarios, offline: both feedback loops close live
 ```
 
-Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores`.
+Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores`. Or watch it live: the console world runs a graph over all four buses, re-syncs it into the engine after every burst of evidence, and renders the scoreboard with click-to-expand explanations.
 
 ## The SDK one-liner
 

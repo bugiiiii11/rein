@@ -809,6 +809,127 @@ button {
   text-align: right;
 }
 
+/* ── Reputation graph ─────────────────────────────────────────────────────── */
+.rep-row {
+  display: flex;
+  flex-direction: column;
+}
+.rep-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 3px 0;
+  font-size: 11px;
+  text-align: left;
+}
+.rep-line:hover .rep-name {
+  color: var(--ink);
+}
+.rep-chip {
+  min-width: 30px;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rep-chip.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.rep-chip.mid {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.rep-chip.bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+.rep-chip.thin {
+  color: var(--ink-dim);
+  background: var(--bg-3);
+}
+.rep-name {
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+.rep-conf {
+  margin-left: auto;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.rep-badge {
+  flex: 0 0 auto;
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.rep-badge.engine {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rep-badge.barred {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.rep-badge.dim {
+  background: var(--bg-3);
+  color: var(--ink-faint);
+}
+.rep-detail {
+  padding: 5px 2px 8px 37px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-bottom: 1px dashed var(--line);
+}
+.rep-meter {
+  display: grid;
+  grid-template-columns: 62px 1fr 24px;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+.rep-meter-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.rep-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.rep-meter-num {
+  text-align: right;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.rep-evidence {
+  margin-top: 3px;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+.rep-floor {
+  font-size: 9px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding-top: 2px;
+}
+
 /* ── Shadow alerts ────────────────────────────────────────────────────────── */
 .panel.alarm {
   border-color: rgba(255, 77, 77, 0.35);

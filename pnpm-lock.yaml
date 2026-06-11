@@ -38,6 +38,9 @@ importers:
       '@rein/gate':
         specifier: workspace:*
         version: link:../../packages/gate
+      '@rein/graph':
+        specifier: workspace:*
+        version: link:../../services/graph
       '@rein/mock-rails':
         specifier: workspace:*
         version: link:../../services/mock-rails

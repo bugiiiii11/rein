@@ -127,6 +127,54 @@ export interface GateView {
   payers: GatePayerStat[];
 }
 
+/** The five 0–100 reputation components (higher = healthier). `disputeRate`
+ * keeps the core field name but stores the INVERTED hygiene value: 100 = clean. */
+export interface ReputationComponentsView {
+  settlementReliability: number;
+  disputeRate: number;
+  volume: number;
+  counterpartyQuality: number;
+  longevity: number;
+}
+
+/** One scored subject in the reputation graph, with the evidence behind it. */
+export interface ReputationRow {
+  kind: 'vendor' | 'agent';
+  /** Host (vendors) or wallet address / agent ULID (agents), normalized. */
+  id: string;
+  /** Friendly name when one is known (agent name, treasury); else render `id`. */
+  label?: string;
+  score: number; // 0–100
+  confidence: number; // 0–1
+  components: ReputationComponentsView;
+  // raw evidence, so the panel can explain the score without another endpoint
+  attempts: number;
+  settled: number;
+  volume: string; // settled decimal USDC
+  refusals: number; // total across refusal codes
+  shadowSpends: number;
+  disputes: number;
+  endorsements: number;
+  firstSeen: string; // ISO
+  /** Vendors: this score is currently held by the engine (vendorReputationLt fires). */
+  synced: boolean;
+  /** Agents: a gate consulting payerCheck would turn this wallet away. */
+  barred: boolean;
+}
+
+/** The reputation panel: scores recomputed from evidence, never stored. */
+export interface GraphView {
+  subjects: number;
+  vendors: ReputationRow[];
+  agents: ReputationRow[];
+  syncedCount: number;
+  lastSyncAt: string | null; // null until the first syncVendors push
+  /** Scores below this confidence are withheld from enforcement (fairness). */
+  minConfidence: number;
+  /** Both the policy rule's vendorReputationLt and the gate's payer floor. */
+  denyBelow: number;
+}
+
 export interface DemoStatus {
   running: boolean;
   phase: string;
@@ -139,6 +187,7 @@ export interface ConsoleState {
   policies: PolicyView[];
   stats: Stats;
   gate: GateView;
+  graph: GraphView;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -151,4 +200,5 @@ export type ServerEvent =
   | { type: 'policies'; policies: PolicyView[] }
   | { type: 'stats'; stats: Stats }
   | { type: 'gate'; gate: GateView }
+  | { type: 'graph'; graph: GraphView }
   | { type: 'demo'; demo: DemoStatus };

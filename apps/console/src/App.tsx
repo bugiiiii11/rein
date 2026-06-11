@@ -5,6 +5,7 @@ import { Agents } from './components/Agents';
 import { Policies } from './components/Policies';
 import { Feed } from './components/Feed';
 import { GatePanel } from './components/GatePanel';
+import { ReputationPanel } from './components/ReputationPanel';
 import { Shadow } from './components/Shadow';
 import { AuditChain } from './components/AuditChain';
 
@@ -27,6 +28,7 @@ export function App() {
         <div className="col left">
           <Agents agents={d.agents} />
           <Policies policies={d.policies} />
+          <ReputationPanel graph={d.graph} />
         </div>
         <div className="col">
           <Feed feed={d.feed} />
