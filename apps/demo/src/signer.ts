@@ -152,7 +152,7 @@ async function main() {
   const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
   const agentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: agentId,
     orgId: newId('org'),
     name: 'research-agent',
@@ -160,7 +160,7 @@ async function main() {
     status: 'active',
     createdAt: new Date(),
   });
-  engine.addPolicy({
+  await engine.addPolicy({
     policyId: 'research-policy',
     appliesTo: { agents: [agentId] },
     rules: [{ id: 'tx-cap', deny: { amountGt: '1.00' } }],
@@ -265,7 +265,7 @@ async function main() {
   console.log('  The rogue gets a REAL allow voucher for $0.01, then asks the signer');
   console.log('  to authorize $5.00 with it.\n');
 
-  const small = engine.evaluateIntent({
+  const small = await engine.evaluateIntent({
     agentId,
     vendor: { host: VENDOR_HOST, address: VENDOR_TREASURY },
     resource: '/v1/answer',
@@ -290,7 +290,7 @@ async function main() {
   // ── Scenario 4: replay ─────────────────────────────────────────────────────
   console.log(section('Scenario 4  ·  Replay (one voucher, one signature)'));
 
-  const fresh = engine.evaluateIntent({
+  const fresh = await engine.evaluateIntent({
     agentId,
     vendor: { host: VENDOR_HOST, address: VENDOR_TREASURY },
     resource: '/v1/answer',
@@ -321,7 +321,7 @@ async function main() {
   // ── Scenario 5: kill switch ────────────────────────────────────────────────
   console.log(section('Scenario 5  ·  Kill switch (freeze reaches the key)'));
 
-  engine.freeze(agentId);
+  await engine.freeze(agentId);
   console.log(`  >> engine.freeze(${agentId})\n`);
 
   try {
@@ -334,7 +334,7 @@ async function main() {
 
   // The rogue ignores the guard and goes straight to the signer with the
   // deny decision it just received. The signer reads the same outcome.
-  const denied = engine.evaluateIntent({
+  const denied = await engine.evaluateIntent({
     agentId,
     vendor: { host: VENDOR_HOST, address: VENDOR_TREASURY },
     resource: '/v1/answer',
@@ -356,7 +356,7 @@ async function main() {
   console.log('\n  In SDK mode a frozen agent could still spend (and be caught later).');
   console.log('  Here there is nothing to spend WITH: no allow, no signature, no payment.');
 
-  engine.unfreeze(agentId);
+  await engine.unfreeze(agentId);
   console.log(`\n  >> engine.unfreeze(${agentId})  ← released`);
 
   // ── Scenario 6: session cap ────────────────────────────────────────────────

@@ -62,7 +62,7 @@ async function rig() {
   });
 
   const agentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: agentId,
     orgId: newId('org'),
     name: 'indexed-agent',

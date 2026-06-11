@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — Guard, and the first cut of Gate.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. And the supply side now ships too: **`@rein/gate`**, vendor monetization middleware (Phase 2).
+> Status: **v0.1 — Guard, and the first cut of Gate.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@rein/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. The supply side ships as **`@rein/gate`**, vendor monetization middleware (Phase 2). And the engine is now **durable**: `@rein/store` persists agents, policies, spend history, and the signed decision chain across restarts.
 
 ## Product phases
 
@@ -25,16 +25,17 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/x402-rails`** — the real-world rails: an EIP-3009 payer (gasless for the agent — the facilitator submits the tx), a client for the hosted [x402.org facilitator](https://x402.org), a strict x402-v1 vendor, and an on-chain indexer that reconciles USDC transfers back to intents via the authorization nonce — and flags everything else as shadow spend.
 - **`@rein/console`** — a live "mission control" web UI over the whole stack: decisions, vendor-gate quotes/receipts/refusals, signer releases, settlements, and shadow spends streaming in real time; kill switch, vendor revenue panel, and the tamper-evident audit chain.
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
-- **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats.
+- **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
+- **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam.
 
-**191 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the Sepolia demo settles real USDC.
+**202 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the Sepolia demos settle real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 191 tests, fully offline
+pnpm test            # 202 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -76,6 +77,29 @@ $env:PORT="8787"; node services/policy-engine/dist/server.js
 PORT=8787 node services/policy-engine/dist/server.js
 ```
 
+## Persistence: an engine that survives restarts
+
+The in-memory engine is great for demos; `@rein/store` makes it durable. It implements the engine's store ports on embedded Postgres ([PGlite](https://pglite.dev) — real Postgres compiled to WASM, running in-process against a data directory; no Docker, no daemon, and the SQL carries straight over to hosted Postgres later). Writes are awaited to disk before the engine acts on them; reads stay synchronous from a hydrated working set.
+
+```bash
+# The same HTTP API as the policy engine, but durable:
+# PowerShell
+$env:REIN_DATA_DIR=".rein-data"; node services/store/dist/server.js
+# bash
+REIN_DATA_DIR=.rein-data node services/store/dist/server.js
+```
+
+Kill it and start it again: agents, the kill switch, policies (in evaluation order), rolling budgets ("$0.60 of the daily $1.00 already spent — _before_ the restart"), and the decision log all come back. The ed25519 signing key is persisted too, so the hash chain **continues** across restarts — the first post-restart decision links to the last pre-restart hash, and `verifyDecisionChain` validates the whole history under one key, no seam.
+
+Composing it in code is one line:
+
+```ts
+import { PolicyEngine } from '@rein/policy-engine';
+import { openReinStore } from '@rein/store';
+
+const engine = new PolicyEngine(await openReinStore({ dir: '.rein-data' }));
+```
+
 ## Real rails: Base Sepolia
 
 The same guard loop on a real chain — a guarded $0.01 USDC payment settled on-chain by the hosted x402.org facilitator, then a rogue payment that bypasses the guard and gets caught:
@@ -90,6 +114,14 @@ The first run generates an agent wallet into `.env` and prints faucet instructio
 - **`shadow.spend`** — the rogue payment. The facilitator is _not_ Rein-privileged, so it settles anyway — and the indexer flags the unreconciled spend.
 
 From a real run: [the settled payment](https://sepolia.basescan.org/tx/0x73c2971ac85330d1b6d21889ffb356716babb4ba740468a8f9066be6ca310689) · [the shadow spend](https://sepolia.basescan.org/tx/0x1352fae21246fefc4bc65f704a2075f121369d4d7f6fc16653f1f68c065b97f1)
+
+And the **vendor side on the same real rails** — a `@rein/gate`-priced Node API settling real USDC through the hosted facilitator while the paying agent stays under guard. One $0.01 payment, quoted, signed (EIP-3009), settled on-chain, receipted on both sides, reconciled by the on-chain indexer via the nonce memo — then the same payment replayed and burned at the door before the facilitator ever sees it:
+
+```bash
+pnpm --filter @rein/demo demo:sepolia-gate   # reuses the demo:sepolia wallet
+```
+
+From a real run: [the gate-settled payment](https://sepolia.basescan.org/tx/0x30eb018d1e6cacdb4e7479e0370a2ec43136c414808a2124712f0c46c975ab8e)
 
 The live test suite (`RUN_LIVE=1 pnpm --filter @rein/x402-rails test`) exercises the same path. Behind a TLS-intercepting proxy or antivirus, point Node at your local root CA first (`NODE_EXTRA_CA_CERTS`) — see `env.example`.
 
@@ -141,7 +173,8 @@ What the gate does that a bare 402 snippet doesn't:
 - **Pluggable rails.** The same gate runs against the mock facilitator (offline tests/demos) or the real hosted x402.org facilitator client — the rails are a two-method structural seam.
 
 ```bash
-pnpm --filter @rein/demo demo:gate   # six scenarios: a Rein-guarded agent paying a Rein-gated vendor over real local HTTP
+pnpm --filter @rein/demo demo:gate          # six scenarios, offline: guarded agent pays a gated vendor over real local HTTP
+pnpm --filter @rein/demo demo:sepolia-gate  # the same gate on REAL rails: settles testnet USDC via the hosted facilitator
 ```
 
 ## The SDK one-liner
@@ -217,8 +250,9 @@ services/
   mock-rails/    @rein/mock-rails     — mock x402 facilitator + ledger + indexer
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
   signer/        @rein/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
+  store/         @rein/store          — persistence: PGlite-backed engine stores; key, chain, agents, policies, spend survive restarts
 apps/
-  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia + signer tier + gate
+  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate
   console/       @rein/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
 ```
 
@@ -230,7 +264,7 @@ apps/
 - **Build/test:** tsup (esm + cjs + d.ts), vitest.
 - **Console:** Vite + React + TypeScript, live updates over Server-Sent Events (no extra services to run).
 - **Chain:** viem on Base Sepolia — EIP-712/EIP-3009 signing, `getLogs` indexing, the hosted x402.org facilitator for settlement.
-- **Dev mode:** mock x402 flows + in-memory stores behind interfaces. No accounts or Docker required to run locally; Postgres + Timescale + Redis + NATS wire in later.
+- **Dev mode:** mock x402 flows + in-memory stores behind ports, with `@rein/store` (embedded PGlite Postgres) when you want state to survive restarts. No accounts or Docker required to run locally; hosted Postgres + Timescale + Redis + NATS wire in later behind the same ports.
 
 ## License
 

@@ -19,7 +19,14 @@ import {
   type ReinEvent,
 } from '@rein/core';
 import { evaluate, type EvaluationResult } from './evaluator.js';
-import { InMemorySpendStore, InMemoryPolicyStore, InMemoryAgentRegistry } from './stores.js';
+import {
+  InMemorySpendStore,
+  InMemoryPolicyStore,
+  InMemoryAgentRegistry,
+  type SpendStorePort,
+  type PolicyStorePort,
+  type AgentRegistryPort,
+} from './stores.js';
 import { DecisionLog } from './decision-log.js';
 
 /** The shape an SDK/client submits. Server-assigned fields are optional. */
@@ -42,17 +49,37 @@ export interface EvaluateOutput {
   decision: Decision;
 }
 
+/** The persistence seams the engine composes over (in-memory when omitted). */
+export interface EngineStores {
+  spend?: SpendStorePort;
+  policies?: PolicyStorePort;
+  agents?: AgentRegistryPort;
+  /** Pre-built decision log (e.g. persistent key + resumed chain from @rein/store). */
+  log?: DecisionLog;
+}
+
 /**
  * The policy engine: normalizes intents, applies the kill-switch, evaluates
  * policy, writes a signed decision, emits events, and (on ALLOW) records the
- * spend so rolling budgets/velocity update. Fully in-memory for v0.1.
+ * spend so rolling budgets/velocity update. Stores are injectable: in-memory
+ * by default, durable via @rein/store. Writes are awaited before returning;
+ * evaluations are serialized so concurrent intents cannot read a rolling
+ * budget before an earlier allow has recorded its spend.
  */
 export class PolicyEngine {
-  readonly spend = new InMemorySpendStore();
-  readonly policies = new InMemoryPolicyStore();
-  readonly agents = new InMemoryAgentRegistry();
-  private readonly log = new DecisionLog();
+  readonly spend: SpendStorePort;
+  readonly policies: PolicyStorePort;
+  readonly agents: AgentRegistryPort;
+  private readonly log: DecisionLog;
   private readonly bus = new EventEmitter();
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(stores: EngineStores = {}) {
+    this.spend = stores.spend ?? new InMemorySpendStore();
+    this.policies = stores.policies ?? new InMemoryPolicyStore();
+    this.agents = stores.agents ?? new InMemoryAgentRegistry();
+    this.log = stores.log ?? new DecisionLog();
+  }
 
   get publicKeyPem(): string {
     return this.log.publicKeyPem;
@@ -66,24 +93,24 @@ export class PolicyEngine {
     this.bus.emit('event', event);
   }
 
-  registerAgent(input: z.input<typeof Agent>): Agent {
+  async registerAgent(input: z.input<typeof Agent>): Promise<Agent> {
     const agent = Agent.parse(input);
-    this.agents.register(agent);
+    await this.agents.register(agent);
     return agent;
   }
 
-  addPolicy(input: z.input<typeof Policy>): Policy {
+  async addPolicy(input: z.input<typeof Policy>): Promise<Policy> {
     const policy = Policy.parse(input);
-    this.policies.add(policy);
+    await this.policies.add(policy);
     return policy;
   }
 
-  freeze(agentId: string): void {
-    this.agents.freeze(agentId);
+  async freeze(agentId: string): Promise<void> {
+    await this.agents.freeze(agentId);
   }
 
-  unfreeze(agentId: string): void {
-    this.agents.unfreeze(agentId);
+  async unfreeze(agentId: string): Promise<void> {
+    await this.agents.unfreeze(agentId);
   }
 
   private normalize(input: IntentInput): PaymentIntent {
@@ -101,7 +128,13 @@ export class PolicyEngine {
     });
   }
 
-  evaluateIntent(input: IntentInput): EvaluateOutput {
+  evaluateIntent(input: IntentInput): Promise<EvaluateOutput> {
+    const run = this.tail.then(() => this.evaluateSerialized(input));
+    this.tail = run.catch(() => undefined); // a failed evaluate must not wedge the queue
+    return run;
+  }
+
+  private async evaluateSerialized(input: IntentInput): Promise<EvaluateOutput> {
     const start = performance.now();
     const intent = this.normalize(input);
     this.emit({ type: 'intent.created', at: new Date(), intent });
@@ -122,12 +155,17 @@ export class PolicyEngine {
 
     const latencyMs = performance.now() - start;
     const intentHash = createHash('sha256').update(canonicalIntent(intent)).digest('hex');
-    const decision = this.log.append({ ...result, intentId: intent.id, intentHash, latencyMs });
+    const decision = await this.log.append({
+      ...result,
+      intentId: intent.id,
+      intentHash,
+      latencyMs,
+    });
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
     if (decision.outcome === 'allow') {
       // Optimistically count the spend; the indexer confirms settlement later.
-      this.spend.record({
+      await this.spend.record({
         agentId: intent.agentId,
         host: intent.vendor.host,
         resource: intent.resource,

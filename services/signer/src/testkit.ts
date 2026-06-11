@@ -13,9 +13,9 @@ export const VENDOR_ADDRESS = '0x1111111111111111111111111111111111111111';
 export const VENDOR_HOST = 'api.vendor.test';
 
 /** An engine with one policy: allow anything up to 1.00 USDC. */
-export function makeEngine(): { engine: PolicyEngine; agentId: string } {
+export async function makeEngine(): Promise<{ engine: PolicyEngine; agentId: string }> {
   const engine = new PolicyEngine();
-  const agent = engine.registerAgent({
+  const agent = await engine.registerAgent({
     id: newId('agt'),
     orgId: newId('org'),
     name: 'signer-test-agent',
@@ -23,7 +23,7 @@ export function makeEngine(): { engine: PolicyEngine; agentId: string } {
     status: 'active',
     createdAt: new Date(),
   });
-  engine.addPolicy({
+  await engine.addPolicy({
     policyId: 'pol_signer_test',
     appliesTo: {},
     rules: [{ id: 'hard-cap', deny: { amountGt: '1.00' } }],
@@ -53,7 +53,7 @@ export function evaluateFor(
   engine: PolicyEngine,
   agentId: string,
   overrides: Partial<IntentInput> = {},
-): { intent: PaymentIntent; decision: Decision } {
+): Promise<{ intent: PaymentIntent; decision: Decision }> {
   return engine.evaluateIntent({
     agentId,
     vendor: { host: VENDOR_HOST, address: VENDOR_ADDRESS },

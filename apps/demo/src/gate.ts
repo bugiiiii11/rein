@@ -134,7 +134,7 @@ async function main() {
   const vendor = await startVendor(gate);
 
   const agentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: agentId,
     orgId: newId('org'),
     name: 'research-agent',
@@ -142,7 +142,7 @@ async function main() {
     status: 'active',
     createdAt: new Date(),
   });
-  engine.addPolicy({
+  await engine.addPolicy({
     policyId: 'research-policy',
     appliesTo: { agents: [agentId] },
     rules: [{ id: 'tx-cap', deny: { amountGt: '1.00' } }],

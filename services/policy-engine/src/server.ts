@@ -47,13 +47,13 @@ export function buildServer(engine: PolicyEngine = new PolicyEngine()): FastifyI
 
   app.get('/v1/agents', () => engine.agents.list());
 
-  app.post('/v1/agents/:id/freeze', (req, reply) => {
-    engine.freeze((req.params as { id: string }).id);
+  app.post('/v1/agents/:id/freeze', async (req, reply) => {
+    await engine.freeze((req.params as { id: string }).id);
     return reply.status(204).send();
   });
 
-  app.post('/v1/agents/:id/unfreeze', (req, reply) => {
-    engine.unfreeze((req.params as { id: string }).id);
+  app.post('/v1/agents/:id/unfreeze', async (req, reply) => {
+    await engine.unfreeze((req.params as { id: string }).id);
     return reply.status(204).send();
   });
 

@@ -44,7 +44,7 @@ describe.skipIf(!live)('live: hosted facilitator on Base Sepolia', () => {
       const wallet = privateKeyToAccount(KEY!).address;
 
       const agentId = newId('agt');
-      engine.registerAgent({
+      await engine.registerAgent({
         id: agentId,
         orgId: newId('org'),
         name: 'live-test-agent',

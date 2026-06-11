@@ -250,7 +250,7 @@ describe('mock rails end-to-end (engine + guard + facilitator + indexer)', () =>
 
 /** Register a fresh agent whose base wallet is managed in sdk mode. */
 async function registerAgent(world: Rig): Promise<string> {
-  const agent = world.engine.registerAgent({
+  const agent = await world.engine.registerAgent({
     id: newId('agt'),
     orgId: newId('org'),
     name: 'rails-test-agent',

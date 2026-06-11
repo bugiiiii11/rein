@@ -552,8 +552,11 @@ export async function createWorld(): Promise<World> {
   });
 
   // ── agent provisioning ───────────────────────────────────────────────────
+  // Engine writes return promises for durable stores; this world is in-memory,
+  // where the effect lands synchronously before the (already-resolved) promise,
+  // so the view emits below see it. `void` documents the deliberate non-await.
   function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): void {
-    engine.registerAgent({
+    void engine.registerAgent({
       id: agentId,
       orgId: newId('org'),
       name,
@@ -561,7 +564,7 @@ export async function createWorld(): Promise<World> {
       status: 'active',
       createdAt: new Date(),
     });
-    engine.addPolicy({
+    void engine.addPolicy({
       policyId: `policy-${name}`,
       appliesTo: { agents: [agentId] },
       rules: [
@@ -733,7 +736,7 @@ export async function createWorld(): Promise<World> {
 
   function freeze(agentId: string): boolean {
     if (!engine.agents.list().some((a) => a.id === agentId)) return false;
-    engine.freeze(agentId);
+    void engine.freeze(agentId); // in-memory: effect is synchronous (see addAgentPolicy)
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'stats', stats: computeStats() });
     return true;
@@ -741,7 +744,7 @@ export async function createWorld(): Promise<World> {
 
   function unfreeze(agentId: string): boolean {
     if (!engine.agents.list().some((a) => a.id === agentId)) return false;
-    engine.unfreeze(agentId);
+    void engine.unfreeze(agentId); // in-memory: effect is synchronous (see addAgentPolicy)
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'stats', stats: computeStats() });
     return true;

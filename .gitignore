@@ -24,6 +24,7 @@ coverage/
 *.sqlite3
 *.db
 data/
+.rein-data/
 
 # Editor / OS
 .vscode/*

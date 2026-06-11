@@ -14,8 +14,8 @@ import type { CreateSessionInput } from './sessions.js';
 import { evaluateFor, makeEngine, makeRequirement, VENDOR_ADDRESS } from './testkit.js';
 
 /** Engine + signer + custodied wallet + session, with a controllable clock. */
-function makeWorld(sessionInput: Partial<CreateSessionInput> = {}) {
-  const { engine, agentId } = makeEngine();
+async function makeWorld(sessionInput: Partial<CreateSessionInput> = {}) {
+  const { engine, agentId } = await makeEngine();
   const clock = { nowMs: Date.now() };
   const signer = new SessionSigner({
     enginePublicKeyPem: engine.publicKeyPem,
@@ -42,8 +42,8 @@ async function expectRefusal(promise: Promise<unknown>, code: string): Promise<S
 
 describe('SessionSigner', () => {
   it('releases a valid EIP-3009 signature for a genuine allow voucher', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     const requirement = makeRequirement();
 
     const result = await w.signer.sign({ sessionToken: w.token, requirement, intent, decision });
@@ -77,8 +77,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses an unknown session token', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await expectRefusal(
       w.signer.sign({ sessionToken: 'not-a-token', requirement: makeRequirement(), intent, decision }),
       'session_unknown',
@@ -86,8 +86,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses an expired session', async () => {
-    const w = makeWorld({ ttlSeconds: 10 });
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld({ ttlSeconds: 10 });
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     w.clock.nowMs += 11_000;
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -96,8 +96,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a revoked session', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     w.signer.revokeSession(w.session.id);
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -106,8 +106,8 @@ describe('SessionSigner', () => {
   });
 
   it("refuses another agent's intent on this session", async () => {
-    const w = makeWorld();
-    const other = w.engine.registerAgent({
+    const w = await makeWorld();
+    const other = await w.engine.registerAgent({
       id: newId('agt'),
       orgId: newId('org'),
       name: 'other',
@@ -115,7 +115,7 @@ describe('SessionSigner', () => {
       status: 'active',
       createdAt: new Date(),
     });
-    const { intent, decision } = evaluateFor(w.engine, other.id);
+    const { intent, decision } = await evaluateFor(w.engine, other.id);
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
       'agent_mismatch',
@@ -123,10 +123,10 @@ describe('SessionSigner', () => {
   });
 
   it('refuses when no wallet is in custody for the agent', async () => {
-    const { engine, agentId } = makeEngine();
+    const { engine, agentId } = await makeEngine();
     const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
     const { token } = signer.createSession({ agentId });
-    const { intent, decision } = evaluateFor(engine, agentId);
+    const { intent, decision } = await evaluateFor(engine, agentId);
     await expectRefusal(
       signer.sign({ sessionToken: token, requirement: makeRequirement(), intent, decision }),
       'no_wallet',
@@ -134,8 +134,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a forged voucher (intent inflated after the decision)', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     const forged = { ...intent, amount: '100.00' };
     await expectRefusal(
       w.signer.sign({
@@ -149,9 +149,9 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a deny decision — the kill switch reaches the key', async () => {
-    const w = makeWorld();
-    w.engine.freeze(w.agentId);
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    await w.engine.freeze(w.agentId);
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     expect(decision.outcome).toBe('deny');
     const err = await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -161,8 +161,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a stale decision', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     w.clock.nowMs += 301_000;
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -171,8 +171,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses to use a decision twice', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision });
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -181,8 +181,8 @@ describe('SessionSigner', () => {
   });
 
   it('lets exactly one of two concurrent requests spend the same voucher', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     const attempt = () =>
       w.signer
         .sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision })
@@ -195,8 +195,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a requirement inflated beyond what the decision authorized', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     const err = await expectRefusal(
       w.signer.sign({
         sessionToken: w.token,
@@ -210,8 +210,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a requirement paying a different recipient', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await expectRefusal(
       w.signer.sign({
         sessionToken: w.token,
@@ -224,8 +224,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a requirement on an unresolvable asset', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await expectRefusal(
       w.signer.sign({
         sessionToken: w.token,
@@ -238,8 +238,8 @@ describe('SessionSigner', () => {
   });
 
   it('refuses a network these rails cannot sign for', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId, { chain: 'polygon' });
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId, { chain: 'polygon' });
     await expectRefusal(
       w.signer.sign({
         sessionToken: w.token,
@@ -252,8 +252,8 @@ describe('SessionSigner', () => {
   });
 
   it('enforces the per-payment cap under an allow decision', async () => {
-    const w = makeWorld({ maxPerPayment: '0.005' });
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld({ maxPerPayment: '0.005' });
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     expect(decision.outcome).toBe('allow'); // policy is fine with 0.01; the session is not
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
@@ -262,13 +262,13 @@ describe('SessionSigner', () => {
   });
 
   it('enforces the cumulative session cap across payments', async () => {
-    const w = makeWorld({ capAmount: '0.02' });
+    const w = await makeWorld({ capAmount: '0.02' });
     const requirement = makeRequirement();
     for (let i = 0; i < 2; i++) {
-      const { intent, decision } = evaluateFor(w.engine, w.agentId);
+      const { intent, decision } = await evaluateFor(w.engine, w.agentId);
       await w.signer.sign({ sessionToken: w.token, requirement, intent, decision });
     }
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement, intent, decision }),
       'session_cap_exceeded',
@@ -277,8 +277,8 @@ describe('SessionSigner', () => {
   });
 
   it('emits signature.refused with the code for every refusal', async () => {
-    const w = makeWorld();
-    const { intent, decision } = evaluateFor(w.engine, w.agentId);
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
     await expectRefusal(
       w.signer.sign({ sessionToken: 'wrong', requirement: makeRequirement(), intent, decision }),
       'session_unknown',
@@ -290,8 +290,8 @@ describe('SessionSigner', () => {
 });
 
 describe('SessionSigner.registerWallet', () => {
-  it('returns the wallet address derived from the key', () => {
-    const { engine, agentId } = makeEngine();
+  it('returns the wallet address derived from the key', async () => {
+    const { engine, agentId } = await makeEngine();
     const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
     const privateKey = generatePrivateKey();
     const address = signer.registerWallet(agentId, privateKey);

@@ -32,7 +32,7 @@ let walletAddress: string;
 
 beforeAll(async () => {
   engine = new PolicyEngine();
-  const agent = engine.registerAgent({
+  const agent = await engine.registerAgent({
     id: newId('agt'),
     orgId: newId('org'),
     name: 'remote-signer-agent',
@@ -41,7 +41,7 @@ beforeAll(async () => {
     createdAt: new Date(),
   });
   agentId = agent.id;
-  engine.addPolicy({
+  await engine.addPolicy({
     policyId: 'pol_remote_test',
     appliesTo: {},
     rules: [{ id: 'hard-cap', deny: { amountGt: '1.00' } }],
@@ -168,7 +168,7 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
 
   it('answers a tampered voucher with 403 refused/voucher_invalid', async () => {
     const { token } = await createSession();
-    const { intent, decision } = evaluateFor(engine, agentId);
+    const { intent, decision } = await evaluateFor(engine, agentId);
     const res = await fetch(`${signerUrl}/v1/sign`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -209,7 +209,7 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
 
   it('verifies the signature in the header recovers to the custodied wallet', async () => {
     const { token } = await createSession();
-    const { intent, decision } = evaluateFor(engine, agentId);
+    const { intent, decision } = await evaluateFor(engine, agentId);
     const res = await fetch(`${signerUrl}/v1/sign`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

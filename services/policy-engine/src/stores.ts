@@ -3,8 +3,8 @@ import { policyApplies, type SpendContext } from './evaluator.js';
 
 /**
  * One observed/pending spend event. The lightweight in-memory stores here
- * implement the interfaces the engine depends on; swapping in Postgres +
- * TimescaleDB later means reimplementing these, not the engine.
+ * implement the ports the engine depends on; @rein/store swaps in
+ * Postgres-backed implementations without touching the engine.
  */
 export interface SpendRecord {
   agentId: string;
@@ -12,6 +12,37 @@ export interface SpendRecord {
   resource: string;
   amount: string;
   at: number; // epoch ms
+}
+
+export type MaybePromise<T> = T | Promise<T>;
+
+/**
+ * The persistence seams the engine depends on. Writes may be asynchronous (a
+ * durable store awaits them before returning, so nothing the engine acted on
+ * can be lost); reads are synchronous from the store's hydrated working set,
+ * which keeps the hot evaluate path and console state snapshots simple.
+ */
+export interface SpendStorePort {
+  record(rec: SpendRecord): MaybePromise<void>;
+  setVendorReputation(host: string, score: number): MaybePromise<void>;
+  /** Resolve a point-in-time spend context for one agent (prior activity only). */
+  contextFor(agentId: string, now?: number): SpendContext;
+}
+
+export interface PolicyStorePort {
+  /** Upsert by policyId; an updated policy moves to the END of evaluation order. */
+  add(policy: Policy): MaybePromise<void>;
+  list(): Policy[];
+  get(policyId: string): Policy | undefined;
+}
+
+export interface AgentRegistryPort {
+  register(agent: Agent): MaybePromise<void>;
+  get(id: string): Agent | undefined;
+  list(): Agent[];
+  freeze(id: string): MaybePromise<void>;
+  unfreeze(id: string): MaybePromise<void>;
+  isFrozen(id: string): boolean;
 }
 
 const WINDOW_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -35,7 +66,7 @@ function median(values: readonly string[]): string | undefined {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-export class InMemorySpendStore {
+export class InMemorySpendStore implements SpendStorePort {
   private readonly records: SpendRecord[] = [];
   private readonly reputations = new Map<string, number>();
 
@@ -63,7 +94,7 @@ export class InMemorySpendStore {
   }
 }
 
-export class InMemoryPolicyStore {
+export class InMemoryPolicyStore implements PolicyStorePort {
   private policies: Policy[] = [];
 
   /** Upsert by policyId (a new version replaces the prior one). */
@@ -85,7 +116,7 @@ export class InMemoryPolicyStore {
   }
 }
 
-export class InMemoryAgentRegistry {
+export class InMemoryAgentRegistry implements AgentRegistryPort {
   private readonly agents = new Map<string, Agent>();
   private readonly frozen = new Set<string>();
 

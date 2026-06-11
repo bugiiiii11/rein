@@ -62,7 +62,7 @@ async function rig(gateOverrides: Partial<GateOptions> = {}) {
   });
   const vendorUrl = await startVendor(gate);
 
-  const agent = engine.registerAgent({
+  const agent = await engine.registerAgent({
     id: newId('agt'),
     orgId: newId('org'),
     name: 'gate-test-agent',

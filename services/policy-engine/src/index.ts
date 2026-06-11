@@ -1,4 +1,4 @@
-export { PolicyEngine, IntentInput, type EvaluateOutput } from './engine.js';
+export { PolicyEngine, IntentInput, type EvaluateOutput, type EngineStores } from './engine.js';
 export {
   evaluate,
   conditionMatches,
@@ -10,6 +10,8 @@ export {
   DecisionLog,
   verifyDecisionChain,
   type DecisionInput,
+  type DecisionLogOptions,
+  type DecisionLogKeyPair,
 } from './decision-log.js';
 export {
   InMemorySpendStore,
@@ -17,6 +19,10 @@ export {
   InMemoryAgentRegistry,
   parseWindowMs,
   type SpendRecord,
+  type MaybePromise,
+  type SpendStorePort,
+  type PolicyStorePort,
+  type AgentRegistryPort,
 } from './stores.js';
 // Re-exported from @rein/core (moved there so @rein/gate shares the matcher).
 export { globMatch, globMatchAny } from '@rein/core';

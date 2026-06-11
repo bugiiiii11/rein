@@ -20,7 +20,7 @@
 import type { AddressInfo } from 'node:net';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PaymentIntent, newId } from '@rein/core';
+import { PaymentIntent, newId, type Decision } from '@rein/core';
 import { PolicyEngine, buildServer } from '@rein/policy-engine';
 import { createGuard } from '@rein/sdk';
 import {
@@ -103,7 +103,7 @@ async function main() {
   const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
   const agentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: agentId,
     orgId: newId('org'),
     name: 'sepolia-agent',
@@ -191,9 +191,26 @@ async function main() {
       nonce: 'rogue',
       createdAt: new Date(),
     });
+    // The local-custody payer signs without checking the decision — that gap
+    // is the point of this scenario (the session signer is what closes it).
+    const rogueDecision: Decision = {
+      id: newId('dec'),
+      intentId: rogueIntent.id,
+      intentHash: 'forged',
+      outcome: 'allow',
+      matchedRules: [],
+      policyId: 'none',
+      policyVersion: '0',
+      prevHash: 'genesis',
+      hash: 'forged',
+      signature: 'forged',
+      latencyMs: 0,
+      decidedAt: new Date(),
+    };
     const rogueHeader = await createX402Payer({ privateKey })(
       vendor.requirementFor(VENDOR_URL),
       rogueIntent,
+      rogueDecision,
     );
     const rogueRes = await vendor.fetch(VENDOR_URL, { headers: { 'X-PAYMENT': rogueHeader } });
     console.log(`\n  Vendor served the rogue payment: HTTP ${rogueRes.status} (it settled on-chain).`);

@@ -74,7 +74,7 @@ async function main() {
 
   // Register the research agent and install policy
   const agentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: agentId,
     orgId: newId('org'),
     name: 'research-agent',
@@ -170,7 +170,7 @@ async function main() {
   // Register a fresh agent so the kill-switch demo is isolated from budget state
   const ksWallet = '0xKillSwitch01';
   const ksAgentId = newId('agt');
-  engine.registerAgent({
+  await engine.registerAgent({
     id: ksAgentId,
     orgId: newId('org'),
     name: 'ks-agent',
@@ -196,7 +196,7 @@ async function main() {
   outcome('allow', 'call (pre-freeze)  $0.01', 'no rules — policy default allow');
 
   // Freeze the agent
-  engine.freeze(ksAgentId);
+  await engine.freeze(ksAgentId);
   console.log(`\n  >> engine.freeze(${ksAgentId})  ← kill switch engaged`);
 
   try {
@@ -208,7 +208,7 @@ async function main() {
   }
 
   // Unfreeze and confirm recovery
-  engine.unfreeze(ksAgentId);
+  await engine.unfreeze(ksAgentId);
   console.log(`  >> engine.unfreeze(${ksAgentId})  ← kill switch released`);
   await ksFetch(VENDOR_URL);
   outcome('allow', 'call (post-unfreeze)  $0.01', 'kill switch released — calls resume');
