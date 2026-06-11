@@ -1,0 +1,30 @@
+{
+  "name": "@rein/graph",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rein's reputation graph (Phase 3) — turns guard receipts and gate receipts into explainable reputation scores, and feeds them back into policy (vendorReputationLt) and gate screening.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "fastify": "^5.2.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@rein/gate": "workspace:*",
+    "@rein/policy-engine": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

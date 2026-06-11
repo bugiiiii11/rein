@@ -167,6 +167,51 @@ describe('Gate.handle', () => {
     expect(allowed.kind).toBe('paid');
   });
 
+  it('a dynamic screen.check refusal is a 403 payer_denied with the returned reason', async () => {
+    const seen: string[] = [];
+    const { gate, events } = gateWith({
+      rails: stubRails({
+        async verify() {
+          throw new Error('rails must not be reached');
+        },
+      }),
+      screen: {
+        check: (payer) => {
+          seen.push(payer);
+          return 'payer reputation 12 is below this gate\'s floor of 40';
+        },
+      },
+    });
+    const outcome = await refusal(gate.handle({ method: 'GET', url: URL_ANSWER, payment: payment() }));
+    expect(outcome).toMatchObject({ status: 403, code: 'payer_denied' });
+    expect(outcome.reason).toMatch(/below this gate's floor/);
+    expect(seen).toEqual([WALLET]); // called with the payer as presented
+    expect(events[0]).toMatchObject({ type: 'gate.refused', code: 'payer_denied', payer: WALLET });
+  });
+
+  it('a screen.check returning undefined lets the payment through, after the lists', async () => {
+    const { gate } = gateWith({ screen: { check: () => undefined } });
+    const outcome = await gate.handle({ method: 'GET', url: URL_ANSWER, payment: payment() });
+    expect(outcome.kind).toBe('paid');
+
+    // Static lists fire first: a denylisted payer never reaches the hook.
+    let reached = false;
+    const { gate: listed } = gateWith({
+      screen: {
+        denyPayers: [WALLET],
+        check: () => {
+          reached = true;
+          return undefined;
+        },
+      },
+    });
+    const refusedOutcome = await refusal(
+      listed.handle({ method: 'GET', url: URL_ANSWER, payment: payment() }),
+    );
+    expect(refusedOutcome.code).toBe('payer_denied');
+    expect(reached).toBe(false);
+  });
+
   it('refuses the exact same payment twice (replay)', async () => {
     const rails = stubRails();
     const { gate } = gateWith({ rails });

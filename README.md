@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — Guard, and the first cut of Gate.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@rein/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. The supply side ships as **`@rein/gate`**, vendor monetization middleware (Phase 2). And the engine is now **durable**: `@rein/store` persists agents, policies, spend history, and the signed decision chain across restarts.
+> Status: **v0.1 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@rein/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. The supply side ships as **`@rein/gate`**, vendor monetization middleware (Phase 2). The engine is **durable**: `@rein/store` persists agents, policies, spend history, and the signed decision chain across restarts. And **`@rein/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door.
 
 ## Product phases
 
@@ -27,15 +27,16 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
 - **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam.
+- **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening.
 
-**202 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the Sepolia demos settle real USDC.
+**248 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 202 tests, fully offline
+pnpm test            # 248 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -45,6 +46,9 @@ node apps/demo/dist/signer.js
 
 # Then flip to the vendor side: price routes, screen payers, count revenue:
 node apps/demo/dist/gate.js
+
+# Then close the loop: reputation scores that change what both sides enforce:
+node apps/demo/dist/graph.js
 ```
 
 ## Console — live mission control
@@ -167,7 +171,7 @@ app.use(gateMiddleware(gate)); // Express, or wrap any node:http handler
 What the gate does that a bare 402 snippet doesn't:
 
 - **Quote consistency.** A presented payment must match the gate's own quote — scheme, network, amount, recipient — before any facilitator round-trip. Underpayment is refused at the door.
-- **Payer screening.** Allow/deny lists on the paying wallet, checked _before_ verify/settle, so a blocked payer costs you nothing.
+- **Payer screening.** Allow/deny lists on the paying wallet — plus a dynamic `screen.check` hook (reputation plugs in here) — checked _before_ verify/settle, so a blocked payer costs you nothing.
 - **Replay protection.** Each payment settles once; the slot is burned before the async legs, so two concurrent copies can't both pass (on-chain nonce burning is a luxury the mock chain doesn't have — the gate doesn't care).
 - **Receipts + revenue.** Every settlement becomes a `GateReceipt` (`grc_` ULID); `gate.stats()` aggregates revenue by asset, route, and payer; `gate.quoted` / `gate.settled` / `gate.refused` events stream on the bus.
 - **Pluggable rails.** The same gate runs against the mock facilitator (offline tests/demos) or the real hosted x402.org facilitator client — the rails are a two-method structural seam.
@@ -176,6 +180,33 @@ What the gate does that a bare 402 snippet doesn't:
 pnpm --filter @rein/demo demo:gate          # six scenarios, offline: guarded agent pays a gated vendor over real local HTTP
 pnpm --filter @rein/demo demo:sepolia-gate  # the same gate on REAL rails: settles testnet USDC via the hosted facilitator
 ```
+
+## Graph: reputation closes the loop
+
+Guard receipts say what agents tried to spend; gate receipts say what vendors actually earned. `@rein/graph` (Phase 3) is the consumer of both — and the feedback path that turns observability into enforcement:
+
+```ts
+import { ReputationGraph, payerCheck } from '@rein/graph';
+
+const graph = new ReputationGraph().observe(engine).observe(indexer).observe(gate);
+
+// Agent side: pushed scores make `vendorReputationLt` policies fire.
+await graph.syncVendors(engine.spend);
+
+// Vendor side: low-reputation wallets are turned away at the door.
+createGate({ screen: { check: payerCheck(graph, { denyBelow: 40 }) }, ... });
+```
+
+- **Evidence, not vibes.** The graph accumulates per-subject history straight off the event buses: settlements, refusals (replays weighted heaviest), shadow spends, settled-money edges between counterparties, and manual dispute/endorsement reports. Scores are recomputed from raw evidence on demand — `GET /v1/scores/vendor/api.example.com` returns the score _and_ everything behind it.
+- **Five components + confidence.** Settlement reliability, dispute hygiene, volume, longevity, and one-hop counterparty quality (who you settle with marks you), blended 0–100. Confidence is first-class: a thin or brand-new history yields low confidence, not a fake number.
+- **Unknown is not bad.** The evaluator never fires `vendorReputationLt` without data, the sync withholds low-confidence scores, and `payerCheck` passes wallets it knows nothing about. A newcomer is served; a _confidently_ bad actor is refused.
+- **The network effect.** Evidence from one vendor's gate protects every other gate sharing the graph — a mule that replayed payments elsewhere is refused here, before any facilitator round-trip.
+
+```bash
+pnpm --filter @rein/demo demo:graph   # five scenarios, offline: both feedback loops close live
+```
+
+Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores`.
 
 ## The SDK one-liner
 
@@ -251,8 +282,9 @@ services/
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
   signer/        @rein/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
   store/         @rein/store          — persistence: PGlite-backed engine stores; key, chain, agents, policies, spend survive restarts
+  graph/         @rein/graph          — reputation: evidence off every bus, explainable scores, feedback into policy + gate screening
 apps/
-  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate
+  demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate + graph
   console/       @rein/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
 ```
 

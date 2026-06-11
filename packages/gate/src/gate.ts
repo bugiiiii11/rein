@@ -19,6 +19,13 @@ export interface GateScreen {
   allowPayers?: readonly string[];
   /** These payers are always refused, allowlist or not. */
   denyPayers?: readonly string[];
+  /**
+   * Dynamic screening hook, consulted after the static lists with the payer
+   * address as presented. Return a refusal reason to turn the payer away
+   * (403, code `payer_denied`); return undefined to let the payment proceed.
+   * Reputation-driven screening (@rein/graph's `payerCheck`) plugs in here.
+   */
+  check?: (payer: string) => string | undefined;
 }
 
 export interface GateOptions {
@@ -95,6 +102,7 @@ export class Gate {
   private readonly defaults: PaymentDefaults;
   private readonly allowPayers: Set<string> | undefined;
   private readonly denyPayers: Set<string>;
+  private readonly screenCheck: ((payer: string) => string | undefined) | undefined;
   private readonly now: () => Date;
   private readonly bus = new EventEmitter();
   private readonly seenPayments = new Set<string>();
@@ -117,6 +125,7 @@ export class Gate {
       ? new Set(options.screen.allowPayers.map((a) => a.toLowerCase()))
       : undefined;
     this.denyPayers = new Set((options.screen?.denyPayers ?? []).map((a) => a.toLowerCase()));
+    this.screenCheck = options.screen?.check;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -267,6 +276,10 @@ export class Gate {
     }
     if (this.allowPayers && !this.allowPayers.has(key)) {
       throw new GateError('payer_not_allowed', `payer ${payer} is not on this gate's allowlist`);
+    }
+    const reason = this.screenCheck?.(payer);
+    if (reason) {
+      throw new GateError('payer_denied', reason);
     }
   }
 
