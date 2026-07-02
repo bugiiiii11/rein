@@ -450,9 +450,10 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     const explained = graph.explain(subject);
     if (!explained) return undefined;
     const { score, evidence } = explained;
-    // Engine agents (ULIDs) and paying wallets are DISJOINT subject spaces
-    // (ERC-8004 identity linking is queued) — suffix wallet-resolved names so
-    // one logical agent showing up twice reads as two id spaces, not a bug.
+    // Linked identities (agent ULID <- wallet, vendor host <- payTo) merge
+    // into ONE row now. The wallet/treasury fallbacks below only fire for
+    // UNLINKED subjects — wallets with no registered agent (the offender, the
+    // mule) and foreign payTo addresses.
     const byWallet = agentByWallet(subject.id)?.name;
     const label =
       subject.kind === 'agent'
@@ -676,6 +677,19 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // id spaces, so feeding one graph from all four buses never double-counts.
   graph.observe(engine).observe(indexer).observe(gate).observe(signer);
 
+  // Identity linking (the ERC-8004 story, sourced locally): this world KNOWS
+  // which wallet belongs to which agent (its own registry) and that the gate's
+  // payTo is the world vendor's treasury — so evidence merges across the id
+  // spaces instead of splitting one party into two scoreboard rows. Links are
+  // derived state: re-asserted at boot (idempotent), never persisted.
+  function linkAgentIdentity(agent: Agent): void {
+    for (const w of agent.wallets) {
+      graph.link({ kind: 'agent', id: agent.id }, { kind: 'agent', id: w.address });
+    }
+  }
+  graph.link({ kind: 'vendor', id: VENDOR_HOST }, { kind: 'vendor', id: TREASURY });
+  for (const agent of engine.agents.list()) linkAgentIdentity(agent); // resumed agents
+
   /** Push confident vendor scores into the engine and broadcast the panel. */
   async function syncGraph(): Promise<void> {
     const pushed = await graph.syncVendors(engine.spend, { minConfidence: REP_MIN_CONFIDENCE });
@@ -754,7 +768,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // against this agent — an unawaited write would race it. (In-memory stores
   // resolve immediately, so the await costs nothing there.)
   async function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): Promise<void> {
-    await engine.registerAgent({
+    const agent = await engine.registerAgent({
       id: agentId,
       orgId: newId('org'),
       name,
@@ -762,6 +776,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       status: 'active',
       createdAt: new Date(),
     });
+    // One party, one score: the wallet's gate-side evidence folds into the
+    // engine agent from the moment it exists.
+    linkAgentIdentity(agent);
     await engine.addPolicy({
       policyId: `policy-${name}`,
       appliesTo: { agents: [agentId] },

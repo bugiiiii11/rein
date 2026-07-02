@@ -7,6 +7,8 @@ import {
 } from '@rein/core';
 import {
   EvidenceLedger,
+  normalizeSubject,
+  subjectKey,
   type EvidenceLedgerPort,
   type MaybePromise,
   type SubjectEvidence,
@@ -126,6 +128,9 @@ export class ReputationGraph {
   private readonly intents: IntentCorrelationPort;
   private readonly weights: ScoreWeights;
   private readonly now: () => Date;
+  /** aliasKey -> canonical subject. Links are derived state (an agent registry
+   * or ERC-8004 lookup knows them) — re-assert at boot; merges are idempotent. */
+  private readonly aliases = new Map<string, ReputationSubject>();
 
   constructor(options: ReputationGraphOptions = {}) {
     this.weights = { ...DEFAULT_WEIGHTS, ...options.weights };
@@ -151,6 +156,31 @@ export class ReputationGraph {
     void Promise.resolve(write).catch(() => undefined);
   }
 
+  /**
+   * Declare that `alias` is the same real-world party as `canonical` (the
+   * ERC-8004 identity story: one identity, many addresses/ids — an engine
+   * agent's ULID and its paying wallet, or a vendor's host and its payTo
+   * address). Everything already known about the alias is folded into the
+   * canonical subject, and all future evidence and lookups for the alias
+   * resolve to it. Idempotent — re-asserting known links at boot is free.
+   */
+  link(canonical: ReputationSubject, alias: ReputationSubject): void {
+    const target = normalizeSubject(this.resolve(canonical)); // flatten chains
+    const aliasKey = subjectKey(alias);
+    if (subjectKey(target) === aliasKey) return;
+    this.aliases.set(aliasKey, target);
+    // Repoint any alias that resolved THROUGH this alias (a->b then b->c).
+    for (const [key, resolved] of this.aliases) {
+      if (subjectKey(resolved) === aliasKey) this.aliases.set(key, target);
+    }
+    this.fire(this.ledger.merge(target, alias));
+  }
+
+  /** The canonical subject for a possibly-aliased one. */
+  private resolve(subject: ReputationSubject): ReputationSubject {
+    return this.aliases.get(subjectKey(subject)) ?? subject;
+  }
+
   ingest(event: ReinEvent): void {
     const atMs = event.at.getTime();
     switch (event.type) {
@@ -168,30 +198,32 @@ export class ReputationGraph {
         if (event.decision.outcome !== 'allow') return;
         const facts = this.intents.peek(event.decision.intentId);
         if (!facts) return;
-        this.fire(this.ledger.recordAttempt({ kind: 'agent', id: facts.agentId }, atMs));
-        this.fire(this.ledger.recordAttempt({ kind: 'vendor', id: facts.host }, atMs));
+        this.fire(this.ledger.recordAttempt(this.resolve({ kind: 'agent', id: facts.agentId }), atMs));
+        this.fire(this.ledger.recordAttempt(this.resolve({ kind: 'vendor', id: facts.host }), atMs));
         return;
       }
       case 'payment.settled': {
         const facts = this.intents.take(event.payment.intentId);
         if (!facts) return; // unattributable — no subject to credit
-        const agent = { kind: 'agent', id: facts.agentId } as const;
-        const vendor = { kind: 'vendor', id: facts.host } as const;
+        const agent = this.resolve({ kind: 'agent', id: facts.agentId });
+        const vendor = this.resolve({ kind: 'vendor', id: facts.host });
         this.fire(this.ledger.recordSettlement(agent, vendor, facts.amount, atMs));
         return;
       }
       case 'shadow.spend': {
-        this.fire(this.ledger.recordShadowSpend({ kind: 'agent', id: event.agentId }, atMs));
+        this.fire(this.ledger.recordShadowSpend(this.resolve({ kind: 'agent', id: event.agentId }), atMs));
         return;
       }
       case 'signature.refused': {
         if (!event.agentId) return;
-        this.fire(this.ledger.recordRefusal({ kind: 'agent', id: event.agentId }, event.code, atMs));
+        this.fire(
+          this.ledger.recordRefusal(this.resolve({ kind: 'agent', id: event.agentId }), event.code, atMs),
+        );
         return;
       }
       case 'gate.settled': {
-        const payer = { kind: 'agent', id: event.receipt.payer } as const;
-        const recipient = { kind: 'vendor', id: event.receipt.payTo } as const;
+        const payer = this.resolve({ kind: 'agent', id: event.receipt.payer });
+        const recipient = this.resolve({ kind: 'vendor', id: event.receipt.payTo });
         this.fire(this.ledger.recordAttempt(payer, atMs));
         this.fire(this.ledger.recordAttempt(recipient, atMs));
         this.fire(this.ledger.recordSettlement(payer, recipient, event.receipt.amount, atMs));
@@ -199,7 +231,7 @@ export class ReputationGraph {
       }
       case 'gate.refused': {
         if (!event.payer) return;
-        const payer = { kind: 'agent', id: event.payer } as const;
+        const payer = this.resolve({ kind: 'agent', id: event.payer });
         this.fire(this.ledger.recordAttempt(payer, atMs));
         this.fire(this.ledger.recordRefusal(payer, event.code, atMs));
         return;
@@ -221,8 +253,8 @@ export class ReputationGraph {
   ingestReceipt(receipt: Receipt): void {
     if (receipt.outcome !== 'allow') return; // policy verdicts are not subject badness
     const atMs = receipt.createdAt.getTime();
-    const agent = { kind: 'agent', id: receipt.agentId } as const;
-    const vendor = { kind: 'vendor', id: receipt.vendorHost } as const;
+    const agent = this.resolve({ kind: 'agent', id: receipt.agentId });
+    const vendor = this.resolve({ kind: 'vendor', id: receipt.vendorHost });
     this.fire(this.ledger.recordAttempt(agent, atMs));
     this.fire(this.ledger.recordAttempt(vendor, atMs));
     if (receipt.settlement?.txHash) {
@@ -233,8 +265,9 @@ export class ReputationGraph {
   /** Record an out-of-band dispute or endorsement against a subject. */
   report(input: ManualReport): void {
     const atMs = (input.at ?? this.now()).getTime();
-    if (input.kind === 'dispute') this.fire(this.ledger.recordDispute(input.subject, atMs));
-    else this.fire(this.ledger.recordEndorsement(input.subject, atMs));
+    const subject = this.resolve(input.subject);
+    if (input.kind === 'dispute') this.fire(this.ledger.recordDispute(subject, atMs));
+    else this.fire(this.ledger.recordEndorsement(subject, atMs));
   }
 
   /** Await any pending durable writes (no-op for in-memory stores). */
@@ -243,9 +276,11 @@ export class ReputationGraph {
     await this.intents.flush?.();
   }
 
-  /** The score for one subject, or undefined when nothing is known (fairness). */
+  /** The score for one subject, or undefined when nothing is known (fairness).
+   *  Aliased subjects resolve to their canonical identity — a linked wallet
+   *  answers with the merged history, on both sides of the wire. */
   score(subject: ReputationSubject): ReputationScore | undefined {
-    const ev = this.ledger.get(subject);
+    const ev = this.ledger.get(this.resolve(subject));
     return ev && this.scoreOf(ev);
   }
 
@@ -261,7 +296,7 @@ export class ReputationGraph {
 
   /** The score plus the raw evidence behind it. */
   explain(subject: ReputationSubject): ReputationExplanation | undefined {
-    const ev = this.ledger.get(subject);
+    const ev = this.ledger.get(this.resolve(subject));
     if (!ev) return undefined;
     return {
       score: this.scoreOf(ev),

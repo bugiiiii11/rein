@@ -330,6 +330,45 @@ describe('graph evidence on openReinStore', () => {
     await graph.flush();
   });
 
+  it('persists identity merges — a boot-time re-link after restart cannot double-count', async () => {
+    const dir = tempDir();
+    const a = await open(dir);
+    const graphA = graphOn(a);
+    // Engine-side history on the ULID, gate-side history on the wallet.
+    const id = newId('int');
+    graphA.ingest(intentCreated({ id, host: GOOD_HOST, at: daysAgo(5) }));
+    graphA.ingest(decisionMade({ intentId: id, at: daysAgo(5) }));
+    graphA.ingest(paymentSettled({ intentId: id, at: daysAgo(5) }));
+    graphA.ingest(gateSettled({ at: daysAgo(4) }));
+    graphA.ingest(gateSettled({ at: daysAgo(3) }));
+    graphA.link({ kind: 'agent', id: AGENT }, { kind: 'agent', id: WALLET });
+    const canon = (g: ReputationGraph) => {
+      const e = g.explain({ kind: 'agent', id: AGENT })!.evidence;
+      return {
+        ...e,
+        counterparties: [...e.counterparties].sort((x, y) =>
+          x.subject.id.localeCompare(y.subject.id),
+        ),
+      };
+    };
+    const before = canon(graphA);
+    expect(before.settled).toBe(3); // 1 engine-side + 2 gate-side, one subject
+    await a.close();
+
+    const b = await open(dir);
+    const graphB = graphOn(b);
+    // Links are derived state — the world re-asserts them at boot. The merge
+    // already persisted (alias row deleted in the same transaction), so this
+    // MUST be a no-op; an unpersisted merge would fold the alias again here.
+    graphB.link({ kind: 'agent', id: AGENT }, { kind: 'agent', id: WALLET });
+    await graphB.flush();
+    expect(canon(graphB)).toEqual(before);
+    expect(graphB.scores('agent')).toHaveLength(1);
+    // New wallet evidence still lands on the canonical subject.
+    graphB.ingest(gateSettled({ at: daysAgo(1) }));
+    expect(canon(graphB).settled).toBe(4);
+  });
+
   it('surfaces a failed durable write on the next flush() instead of pretending it persisted', async () => {
     const store = await open();
     const graph = graphOn(store);

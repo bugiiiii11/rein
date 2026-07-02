@@ -408,3 +408,97 @@ describe('payerCheck — the loop back into the gate', () => {
     expect(payerCheck(graph, { minConfidence: 0, denyBelow: 100 })('0xMule')).toBeDefined();
   });
 });
+
+describe('link — identity merging across id spaces (the ERC-8004 story)', () => {
+  const ULID = { kind: 'agent', id: AGENT } as const;
+  const WALLET_SUBJECT = { kind: 'agent', id: WALLET } as const;
+
+  it('linking after the fact folds the alias history into the canonical subject', () => {
+    const graph = graphAt();
+    history(graph, { n: 10, settle: 8 }); // engine-side: AGENT (ULID) x HOST
+    graph.ingest(gateSettled({ at: daysAgo(2) })); // gate-side: WALLET x PAY_TO
+    const engineSide = graph.explain(ULID)!.evidence;
+    const walletSide = graph.explain(WALLET_SUBJECT)!.evidence;
+
+    graph.link(ULID, WALLET_SUBJECT);
+
+    // One subject remains; the alias resolves to it on every read.
+    expect(graph.scores('agent')).toHaveLength(1);
+    const merged = graph.explain(WALLET_SUBJECT)!;
+    expect(merged.score.subject.id).toBe(AGENT);
+    expect(merged.evidence.attempts).toBe(engineSide.attempts + walletSide.attempts);
+    expect(merged.evidence.settled).toBe(engineSide.settled + walletSide.settled);
+    expect(Number(merged.evidence.volume)).toBeCloseTo(
+      Number(engineSide.volume) + Number(walletSide.volume),
+      10,
+    );
+    // The settled-money edges re-keyed on BOTH ends: the payTo vendor now
+    // counts the ULID as its counterparty, not the vanished wallet.
+    const payTo = graph.explain({ kind: 'vendor', id: PAY_TO })!.evidence;
+    expect(payTo.counterparties.map((c) => c.subject.id)).toContain(AGENT);
+    expect(payTo.counterparties.map((c) => c.subject.id)).not.toContain(WALLET.toLowerCase());
+  });
+
+  it('linking up front redirects all future evidence — the alias never becomes a subject', () => {
+    const graph = graphAt();
+    graph.link(ULID, WALLET_SUBJECT);
+    graph.ingest(gateSettled({ at: daysAgo(1) }));
+    expect(graph.explain(ULID)!.evidence.settled).toBe(1);
+    expect(graph.scores('agent')).toHaveLength(1);
+    expect(graph.score(WALLET_SUBJECT)!.subject.id).toBe(AGENT);
+  });
+
+  it('payerCheck sees engine-side sins through the linked wallet', () => {
+    const graph = graphAt();
+    // The agent misbehaved on the ENGINE side only: a dozen shadow spends.
+    let t = daysAgo(10).getTime();
+    for (let i = 0; i < 12; i += 1) {
+      t += HOUR;
+      graph.ingest({
+        type: 'shadow.spend',
+        at: new Date(t),
+        agentId: AGENT,
+        txHash: `0xshadow${i}`,
+        chain: 'base',
+        amount: '1.00',
+      });
+    }
+    const check = payerCheck(graph);
+    // Unlinked, the wallet is a stranger at the door.
+    expect(check(WALLET)).toBeUndefined();
+    graph.link(ULID, WALLET_SUBJECT);
+    // Linked, the wallet answers for its agent.
+    expect(check(WALLET)).toMatch(/below this gate's floor/);
+  });
+
+  it('a vendor payTo address folds into the host-keyed vendor, and only the host syncs', async () => {
+    const graph = graphAt();
+    history(graph, { n: 8, settle: 8 }); // host-keyed vendor evidence
+    graph.ingest(gateSettled({ at: daysAgo(3) })); // payTo-keyed vendor evidence
+    graph.link({ kind: 'vendor', id: HOST }, { kind: 'vendor', id: PAY_TO });
+    expect(graph.scores('vendor')).toHaveLength(1);
+    const pushed: string[] = [];
+    await graph.syncVendors({ setVendorReputation: (host) => void pushed.push(host) });
+    expect(pushed).toEqual([HOST]);
+  });
+
+  it('re-asserting a known link is a no-op (boot-time link derivation is free)', () => {
+    const graph = graphAt();
+    history(graph, { n: 6, settle: 6 });
+    graph.ingest(gateSettled({ at: daysAgo(2) }));
+    graph.link(ULID, WALLET_SUBJECT);
+    const once = graph.explain(ULID)!.evidence;
+    graph.link(ULID, WALLET_SUBJECT);
+    expect(graph.explain(ULID)!.evidence).toEqual(once);
+  });
+
+  it('alias chains flatten: linking through an alias lands on the true canonical', () => {
+    const graph = graphAt();
+    graph.link(ULID, WALLET_SUBJECT);
+    // A second wallet linked to the FIRST wallet still resolves to the ULID.
+    graph.link(WALLET_SUBJECT, { kind: 'agent', id: '0xSecondWallet' });
+    graph.ingest(gateSettled({ payer: '0xSecondWallet', at: daysAgo(1) }));
+    expect(graph.explain(ULID)!.evidence.settled).toBe(1);
+    expect(graph.scores('agent')).toHaveLength(1);
+  });
+});

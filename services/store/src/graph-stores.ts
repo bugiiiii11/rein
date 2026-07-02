@@ -138,6 +138,38 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
     return this.persistSubject(subject);
   }
 
+  merge(canonical: ReputationSubject, alias: ReputationSubject): Promise<void> {
+    const aliasKey = subjectKey(alias);
+    const canonicalKey = subjectKey(canonical);
+    const from = this.mem.getByKey(aliasKey);
+    // No alias record = nothing to fold (the idempotent re-link case) — and
+    // critically, NO SQL work: an unconditional delete-and-rewrite here would
+    // be harmless, but skipping keeps boot-time re-links free.
+    if (!from || aliasKey === canonicalKey) return Promise.resolve();
+    // Peers holding a reverse edge to the alias — capture BEFORE the merge
+    // mutates the mirror (edges are symmetric, so this list is exact).
+    const affectedPeers = [...from.counterparties.keys()].filter((k) => k !== canonicalKey);
+    this.mem.merge(canonical, alias);
+    // One transaction: the merged canonical row, its re-keyed edges (both
+    // directions), and the alias's disappearance land atomically — a crash
+    // cannot leave the alias half-merged (which a boot re-link would double).
+    return this.enqueue(() =>
+      this.db.transaction(async (tx) => {
+        await this.writeSubject(canonicalKey, tx);
+        // Peers' subject rows are untouched by a merge — only their edges re-key.
+        for (const peerKey of affectedPeers) {
+          await this.writeEdge(canonicalKey, peerKey, tx);
+          await this.writeEdge(peerKey, canonicalKey, tx);
+        }
+        await tx.query('DELETE FROM graph_subjects WHERE subject_key = $1', [aliasKey]);
+        await tx.query(
+          'DELETE FROM graph_counterparties WHERE subject_key = $1 OR peer_key = $1',
+          [aliasKey],
+        );
+      }),
+    );
+  }
+
   get(subject: ReputationSubject) {
     return this.mem.get(subject);
   }

@@ -27,16 +27,16 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
 - **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam. The reputation graph's **evidence ledger persists here too** (scores are never stored — they recompute byte-identically from rehydrated evidence), including in-flight intent correlations, so a settlement that lands after a restart is still attributed.
-- **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening.
+- **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening. `graph.link()` merges identities across id spaces (an agent's engine ULID and its paying wallet, a vendor's host and its payTo address — the ERC-8004 story) so one party carries one history: an agent's engine-side sins follow its wallet to every gate's door.
 
-**259 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
+**266 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 259 tests, fully offline
+pnpm test            # 266 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -218,6 +218,7 @@ createGate({ screen: { check: payerCheck(graph, { denyBelow: 40 }) }, ... });
 - **Five components + confidence.** Settlement reliability, dispute hygiene, volume, longevity, and one-hop counterparty quality (who you settle with marks you), blended 0–100. Confidence is first-class: a thin or brand-new history yields low confidence, not a fake number.
 - **Unknown is not bad.** The evaluator never fires `vendorReputationLt` without data, the sync withholds low-confidence scores, and `payerCheck` passes wallets it knows nothing about. A newcomer is served; a _confidently_ bad actor is refused.
 - **The network effect.** Evidence from one vendor's gate protects every other gate sharing the graph — a mule that replayed payments elsewhere is refused here, before any facilitator round-trip.
+- **One identity, one history.** `graph.link(canonical, alias)` merges subjects across id spaces — evidence recorded under either id folds together (counters sum, settled-money edges re-key on both ends), all future evidence and lookups resolve to the canonical identity, and merges persist on the durable store. Links are derived facts (your agent registry knows its wallets; ERC-8004 ids are the on-chain source): re-assert them at boot, idempotently. The console world does exactly this — one scoreboard row per party, and `payerCheck` refuses a wallet for what its *agent* did on the engine side.
 
 ```bash
 pnpm --filter @rein/demo demo:graph   # five scenarios, offline: both feedback loops close live

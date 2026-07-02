@@ -82,6 +82,15 @@ export interface EvidenceLedgerPort {
   recordDispute(subject: ReputationSubject, atMs: number): MaybePromise<void>;
   /** An out-of-band endorsement. */
   recordEndorsement(subject: ReputationSubject, atMs: number): MaybePromise<void>;
+  /**
+   * Fold everything known about `alias` into `canonical` and forget the alias:
+   * counters sum, volumes add, first/last seen widen, and settled-money edges
+   * re-key on BOTH endpoints (peers that pointed at the alias now point at the
+   * canonical subject). No-op when the alias has no record — which makes
+   * re-asserting links at boot idempotent. This is the identity-linking
+   * primitive (ERC-8004: one on-chain identity, many addresses/ids).
+   */
+  merge(canonical: ReputationSubject, alias: ReputationSubject): MaybePromise<void>;
   get(subject: ReputationSubject): SubjectEvidence | undefined;
   getByKey(key: string): SubjectEvidence | undefined;
   all(): IterableIterator<SubjectEvidence>;
@@ -138,6 +147,46 @@ export class EvidenceLedger implements EvidenceLedgerPort {
 
   recordEndorsement(subject: ReputationSubject, atMs: number): void {
     this.touch(subject, atMs).endorsements += 1;
+  }
+
+  merge(canonical: ReputationSubject, alias: ReputationSubject): void {
+    const aliasKey = subjectKey(alias);
+    const canonicalKey = subjectKey(canonical);
+    const from = this.records.get(aliasKey);
+    if (!from || aliasKey === canonicalKey) return;
+    // The canonical side may have no record yet — the alias's history becomes
+    // its history (same create shape as touch, seeded with the alias's window).
+    const into = this.records.get(canonicalKey) ?? this.touch(canonical, from.firstSeenMs);
+    into.firstSeenMs = Math.min(into.firstSeenMs, from.firstSeenMs);
+    into.lastSeenMs = Math.max(into.lastSeenMs, from.lastSeenMs);
+    into.attempts += from.attempts;
+    into.settled += from.settled;
+    into.volume = sumDecimal([into.volume, from.volume]);
+    for (const [code, count] of Object.entries(from.refusals)) {
+      into.refusals[code] = (into.refusals[code] ?? 0) + count;
+    }
+    into.shadowSpends += from.shadowSpends;
+    into.disputes += from.disputes;
+    into.endorsements += from.endorsements;
+    for (const [peerKey, line] of from.counterparties) {
+      if (peerKey === canonicalKey) continue; // a self-edge would score the subject by itself
+      const existing = into.counterparties.get(peerKey) ?? { settled: 0, volume: '0' };
+      existing.settled += line.settled;
+      existing.volume = sumDecimal([existing.volume, line.volume]);
+      into.counterparties.set(peerKey, existing);
+      // Re-key the peer's reverse edge: alias -> canonical.
+      const peer = this.records.get(peerKey);
+      const held = peer?.counterparties.get(aliasKey);
+      if (peer && held) {
+        peer.counterparties.delete(aliasKey);
+        const reverse = peer.counterparties.get(canonicalKey) ?? { settled: 0, volume: '0' };
+        reverse.settled += held.settled;
+        reverse.volume = sumDecimal([reverse.volume, held.volume]);
+        peer.counterparties.set(canonicalKey, reverse);
+      }
+    }
+    into.counterparties.delete(aliasKey);
+    this.records.delete(aliasKey);
   }
 
   get(subject: ReputationSubject): SubjectEvidence | undefined {
