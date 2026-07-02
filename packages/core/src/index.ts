@@ -12,6 +12,7 @@ export * from './glob.js';
 export * from './ulid.js';
 export * from './ids.js';
 export * from './agent.js';
+export * from './erc8004.js';
 export * from './intent.js';
 export * from './decision.js';
 export * from './canonical.js';

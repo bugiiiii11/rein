@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@rein/core": "workspace:*",
+    "@rein/erc8004": "workspace:*",
     "@rein/gate": "workspace:*",
     "@rein/graph": "workspace:*",
     "@rein/mock-rails": "workspace:*",

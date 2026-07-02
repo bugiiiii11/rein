@@ -1,0 +1,28 @@
+{
+  "name": "@rein/erc8004",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ERC-8004 Identity Registry integration — reads on-chain identity facts (ownerOf, agentWallet) and turns them into reputation-graph link facts; registers agents on the real registry.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@rein/core": "workspace:*",
+    "viem": "^2.47.0"
+  },
+  "devDependencies": {
+    "@rein/graph": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

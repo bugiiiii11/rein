@@ -1,4 +1,4 @@
-import { sumDecimal, type ReputationSubject } from '@rein/core';
+import { formatErc8004Id, parseErc8004Id, sumDecimal, type ReputationSubject } from '@rein/core';
 
 /** A value that may be produced synchronously or awaited (durable writes). */
 export type MaybePromise<T> = T | Promise<T>;
@@ -40,11 +40,20 @@ export interface SubjectEvidence {
 /**
  * Canonical subject identity. Hosts and EVM addresses are case-insensitive,
  * so they normalize to lowercase; ULID agent ids are case-sensitive and pass
- * through. Note the two id spaces under kind "agent": the engine names agents
- * by ULID, a gate names them by paying wallet — linking the two is an
- * ERC-8004 identity job, queued for a later phase.
+ * through. ERC-8004 ids (`eip155:{chainId}:{registry}/{tokenId}`) normalize
+ * via parse->format — @rein/erc8004 always emits the canonical form, but this
+ * is the graph's OWN boundary (remote producers hit POST /v1/links with
+ * hand-built strings), and a checksummed registry or zero-padded tokenId
+ * variant must not mint a split subject row. Note the two id spaces under
+ * kind "agent": the engine names agents by ULID, a gate names them by paying
+ * wallet — ERC-8004 linking (S17) folds both into the on-chain identity.
  */
 export function normalizeSubject(subject: ReputationSubject): ReputationSubject {
+  if (subject.id.startsWith('eip155:')) {
+    const ref = parseErc8004Id(subject.id);
+    if (ref) return { kind: subject.kind, id: formatErc8004Id(ref) };
+    // Malformed eip155-ish strings fall through to the plain rules below.
+  }
   const id =
     subject.kind === 'vendor' || subject.id.startsWith('0x') || subject.id.startsWith('0X')
       ? subject.id.toLowerCase()

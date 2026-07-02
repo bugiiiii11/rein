@@ -43,6 +43,7 @@ function Row({ r, g, open, onToggle }: { r: ReputationRow; g: GraphView; open: b
       <button className="rep-line" onClick={onToggle} title="show the evidence behind this score">
         <span className={`rep-chip ${chipTone(r, g)}`}>{r.score}</span>
         <span className="rep-name">{nameOf(r)}</span>
+        {r.erc8004 && <span className="rep-badge dim" title={r.id}>erc-8004</span>}
         {r.synced && <span className="rep-badge engine">→ engine</span>}
         {r.barred && <span className="rep-badge barred">barred</span>}
         {!r.barred && !r.synced && r.confidence < g.minConfidence && (

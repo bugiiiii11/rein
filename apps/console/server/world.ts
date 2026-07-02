@@ -25,6 +25,7 @@ import { recoverTypedDataAddress, type Hex } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
 import {
   newId,
+  parseErc8004Id,
   sumDecimal,
   type Agent,
   type Decision,
@@ -32,6 +33,11 @@ import {
   type Receipt,
   type ReputationSubject,
 } from '@rein/core';
+import {
+  MockIdentityRegistry,
+  linkAgentFromRegistry,
+  linkVendorFromRegistry,
+} from '@rein/erc8004';
 import { PolicyEngine, buildServer } from '@rein/policy-engine';
 import {
   createGuard,
@@ -463,14 +469,22 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     const explained = graph.explain(subject);
     if (!explained) return undefined;
     const { score, evidence } = explained;
-    // Linked identities (agent ULID <- wallet, vendor host <- payTo) merge
-    // into ONE row now. The wallet/treasury fallbacks below only fire for
-    // UNLINKED subjects — wallets with no registered agent (the offender, the
-    // mule) and foreign payTo addresses.
+    // Linked identities (erc8004 id <- ULID <- wallets, vendor host <- payTo)
+    // merge into ONE row now. Registered agents key by their on-chain identity,
+    // so the primary label lookup is by erc8004Id. The wallet/treasury
+    // fallbacks below only fire for UNLINKED subjects — wallets with no
+    // registered agent (the offender, the mule) and foreign payTo addresses.
+    // If several local agents claim ONE registration (merged row), the first
+    // claimant labels the row — deterministic, and unreachable via console
+    // paths (every provision mints a distinct tokenId).
+    const byErc8004 =
+      subject.kind === 'agent'
+        ? engine.agents.list().find((a) => a.erc8004Id === subject.id)
+        : undefined;
     const byWallet = agentByWallet(subject.id)?.name;
     const label =
       subject.kind === 'agent'
-        ? agentName(subject.id) ?? (byWallet ? `${byWallet} (wallet)` : undefined)
+        ? byErc8004?.name ?? agentName(subject.id) ?? (byWallet ? `${byWallet} (wallet)` : undefined)
         : subject.id === TREASURY
           ? 'gate treasury (payTo)'
           : undefined;
@@ -478,6 +492,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       kind: subject.kind,
       id: subject.id,
       label,
+      erc8004: byErc8004 !== undefined,
       score: score.score,
       confidence: score.confidence,
       components: score.components,
@@ -690,18 +705,49 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // id spaces, so feeding one graph from all four buses never double-counts.
   graph.observe(engine).observe(indexer).observe(gate).observe(signer);
 
-  // Identity linking (the ERC-8004 story, sourced locally): this world KNOWS
-  // which wallet belongs to which agent (its own registry) and that the gate's
-  // payTo is the world vendor's treasury — so evidence merges across the id
-  // spaces instead of splitting one party into two scoreboard rows. Links are
-  // derived state: re-asserted at boot (idempotent), never persisted.
-  function linkAgentIdentity(agent: Agent): void {
-    for (const w of agent.wallets) {
-      graph.link({ kind: 'agent', id: agent.id }, { kind: 'agent', id: w.address });
+  // Identity linking (the ERC-8004 story): link facts come from the Identity
+  // Registry — here the in-memory twin standing in for the real contract, like
+  // the mock ledger stands in for the chain. Links are derived state: the
+  // registry is rebuilt each boot from the persisted agent docs (their
+  // erc8004Ids name the tokenIds) and every link is re-asserted (idempotent),
+  // never persisted. Registered agents are ERC-8004-CANONICAL — one on-chain
+  // identity, one reputation row — while vendors stay host-canonical (hosts
+  // are the enforcement key syncVendors pushes into the engine).
+  const registry = new MockIdentityRegistry();
+  /** The parsed ref, but only when it names OUR registry (foreign ids are not ours to resolve). */
+  const ownRegistryRef = (erc8004Id: string | undefined) => {
+    const ref = erc8004Id === undefined ? undefined : parseErc8004Id(erc8004Id);
+    return ref !== undefined &&
+      ref.chainId === registry.ref.chainId &&
+      ref.registry === registry.ref.address.toLowerCase()
+      ? ref
+      : undefined;
+  };
+  // Hydrate ALL known registrations before any register() — minted tokenIds
+  // must never collide with resumed ones. wallets[0] is the current key.
+  for (const agent of engine.agents.list()) {
+    const ref = ownRegistryRef(agent.erc8004Id);
+    const wallet = agent.wallets[0]?.address;
+    if (ref && wallet !== undefined) {
+      registry.load({ tokenId: ref.tokenId, owner: wallet, agentWallet: wallet });
     }
   }
-  graph.link({ kind: 'vendor', id: VENDOR_HOST }, { kind: 'vendor', id: TREASURY });
-  for (const agent of engine.agents.list()) linkAgentIdentity(agent); // resumed agents
+  async function linkAgentIdentity(agent: Agent): Promise<void> {
+    // MUST be awaited by callers: the registry reads are async, and evidence
+    // arriving before the alias map is populated mints a stray row (S15 rule).
+    await linkAgentFromRegistry(graph, registry, agent);
+  }
+  // The world vendor's identity: registered fresh each boot (the mock chain is
+  // derived state too); its agentWallet IS the treasury, so the payTo alias
+  // now comes from registry facts instead of a hardcoded link. tokenId churn
+  // across boots is harmless — vendor erc8004 ids are aliases only, and an
+  // alias never accrues evidence of its own.
+  const vendorIdentity = registry.register({ owner: TREASURY });
+  await linkVendorFromRegistry(graph, registry, {
+    host: VENDOR_HOST,
+    erc8004Id: vendorIdentity.erc8004Id,
+  });
+  for (const agent of engine.agents.list()) await linkAgentIdentity(agent); // resumed agents
 
   /** Push confident vendor scores into the engine and broadcast the panel. */
   async function syncGraph(): Promise<void> {
@@ -781,17 +827,21 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // against this agent — an unawaited write would race it. (In-memory stores
   // resolve immediately, so the await costs nothing there.)
   async function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): Promise<void> {
+    // Register on the (mock) Identity Registry FIRST — the doc carries the
+    // erc8004Id, so every future boot can rebuild the registry from the store.
+    const registration = registry.register({ owner: wallet.address });
     const agent = await engine.registerAgent({
       id: agentId,
       orgId: newId('org'),
       name,
+      erc8004Id: registration.erc8004Id,
       wallets: [{ chain: 'base', address: wallet.address, mode: wallet.mode }],
       status: 'active',
       createdAt: new Date(),
     });
-    // One party, one score: the wallet's gate-side evidence folds into the
-    // engine agent from the moment it exists.
-    linkAgentIdentity(agent);
+    // One party, one score: from the moment it exists, the agent's reputation
+    // keys by its on-chain identity — ULID and wallet fold in as aliases.
+    await linkAgentIdentity(agent);
     await engine.addPolicy({
       policyId: `policy-${name}`,
       appliesTo: { agents: [agentId] },
@@ -895,7 +945,12 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         ...agent,
         wallets: [{ chain: 'base', address, mode: 'session-key' }, ...agent.wallets],
       });
-      linkAgentIdentity(rotated);
+      // The registry follows the rotation: the on-chain identity's verified
+      // payment wallet becomes the fresh key. Safe unconditionally — every
+      // own-registry doc with a wallet was load()ed before rebuildRuntime runs.
+      const ref = ownRegistryRef(rotated.erc8004Id);
+      if (ref) registry.setAgentWallet(ref.tokenId, address);
+      await linkAgentIdentity(rotated);
       // The previous boot's grant died with its token — revoke it (durably)
       // rather than leave spent authority dangling until TTL.
       for (const stale of signer.sessions()) {

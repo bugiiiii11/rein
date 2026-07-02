@@ -28,6 +28,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
 - **`@rein/store`** — persistence. Postgres-backed stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind every service's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam. The reputation graph's **evidence ledger persists here too** (scores are never stored — they recompute byte-identically from rehydrated evidence), including in-flight intent correlations, so a settlement that lands after a restart is still attributed. So do the **gate's receipts and replay slots** (a pre-kill payment is refused as a replay post-restart) and the **signer's session grants** — spend against caps, revocations, and burned vouchers; wallet private keys deliberately never (KMS territory).
 - **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening. `graph.link()` merges identities across id spaces (an agent's engine ULID and its paying wallet, a vendor's host and its payTo address — the ERC-8004 story) so one party carries one history: an agent's engine-side sins follow its wallet to every gate's door.
+- **`@rein/erc8004`** — the on-chain identity source. Reads identity facts from the ratified [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) Identity Registry (an ERC-721; singleton deployments, Base Sepolia included) and turns them into link facts for the graph: a registered agent's reputation keys by its on-chain identity (`eip155:{chainId}:{registry}/{tokenId}`) with the local id and every wallet — `ownerOf`, the EIP-712-verified `agentWallet` — folded in as aliases; vendors stay host-keyed. Ships the write path too (**registers agents on the real Base Sepolia registry**) and an in-memory registry twin for offline work.
 
 **279 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
 
@@ -228,6 +229,15 @@ createGate({ screen: { check: payerCheck(graph, { denyBelow: 40 }) }, ... });
 
 ```bash
 pnpm --filter @rein/demo demo:graph   # five scenarios, offline: both feedback loops close live
+```
+
+### ERC-8004: identity from the chain
+
+`@rein/erc8004` makes the registry the *source* of link facts instead of local configuration. A registered agent becomes **ERC-8004-canonical**: its reputation row keys by `eip155:{chainId}:{registry}/{tokenId}`, and the engine ULID plus every wallet (`ownerOf`, the verified `agentWallet`) fold in as aliases — so two deployments claiming the same registration merge into one history, and key rotation never splits a score. Vendors stay host-canonical (hosts are what intents carry and `vendorReputationLt` matches); their identities and treasuries fold into the host row. Unregistered agents keep today's local linking — the fallback is byte-compatible.
+
+```bash
+pnpm --filter @rein/demo demo:erc8004        # five scenarios, offline: one on-chain identity, one reputation
+pnpm --filter @rein/demo demo:sepolia-8004   # REAL registration on the Base Sepolia registry (one-time gas; re-runs read-only)
 ```
 
 Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores` — or run the **durable variant** (`services/store/dist/graph-server.js`), where the evidence survives restarts (see Persistence). Or watch it live: the console world runs a graph over all four buses, re-syncs it into the engine after every burst of evidence, and renders the scoreboard with click-to-expand explanations.

@@ -25,6 +25,8 @@ coverage/
 *.db
 data/
 .rein-data/
+.rein-graph-data/
+.rein-console-data*/
 
 # Editor / OS
 .vscode/*

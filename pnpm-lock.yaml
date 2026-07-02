@@ -35,6 +35,9 @@ importers:
       '@rein/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rein/erc8004':
+        specifier: workspace:*
+        version: link:../../services/erc8004
       '@rein/gate':
         specifier: workspace:*
         version: link:../../packages/gate
@@ -99,6 +102,9 @@ importers:
       '@rein/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rein/erc8004':
+        specifier: workspace:*
+        version: link:../../services/erc8004
       '@rein/gate':
         specifier: workspace:*
         version: link:../../packages/gate
@@ -199,6 +205,31 @@ importers:
       '@rein/policy-engine':
         specifier: workspace:*
         version: link:../../services/policy-engine
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.20)
+
+  services/erc8004:
+    dependencies:
+      '@rein/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      viem:
+        specifier: ^2.47.0
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
+    devDependencies:
+      '@rein/graph':
+        specifier: workspace:*
+        version: link:../graph
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.20

@@ -140,10 +140,12 @@ export interface ReputationComponentsView {
 /** One scored subject in the reputation graph, with the evidence behind it. */
 export interface ReputationRow {
   kind: 'vendor' | 'agent';
-  /** Host (vendors) or wallet address / agent ULID (agents), normalized. */
+  /** Host (vendors) or erc8004 id / wallet address / agent ULID (agents), normalized. */
   id: string;
   /** Friendly name when one is known (agent name, treasury); else render `id`. */
   label?: string;
+  /** Agent row keyed by its on-chain ERC-8004 identity (ULID + wallets fold in). */
+  erc8004?: boolean;
   score: number; // 0–100
   confidence: number; // 0–1
   components: ReputationComponentsView;

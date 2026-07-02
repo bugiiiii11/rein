@@ -14,6 +14,17 @@ const ReportInput = z.object({
 
 const ScoresQuery = z.object({ kind: z.enum(['agent', 'vendor']).optional() });
 
+const LinkInput = z
+  .object({
+    canonical: ReputationSubject,
+    alias: ReputationSubject,
+  })
+  // Merging across kinds would delete a vendor row into an agent identity
+  // (silently dropping the host from syncVendors) — always a caller bug.
+  .refine((l) => l.canonical.kind === l.alias.kind, {
+    message: 'canonical and alias must be the same kind',
+  });
+
 /**
  * Build the graph HTTP API. Remote producers POST their events here; anyone
  * can read scores with the evidence behind them. Pass a graph for tests, or
@@ -49,6 +60,18 @@ export function buildGraphServer(graph: ReputationGraph = new ReputationGraph())
     graph.report(input);
     await graph.flush();
     return graph.score(input.subject);
+  });
+
+  // --- Identity links ---
+  // Unverified by DESIGN: this endpoint's trust level equals POST /v1/events —
+  // whoever can post events can already fabricate the evidence itself. On-chain
+  // verification belongs to the CALLER (@rein/erc8004 derives link facts from
+  // the Identity Registry, then asserts them here).
+  app.post('/v1/links', async (req) => {
+    const links = z.union([LinkInput.transform((l) => [l]), z.array(LinkInput)]).parse(req.body);
+    for (const link of links) graph.link(link.canonical, link.alias);
+    await graph.flush(); // durable merges land before the 200 (same contract as /v1/events)
+    return { linked: links.length };
   });
 
   // --- Scores ---

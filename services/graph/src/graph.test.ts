@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, it, expect } from 'vitest';
 import { newId, type Receipt, type ReinEvent } from '@rein/core';
+import { subjectKey } from './evidence.js';
 import { ReputationGraph, payerCheck } from './graph.js';
 
 const DAY = 86_400_000;
@@ -180,6 +181,19 @@ describe('ReputationGraph.ingest — engine-side events', () => {
     graph.ingest(intentCreated({ id, host: 'API.Vendor.Test' }));
     graph.ingest(decisionMade({ intentId: id }));
     expect(graph.score({ kind: 'vendor', id: 'api.vendor.test' })).toBeDefined();
+  });
+
+  it('erc8004 ids canonicalize regardless of hand-built casing or zero-padding', () => {
+    const canonical = 'eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e/42';
+    for (const variant of [
+      'eip155:84532:0x8004A818BFB912233c491871b3d84c89A494BD9e/42', // checksummed
+      'eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e/042', // zero-padded tokenId
+    ]) {
+      expect(subjectKey({ kind: 'agent', id: variant })).toBe(`agent:${canonical}`);
+      expect(subjectKey({ kind: 'vendor', id: variant })).toBe(`vendor:${canonical}`);
+    }
+    // Malformed eip155-ish strings fall through to the plain rules (no throw).
+    expect(subjectKey({ kind: 'agent', id: 'eip155:junk' })).toBe('agent:eip155:junk');
   });
 
   it('shadow spends and signature refusals land on the agent', () => {
