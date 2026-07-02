@@ -29,7 +29,8 @@ export function gateMiddleware(gate: Gate, options: GateMiddlewareOptions = {}) 
     void (async () => {
       const origin = options.origin ?? `http://${req.headers.host ?? 'localhost'}`;
       const url = new URL(req.url ?? '/', origin).toString();
-      const raw = req.headers['x-payment'];
+      // Dual-stack: v2 payers send PAYMENT-SIGNATURE, v1 payers X-PAYMENT.
+      const raw = req.headers['payment-signature'] ?? req.headers['x-payment'];
       const payment = (Array.isArray(raw) ? raw[0] : raw) ?? null;
 
       const outcome = await gate.handle({ method: req.method ?? 'GET', url, payment });
@@ -37,10 +38,20 @@ export function gateMiddleware(gate: Gate, options: GateMiddlewareOptions = {}) 
 
       if (outcome.kind === 'open') return next();
       if (outcome.kind === 'paid') {
+        // Both dialect names carry the same base64 settlement object.
         res.setHeader('X-PAYMENT-RESPONSE', outcome.settlementHeader);
+        res.setHeader('PAYMENT-RESPONSE', outcome.settlementHeader);
         return next();
       }
-      res.writeHead(outcome.status, { 'content-type': 'application/json' });
+      res.writeHead(outcome.status, {
+        'content-type': 'application/json',
+        ...(outcome.paymentRequiredHeader !== undefined
+          ? { 'payment-required': outcome.paymentRequiredHeader }
+          : {}),
+        ...(outcome.kind === 'refused' && outcome.retryAfterSeconds !== undefined
+          ? { 'retry-after': String(outcome.retryAfterSeconds) }
+          : {}),
+      });
       res.end(JSON.stringify(outcome.body));
     })().catch((err: unknown) => {
       // A rails outage must not crash the vendor's server: answer 500, move on.

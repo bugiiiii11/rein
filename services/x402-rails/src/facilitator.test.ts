@@ -80,6 +80,31 @@ describe('FacilitatorClient', () => {
     });
   });
 
+  it('mirrors a v2 payload: the POST x402Version follows the envelope', async () => {
+    const v2Payload = {
+      x402Version: 2,
+      accepted: {
+        scheme: 'exact',
+        network: 'eip155:84532',
+        amount: '10000',
+        asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        payTo: '0x2222222222222222222222222222222222222222',
+      },
+      payload: payload.payload,
+    };
+    const v2Reqs = { ...v2Payload.accepted, maxTimeoutSeconds: 300 };
+    const { fetch, seen } = stub({ verify: { isValid: true } });
+    const client = new FacilitatorClient({ url: 'https://fac.test', fetch });
+
+    await client.verify(v2Payload, v2Reqs);
+
+    expect(seen[0]?.body).toEqual({
+      x402Version: 2,
+      paymentPayload: v2Payload,
+      paymentRequirements: v2Reqs,
+    });
+  });
+
   it('parses a settle response (transaction + network)', async () => {
     const tx = `0x${'12'.repeat(32)}`;
     const { fetch, seen } = stub({

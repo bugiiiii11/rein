@@ -367,6 +367,86 @@ describe('PgGateStore across restarts', () => {
     expect(rails2.settles).toBe(0);
   });
 
+  it('rails_unavailable releases the slot DURABLY — the same header settles after a restart', async () => {
+    const dir = tempDir();
+    const header = payment('0xrel1');
+
+    const first = await open(dir);
+    const downGate = createGate({
+      routes: [{ path: '/v1/query', price: '0.01' }],
+      rails: {
+        async verify() {
+          throw new TypeError('rails unreachable');
+        },
+        async settle() {
+          throw new TypeError('rails unreachable');
+        },
+      },
+      retry: { attempts: 0, backoffMs: 0 },
+      payTo: TREASURY,
+      network: 'base',
+      asset: 'USDC',
+      store: first.gate,
+    });
+    const outcome = await downGate.handle({ method: 'GET', url: QUERY_URL, payment: header });
+    expect(outcome).toMatchObject({ kind: 'refused', code: 'rails_unavailable' });
+    await first.close();
+
+    // The release hit disk: after a restart the header is fresh, not replayed.
+    const second = await open(dir);
+    const rails2 = stubRails();
+    const gate2 = makeGate(second, rails2);
+    const retried = await gate2.handle({ method: 'GET', url: QUERY_URL, payment: header });
+    expect(retried.kind).toBe('paid');
+    expect(rails2.settles).toBe(1);
+  });
+
+  it('velocity caps ride the hydrated receipts — pre-restart spend still counts', async () => {
+    const dir = tempDir();
+    const t0 = Date.now();
+    let t = t0;
+    // Caps are PER PAYER: one payer, distinct headers (uniquified off-schema).
+    const velPayment = (id: string) =>
+      Buffer.from(
+        JSON.stringify({
+          x402Version: 1,
+          scheme: 'exact',
+          network: 'base',
+          payload: { from: '0xvel1', to: TREASURY, value: '10000', asset: 'USDC', intentId: id },
+        }),
+      ).toString('base64');
+    const velocityGate = (store: ReinStore, rails: GateRails) =>
+      createGate({
+        routes: [{ path: '/v1/query', price: '0.01' }],
+        rails,
+        velocity: { windowMs: 60_000, maxPayments: 1 },
+        now: () => new Date(t),
+        payTo: TREASURY,
+        network: 'base',
+        asset: 'USDC',
+        store: store.gate,
+      });
+
+    const first = await open(dir);
+    const paid = await velocityGate(first, stubRails()).handle({
+      method: 'GET',
+      url: QUERY_URL,
+      payment: velPayment('v1'),
+    });
+    expect(paid.kind).toBe('paid');
+    await first.close();
+
+    const second = await open(dir);
+    const gate2 = velocityGate(second, stubRails());
+    t = t0 + 1_000; // still inside the window: the RESUMED receipt must bite
+    const capped = await gate2.handle({ method: 'GET', url: QUERY_URL, payment: velPayment('v2') });
+    expect(capped).toMatchObject({ kind: 'refused', code: 'velocity_exceeded' });
+
+    t = t0 + 60_001; // window slid past the pre-restart receipt
+    const cleared = await gate2.handle({ method: 'GET', url: QUERY_URL, payment: velPayment('v2') });
+    expect(cleared.kind).toBe('paid');
+  });
+
   it('a failed replay-slot write refuses to settle (escapes as a non-GateError)', async () => {
     const dir = tempDir();
     const store = await open(dir);

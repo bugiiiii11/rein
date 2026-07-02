@@ -264,17 +264,21 @@ describe('Gate.handle', () => {
     expect(settleOutcome.code).toBe('settle_failed');
   });
 
-  it('does NOT swallow unexpected rails errors as refusals', async () => {
+  it('transport errors from the rails refuse honestly (503) instead of crashing', async () => {
+    // Contract change with the S19 hardening: a non-GateError escape from the
+    // RAILS is a transport failure — retried, then refused rails_unavailable.
+    // Store failures still escape (replay protection must never be guessed).
     const { gate } = gateWith({
+      retry: { attempts: 0, backoffMs: 0 },
       rails: stubRails({
         async verify() {
-          throw new TypeError('rails bug');
+          throw new TypeError('rails down');
         },
       }),
     });
-    await expect(
-      gate.handle({ method: 'GET', url: URL_ANSWER, payment: payment() }),
-    ).rejects.toThrow('rails bug');
+    const outcome = await refusal(gate.handle({ method: 'GET', url: URL_ANSWER, payment: payment() }));
+    expect(outcome).toMatchObject({ status: 503, code: 'rails_unavailable' });
+    expect(outcome.reason).toContain('rails down');
   });
 
   it('aggregates revenue by asset, route, and payer in stats()', async () => {

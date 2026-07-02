@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { GateReceipt, newId, sumDecimal, type ReinEvent } from '@rein/core';
+import { GateReceipt, gt, newId, sumDecimal, type ReinEvent } from '@rein/core';
 import { atomicToDecimal, type PaymentRequired, type PaymentRequirement } from '@rein/sdk';
 import { GateError, type GateRefusalCode } from './errors.js';
-import type { GateRails } from './rails.js';
+import { RailsUnreachableError, type GateRails, type GateSettlement } from './rails.js';
 import {
   matchRoute,
   requirementFor,
@@ -12,6 +12,13 @@ import {
   type PaymentDefaults,
 } from './routes.js';
 import { InMemoryGateStore, type GateStorePort, type MaybePromise } from './stores.js';
+import {
+  AttemptWindow,
+  payerReceiptsSince,
+  validateVelocity,
+  type GateVelocity,
+} from './velocity.js';
+import { buildPaymentRequiredV2, encodeBase64Json, sameNetwork } from './v2.js';
 import { inspectPaymentHeader, type InspectedPayment } from './wire.js';
 
 /** Wallet-address screening. Addresses compare case-insensitively (EVM rule). */
@@ -45,6 +52,25 @@ export interface GateOptions {
   /** EIP-712 domain hints etc., quoted on every requirement. */
   extra?: Record<string, unknown>;
   screen?: GateScreen;
+  /**
+   * Also advertise quotes on the x402 v2 wire: 402 outcomes gain a
+   * `paymentRequiredHeader` (base64 PaymentRequired, CAIP-2 networks) that the
+   * adapters send as `PAYMENT-REQUIRED`, alongside the unchanged v1 body —
+   * dual-stack, each dialect reads its own channel. Off by default. Note the
+   * gate ACCEPTS v2 payments (PAYMENT-SIGNATURE envelopes) regardless of this
+   * flag; it only controls what quotes advertise.
+   */
+  advertiseV2?: boolean;
+  /** Per-payer velocity limits (see GateVelocity). Off when omitted. */
+  velocity?: GateVelocity;
+  /**
+   * Rails transport-failure retry policy. `attempts` counts EXTRA tries after
+   * the first (default 2), spaced `backoffMs * attemptNumber` apart (default
+   * 250ms; pass 0 in tests). Applies only to transport failures — a GateError
+   * from the rails is a semantic verdict and is never retried. See GateRails
+   * for which settle failures are retry-safe.
+   */
+  retry?: { attempts?: number; backoffMs?: number };
   /** Injectable clock (tests). */
   now?: () => Date;
   /**
@@ -66,10 +92,26 @@ export interface GateRequest {
 export type GateOutcome =
   /** No priced route matched — the vendor serves this request for free. */
   | { kind: 'open' }
-  /** No payment attached: here is what this resource costs. */
-  | { kind: 'quote'; status: 402; body: PaymentRequired }
-  /** A payment was attached and turned away. 403 = screening, 402 = re-quote. */
-  | { kind: 'refused'; status: 402 | 403; code: GateRefusalCode; reason: string; body: unknown }
+  /** No payment attached: here is what this resource costs. The optional
+   *  `paymentRequiredHeader` (advertiseV2) is the base64 v2 PaymentRequired
+   *  for the PAYMENT-REQUIRED response header. */
+  | { kind: 'quote'; status: 402; body: PaymentRequired; paymentRequiredHeader?: string }
+  /**
+   * A payment was attached and turned away. 403 = screening, 402 = re-quote,
+   * 429 = throttled (retryAfterSeconds set when a slot will free), 503 = the
+   * rails failed us (`rails_unavailable` = provably unsettled, slot released;
+   * `settle_unknown` = fate unknown, slot stays burned — do not re-pay blindly).
+   */
+  | {
+      kind: 'refused';
+      status: 402 | 403 | 429 | 503;
+      code: GateRefusalCode;
+      reason: string;
+      body: unknown;
+      retryAfterSeconds?: number;
+      /** On 402 re-quotes with advertiseV2: the v2 PAYMENT-REQUIRED value. */
+      paymentRequiredHeader?: string;
+    }
   /** Verified and settled — serve, attaching settlementHeader as X-PAYMENT-RESPONSE. */
   | { kind: 'paid'; receipt: GateReceipt; settlementHeader: string };
 
@@ -96,11 +138,13 @@ export interface GateStats {
  * incoming payments, settles them through the configured rails, and keeps
  * vendor-side receipts so monetization is observable, not anecdotal.
  *
- * Check order for a presented payment: envelope decode -> quote consistency
- * (scheme/network/amount/recipient) -> payer screening -> replay burn ->
- * rails verify -> rails settle. The replay slot is burned BEFORE the async
- * legs so two concurrent copies of the same payment cannot both settle
- * (the mock ledger, unlike the chain, would happily double-spend).
+ * Check order for a presented payment: envelope decode -> rate limit ->
+ * quote consistency (scheme/network/amount/recipient) -> payer screening ->
+ * velocity caps -> replay burn -> rails verify -> rails settle. The replay
+ * slot is burned BEFORE the async legs so two concurrent copies of the same
+ * payment cannot both settle (the mock ledger, unlike the chain, would
+ * happily double-spend); throttle refusals fire before the burn so a
+ * velocity-refused header can be re-presented once its window clears.
  */
 export class Gate {
   private readonly routes: readonly GateRoute[];
@@ -109,6 +153,10 @@ export class Gate {
   private readonly allowPayers: Set<string> | undefined;
   private readonly denyPayers: Set<string>;
   private readonly screenCheck: ((payer: string) => string | undefined) | undefined;
+  private readonly advertiseV2: boolean;
+  private readonly velocity: GateVelocity | undefined;
+  private readonly attempts: AttemptWindow | undefined;
+  private readonly retryPolicy: { attempts: number; backoffMs: number };
   private readonly now: () => Date;
   private readonly bus = new EventEmitter();
   private readonly store: GateStorePort;
@@ -129,6 +177,16 @@ export class Gate {
       : undefined;
     this.denyPayers = new Set((options.screen?.denyPayers ?? []).map((a) => a.toLowerCase()));
     this.screenCheck = options.screen?.check;
+    this.advertiseV2 = options.advertiseV2 ?? false;
+    if (options.velocity) validateVelocity(options.velocity);
+    this.velocity = options.velocity;
+    this.attempts = options.velocity?.maxAttempts
+      ? new AttemptWindow(options.velocity.windowMs)
+      : undefined;
+    this.retryPolicy = {
+      attempts: options.retry?.attempts ?? 2,
+      backoffMs: options.retry?.backoffMs ?? 250,
+    };
     this.now = options.now ?? (() => new Date());
     this.store = options.store ?? new InMemoryGateStore();
   }
@@ -191,6 +249,7 @@ export class Gate {
         kind: 'quote',
         status: 402,
         body: { x402Version: 1, accepts: [requirement], error: 'X-PAYMENT header is required' },
+        ...this.v2Quote(requirement, 'PAYMENT-SIGNATURE header is required'),
       };
     }
 
@@ -198,11 +257,12 @@ export class Gate {
     try {
       const payment = inspectPaymentHeader(request.payment);
       payer = payment.payer;
+      this.checkRate(payment.payer);
       this.checkConsistency(payment, requirement);
       this.screenPayer(payment.payer);
+      this.checkVelocity(payment.payer, requirement, amount);
       await this.burnReplay(request.payment);
-      await this.rails.verify(request.payment, requirement);
-      const settlement = await this.rails.settle(request.payment, requirement);
+      const settlement = await this.settleThroughRails(request.payment, requirement);
 
       const receipt = GateReceipt.parse({
         id: newId('grc'),
@@ -271,7 +331,9 @@ export class Gate {
         `payment scheme "${payment.scheme}" does not match the quoted "${requirement.scheme}"`,
       );
     }
-    if (payment.network !== requirement.network) {
+    // Compared through CAIP-2 normalization: a v2 payment naming
+    // "eip155:84532" matches a gate configured with v1's "base-sepolia".
+    if (!sameNetwork(payment.network, requirement.network)) {
       throw new GateError(
         'network_mismatch',
         `payment is on "${payment.network}" but the quote wants "${requirement.network}"`,
@@ -289,6 +351,133 @@ export class Gate {
         `payment pays "${payment.to}" but the quote pays "${requirement.payTo}"`,
       );
     }
+  }
+
+  /**
+   * Presentation rate limit — first check after decode, so a hammering payer
+   * is shed before any further work. Every presentation counts, including
+   * ones that would go on to fail consistency or screening.
+   */
+  private checkRate(payer: string): void {
+    const max = this.velocity?.maxAttempts;
+    if (!max || !this.attempts) return;
+    const key = payer.toLowerCase();
+    const nowMs = this.now().getTime();
+    if (this.attempts.record(key, nowMs) > max) {
+      const retryAfterSeconds = Math.ceil(this.attempts.msUntilSlot(key, nowMs, max) / 1000);
+      throw new GateError(
+        'rate_limited',
+        `payer ${payer} exceeded ${max} payment presentations per ${this.velocity!.windowMs}ms`,
+        { retryAfterSeconds },
+      );
+    }
+  }
+
+  /**
+   * Settled-spend velocity caps, derived from receipts at check time (restart
+   * -safe on durable stores). Runs BEFORE the replay burn on purpose: a
+   * velocity refusal is temporal, not a payment defect, so the same signed
+   * header may come back once the window clears.
+   */
+  private checkVelocity(payer: string, requirement: PaymentRequirement, amount: string): void {
+    const v = this.velocity;
+    if (!v || (v.maxPayments === undefined && v.maxAmount === undefined)) return;
+    const nowMs = this.now().getTime();
+    const recent = payerReceiptsSince(this.store.receipts(), payer, nowMs - v.windowMs);
+
+    const oldest = recent[0];
+    if (v.maxPayments !== undefined && oldest !== undefined && recent.length >= v.maxPayments) {
+      const retryAfterSeconds = secondsUntil(oldest.at.getTime() + v.windowMs, nowMs);
+      throw new GateError(
+        'velocity_exceeded',
+        `payer ${payer} already settled ${recent.length} payments in the last ${v.windowMs}ms; the cap is ${v.maxPayments}`,
+        { retryAfterSeconds },
+      );
+    }
+
+    if (v.maxAmount !== undefined) {
+      const sameAsset = recent.filter((r) => r.asset === requirement.asset);
+      const oldestSameAsset = sameAsset[0];
+      const wouldBe = sumDecimal([...sameAsset.map((r) => r.amount), amount]);
+      if (gt(wouldBe, v.maxAmount)) {
+        // No Retry-After when the window is already empty — a single payment
+        // above the cap will never clear, and saying "try later" would lie.
+        const retryAfterSeconds =
+          oldestSameAsset !== undefined
+            ? secondsUntil(oldestSameAsset.at.getTime() + v.windowMs, nowMs)
+            : undefined;
+        throw new GateError(
+          'velocity_exceeded',
+          `settling ${amount} ${requirement.asset} would put payer ${payer} at ${wouldBe} in the last ${v.windowMs}ms; the cap is ${v.maxAmount}`,
+          { retryAfterSeconds },
+        );
+      }
+    }
+  }
+
+  /**
+   * Drive both rails legs under the retry policy (see GateRails for the error
+   * taxonomy). GateErrors are semantic verdicts and pass straight through.
+   * Transport failures:
+   *
+   * - verify (read-only): every transport failure is retried; exhausted ->
+   *   `rails_unavailable`, and the slot is released (settle never ran).
+   * - settle: only RailsUnreachableError (provably never sent) is retried;
+   *   exhausted -> `rails_unavailable` + release (still provably unsettled).
+   *   Anything else is ambiguous — the money MAY have moved — so it refuses
+   *   `settle_unknown` immediately and the slot STAYS burned: on real rails a
+   *   re-present would misreport (nonce already used -> settle_failed), and on
+   *   the mock ledger it would double-spend. Vendors reconcile ambiguous
+   *   settles against transaction records (e.g. the on-chain indexer).
+   */
+  private async settleThroughRails(
+    paymentHeader: string,
+    requirement: PaymentRequirement,
+  ): Promise<GateSettlement> {
+    await this.railsLeg('verify', paymentHeader, () =>
+      this.rails.verify(paymentHeader, requirement),
+    );
+    return this.railsLeg('settle', paymentHeader, () =>
+      this.rails.settle(paymentHeader, requirement),
+    );
+  }
+
+  private async railsLeg<T>(
+    leg: 'verify' | 'settle',
+    paymentHeader: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const { attempts, backoffMs } = this.retryPolicy;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= attempts; attempt++) {
+      if (attempt > 0 && backoffMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, backoffMs * attempt));
+      }
+      try {
+        return await fn();
+      } catch (err) {
+        if (err instanceof GateError) throw err;
+        if (leg === 'settle' && !(err instanceof RailsUnreachableError)) {
+          throw new GateError(
+            'settle_unknown',
+            `settlement fate unknown (${messageOf(err)}); do not re-pay before reconciling`,
+          );
+        }
+        lastErr = err;
+      }
+    }
+    // Exhausted retries on provably-unsettled failures: the payment did not
+    // happen. Release the slot so the same header can retry when rails return;
+    // a failed release just leaves it burned (conservative).
+    try {
+      await this.store.releaseReplay?.(replayKey(paymentHeader));
+    } catch {
+      // slot stays burned — the payer re-signs instead
+    }
+    throw new GateError(
+      'rails_unavailable',
+      `payment rails unreachable after ${attempts + 1} attempts (${messageOf(lastErr)}); the payment was NOT settled`,
+    );
   }
 
   private screenPayer(payer: string): void {
@@ -314,8 +503,7 @@ export class Gate {
    * guarantee replay protection" must never settle a payment.
    */
   private async burnReplay(paymentHeader: string): Promise<void> {
-    const key = createHash('sha256').update(paymentHeader).digest('hex');
-    if (!(await this.store.burnReplay(key))) {
+    if (!(await this.store.burnReplay(replayKey(paymentHeader)))) {
       throw new GateError(
         'payment_replayed',
         'this exact payment was already presented; one settlement per payment',
@@ -338,6 +526,8 @@ export class Gate {
       resource,
       payer,
     });
+    const retry =
+      err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {};
     if (err.code === 'payer_denied' || err.code === 'payer_not_allowed') {
       return {
         kind: 'refused',
@@ -347,6 +537,32 @@ export class Gate {
         body: { error: 'refused', code: err.code, reason: err.message },
       };
     }
+    if (err.code === 'rate_limited' || err.code === 'velocity_exceeded') {
+      return {
+        kind: 'refused',
+        status: 429,
+        code: err.code,
+        reason: err.message,
+        body: { error: 'refused', code: err.code, reason: err.message, ...retry },
+        ...retry,
+      };
+    }
+    if (err.code === 'rails_unavailable' || err.code === 'settle_unknown') {
+      // No accepts re-quote: after settle_unknown a re-pay could double-charge,
+      // and rails_unavailable means the SAME header will work later.
+      return {
+        kind: 'refused',
+        status: 503,
+        code: err.code,
+        reason: err.message,
+        body: {
+          error: 'refused',
+          code: err.code,
+          reason: err.message,
+          retriable: err.code === 'rails_unavailable',
+        },
+      };
+    }
     // Payment problems re-quote per the x402 spec: 402 + accepts + error.
     return {
       kind: 'refused',
@@ -354,10 +570,36 @@ export class Gate {
       code: err.code,
       reason: err.message,
       body: { x402Version: 1, accepts: [requirement], error: err.message },
+      ...this.v2Quote(requirement, err.message),
+    };
+  }
+
+  /** The v2 half of a dual-stack 402 (see advertiseV2), or nothing. */
+  private v2Quote(
+    requirement: PaymentRequirement,
+    error: string,
+  ): { paymentRequiredHeader: string } | Record<string, never> {
+    if (!this.advertiseV2) return {};
+    return {
+      paymentRequiredHeader: encodeBase64Json(buildPaymentRequiredV2(requirement, error)),
     };
   }
 }
 
 export function createGate(options: GateOptions): Gate {
   return new Gate(options);
+}
+
+/** The replay-slot key: hash of the exact header bytes as presented. */
+function replayKey(paymentHeader: string): string {
+  return createHash('sha256').update(paymentHeader).digest('hex');
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Whole seconds (>= 1) from nowMs until atMs — Retry-After semantics. */
+function secondsUntil(atMs: number, nowMs: number): number {
+  return Math.max(1, Math.ceil((atMs - nowMs) / 1000));
 }

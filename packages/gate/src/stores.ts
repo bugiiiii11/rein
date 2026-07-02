@@ -27,6 +27,14 @@ export interface GateStorePort {
    * the payer must re-quote).
    */
   burnReplay(key: string): MaybePromise<boolean>;
+  /**
+   * OPTIONAL: remove a burned slot (memory AND disk). The gate calls this in
+   * exactly one situation — the rails PROVABLY never saw the payment
+   * (`rails_unavailable`), so re-presenting the same header is safe once they
+   * return. Stores that omit it leave the slot burned: conservative, the
+   * payer re-signs instead. Never called after an ambiguous settle.
+   */
+  releaseReplay?(key: string): MaybePromise<void>;
   /** Record a settled payment's receipt (may trail; see flush). Note: the
    *  receipt is the ONLY durable record of a settlement — a hard crash with
    *  the tail unflushed permanently undercounts that payment's revenue. */
@@ -59,9 +67,9 @@ export class InMemoryGateStore implements GateStorePort {
   }
 
   /**
-   * Roll back a burn whose durable write failed — NOT part of the port (the
-   * gate never releases slots); exists so a persist-then-cache impl can leave
-   * memory untouched when its INSERT fails.
+   * Release a burned slot — on the port (optional) since the rails-unreachable
+   * path, and still what a persist-then-cache impl uses to leave memory
+   * untouched when its own INSERT fails.
    */
   releaseReplay(key: string): void {
     this.seenPayments.delete(key);

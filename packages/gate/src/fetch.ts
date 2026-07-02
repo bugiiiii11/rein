@@ -30,18 +30,32 @@ export function createGatedFetch(gate: Gate, options: GatedFetchOptions = {}): F
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
     );
 
-    const outcome = await gate.handle({ method, url, payment: headers.get('X-PAYMENT') });
+    const outcome = await gate.handle({
+      method,
+      url,
+      // Dual-stack: v2 payers send PAYMENT-SIGNATURE, v1 payers X-PAYMENT.
+      payment: headers.get('PAYMENT-SIGNATURE') ?? headers.get('X-PAYMENT'),
+    });
 
     if (outcome.kind === 'open') return serve({ url, method });
     if (outcome.kind === 'paid') {
       const response = await serve({ url, method });
       const merged = new Headers(response.headers);
       merged.set('X-PAYMENT-RESPONSE', outcome.settlementHeader);
+      merged.set('PAYMENT-RESPONSE', outcome.settlementHeader);
       return new Response(response.body, { status: response.status, headers: merged });
     }
     return new Response(JSON.stringify(outcome.body), {
       status: outcome.status,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(outcome.paymentRequiredHeader !== undefined
+          ? { 'payment-required': outcome.paymentRequiredHeader }
+          : {}),
+        ...(outcome.kind === 'refused' && outcome.retryAfterSeconds !== undefined
+          ? { 'retry-after': String(outcome.retryAfterSeconds) }
+          : {}),
+      },
     });
   };
 }

@@ -258,6 +258,18 @@ describe('ReputationGraph.ingest — gate-side events', () => {
     graph.ingest(gateRefused({ code: 'malformed_payment' }));
     expect(graph.subjects()).toBe(0);
   });
+
+  it('no-fault refusals (throttle + rails codes) carry NO evidence — not even the attempt', () => {
+    // One gate's rate limit must not bleed into a payer's GLOBAL score, and a
+    // settle_unknown payment may even have gone through — the gate-side
+    // parallel of "denied decisions count against no one".
+    const graph = graphAt();
+    for (const code of ['rate_limited', 'velocity_exceeded', 'rails_unavailable', 'settle_unknown']) {
+      graph.ingest(gateRefused({ payer: WALLET, code }));
+    }
+    expect(graph.subjects()).toBe(0);
+    expect(graph.explain({ kind: 'agent', id: WALLET })).toBeUndefined();
+  });
 });
 
 describe('ReputationGraph — receipts, reports, scores', () => {

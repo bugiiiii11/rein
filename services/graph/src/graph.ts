@@ -36,6 +36,20 @@ export interface EventSource {
 }
 
 /**
+ * Gate refusal codes that are the vendor's throttle or the vendor's rails
+ * failing — not payer misbehavior. They must never become reputation evidence
+ * (see the `gate.refused` case below). Mirrors @rein/gate's no-fault classes;
+ * kept as strings because the event schema deliberately carries codes as
+ * strings (remote gates may run other versions).
+ */
+const NO_FAULT_GATE_CODES = new Set([
+  'rate_limited',
+  'velocity_exceeded',
+  'rails_unavailable',
+  'settle_unknown',
+]);
+
+/**
  * Where vendor scores land. `PolicyEngine.spend` satisfies this structurally,
  * so `graph.syncVendors(engine.spend)` closes the loop — durable when the
  * engine runs on @rein/store.
@@ -230,7 +244,14 @@ export class ReputationGraph {
         return;
       }
       case 'gate.refused': {
-        if (!event.payer) return;
+        // No-fault refusals carry NO evidence — the gate-side parallel of
+        // "denied decisions count against no one". Throttle codes are the
+        // VENDOR'S cap (one gate's rate limit must not bleed into a payer's
+        // global score); rails codes are the vendor's infrastructure failing
+        // (a settle_unknown payment may even have gone through). Not even the
+        // attempt is recorded: an attempt with no settlement would silently
+        // drag settlementReliability down.
+        if (!event.payer || NO_FAULT_GATE_CODES.has(event.code)) return;
         const payer = this.resolve({ kind: 'agent', id: event.payer });
         this.fire(this.ledger.recordAttempt(payer, atMs));
         this.fire(this.ledger.recordRefusal(payer, event.code, atMs));

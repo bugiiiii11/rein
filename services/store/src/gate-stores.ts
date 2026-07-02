@@ -53,6 +53,19 @@ export class PgGateStore implements GateStorePort {
     );
   }
 
+  /**
+   * Rails-provably-unreachable path (see the port): remove the slot on disk
+   * FIRST, then in memory — deleting memory first would open a window where a
+   * re-presented header passes the sync check-and-set while the row still
+   * exists, turning the INSERT into a spurious unique-violation 500. If the
+   * DELETE fails, memory keeps the burn: conservative, the payer re-signs.
+   */
+  releaseReplay(key: string): Promise<void> {
+    return this.db.query('DELETE FROM gate_replays WHERE key = $1', [key]).then(() => {
+      this.mem.releaseReplay(key);
+    });
+  }
+
   appendReceipt(receipt: GateReceipt): Promise<void> {
     this.mem.appendReceipt(receipt);
     return this.tail.enqueue(async () => {

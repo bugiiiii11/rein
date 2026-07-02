@@ -27,7 +27,33 @@ const Envelope = z.object({
   payload: z.record(z.unknown()),
 });
 
+/**
+ * The v2 envelope (PAYMENT-SIGNATURE header): scheme/network live inside
+ * `accepted` — the requirement the payer chose — and the scheme payload keeps
+ * the same authorization nesting. `.passthrough()` keeps resource/extensions
+ * intact for rails that re-verify the envelope verbatim.
+ */
+const AcceptedV2 = z
+  .object({
+    scheme: z.string(),
+    network: z.string(),
+    amount: UintString,
+    asset: z.string().min(1),
+    payTo: z.string().min(1),
+  })
+  .passthrough();
+
+const EnvelopeV2 = z
+  .object({
+    x402Version: z.literal(2),
+    accepted: AcceptedV2,
+    payload: z.record(z.unknown()),
+  })
+  .passthrough();
+
 export interface InspectedPayment {
+  /** Which wire dialect the payment arrived in. */
+  version: 1 | 2;
   scheme: string;
   network: string;
   /** The paying wallet address (`from` in the transfer). */
@@ -44,29 +70,68 @@ export function inspectPaymentHeader(raw: string): InspectedPayment {
   try {
     json = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
   } catch {
-    throw new GateError('malformed_payment', 'X-PAYMENT is not base64-encoded JSON');
+    throw new GateError('malformed_payment', 'the payment header is not base64-encoded JSON');
   }
+
+  const claimed = (json as { x402Version?: unknown } | null)?.x402Version;
+  if (claimed === 2) {
+    const envelope = EnvelopeV2.safeParse(json);
+    if (!envelope.success) {
+      throw new GateError(
+        'malformed_payment',
+        `invalid v2 payment envelope: ${envelope.error.message}`,
+      );
+    }
+    const transfer = extractTransfer(envelope.data.payload, 'PAYMENT-SIGNATURE');
+    // A self-contradictory envelope (accepted terms vs signed transfer) is
+    // malformed on its face — no rails round-trip needed to refuse it.
+    if (transfer.value !== envelope.data.accepted.amount) {
+      throw new GateError(
+        'malformed_payment',
+        `v2 envelope contradicts itself: accepted.amount ${envelope.data.accepted.amount} vs signed value ${transfer.value}`,
+      );
+    }
+    return {
+      version: 2,
+      scheme: envelope.data.accepted.scheme,
+      network: envelope.data.accepted.network,
+      payer: transfer.from,
+      to: transfer.to,
+      value: transfer.value,
+      envelope: json,
+    };
+  }
+
   const envelope = Envelope.safeParse(json);
   if (!envelope.success) {
     throw new GateError('malformed_payment', `invalid X-PAYMENT envelope: ${envelope.error.message}`);
   }
-  // Exact-EVM nests the transfer in `authorization`; the mock payload is flat.
-  const source = envelope.data.payload['authorization'] ?? envelope.data.payload;
+  const transfer = extractTransfer(envelope.data.payload, 'X-PAYMENT');
+  return {
+    version: 1,
+    scheme: envelope.data.scheme,
+    network: envelope.data.network,
+    payer: transfer.from,
+    to: transfer.to,
+    value: transfer.value,
+    envelope: json,
+  };
+}
+
+/** Exact-EVM nests the transfer in `authorization`; the mock payload is flat. */
+function extractTransfer(
+  payload: Record<string, unknown>,
+  headerName: string,
+): z.infer<typeof Transfer> {
+  const source = payload['authorization'] ?? payload;
   const transfer = Transfer.safeParse(source);
   if (!transfer.success) {
     throw new GateError(
       'malformed_payment',
-      `X-PAYMENT carries no recognizable transfer: ${transfer.error.message}`,
+      `${headerName} carries no recognizable transfer: ${transfer.error.message}`,
     );
   }
-  return {
-    scheme: envelope.data.scheme,
-    network: envelope.data.network,
-    payer: transfer.data.from,
-    to: transfer.data.to,
-    value: transfer.data.value,
-    envelope: json,
-  };
+  return transfer.data;
 }
 
 /** Base64 the settlement for X-PAYMENT-RESPONSE (same codec all rails use). */

@@ -12,11 +12,19 @@ export interface FacilitatorClientOptions {
   fetch?: FetchLike;
 }
 
+/** Any x402 payment envelope — the POST's x402Version is read off of it. */
+export type AnyPaymentPayload = PaymentPayload | ({ x402Version: number } & Record<string, unknown>);
+/** Requirements in whichever dialect matches the payload (v1 or v2 shape). */
+export type AnyPaymentRequirements = PaymentRequirement | Record<string, unknown>;
+
 /**
- * HTTP client for a real x402 v1 facilitator. The vendor side of the rails:
- * verify checks the payment signature against the requirement, settle submits
- * the EIP-3009 authorization on-chain (the facilitator pays gas) and returns
- * the tx hash.
+ * HTTP client for a real x402 facilitator (v1 AND v2 — x402.org serves both).
+ * The vendor side of the rails: verify checks the payment signature against
+ * the requirement, settle submits the EIP-3009 authorization on-chain (the
+ * facilitator pays gas) and returns the tx hash. The POST's `x402Version` is
+ * derived from the payload envelope itself, and the caller must pass
+ * requirements in the SAME dialect (v2 payload → v2 `amount`/CAIP-2 shape;
+ * @rein/gate's facilitatorClientRails does this conversion).
  */
 export class FacilitatorClient {
   readonly url: string;
@@ -28,11 +36,17 @@ export class FacilitatorClient {
     this.fetch = (input, init) => f(input, init);
   }
 
-  async verify(payload: PaymentPayload, requirements: PaymentRequirement): Promise<VerifyResponse> {
+  async verify(
+    payload: AnyPaymentPayload,
+    requirements: AnyPaymentRequirements,
+  ): Promise<VerifyResponse> {
     return VerifyResponse.parse(await this.post('/verify', payload, requirements));
   }
 
-  async settle(payload: PaymentPayload, requirements: PaymentRequirement): Promise<SettleResponse> {
+  async settle(
+    payload: AnyPaymentPayload,
+    requirements: AnyPaymentRequirements,
+  ): Promise<SettleResponse> {
     return SettleResponse.parse(await this.post('/settle', payload, requirements));
   }
 
@@ -45,15 +59,18 @@ export class FacilitatorClient {
 
   private async post(
     path: string,
-    paymentPayload: PaymentPayload,
-    paymentRequirements: PaymentRequirement,
+    paymentPayload: AnyPaymentPayload,
+    paymentRequirements: AnyPaymentRequirements,
   ): Promise<unknown> {
-    // v1 envelope: the payment travels DECODED (JSON object, not base64) and
-    // the requirement is a single object, not the 402 body's accepts array.
+    // The payment travels DECODED (JSON object, not base64) and the
+    // requirement is a single object, not the 402 body's accepts array.
+    // Same envelope both versions; x402Version mirrors the payload's own.
+    const claimed = (paymentPayload as { x402Version?: unknown }).x402Version;
+    const x402Version = typeof claimed === 'number' ? claimed : 1;
     const res = await this.fetch(`${this.url}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ x402Version: 1, paymentPayload, paymentRequirements }),
+      body: JSON.stringify({ x402Version, paymentPayload, paymentRequirements }),
     });
     if (!res.ok) throw new FacilitatorHttpError(res.status, await res.text());
     return res.json();

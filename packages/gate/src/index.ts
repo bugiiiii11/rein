@@ -28,11 +28,22 @@ export {
 export {
   mockFacilitatorRails,
   facilitatorClientRails,
+  RailsUnreachableError,
   type GateRails,
   type GateSettlement,
   type MockFacilitatorLike,
   type FacilitatorClientLike,
 } from './rails.js';
+export { validateVelocity, type GateVelocity } from './velocity.js';
+export {
+  buildPaymentRequiredV2,
+  caip2Of,
+  encodeBase64Json,
+  sameNetwork,
+  v2Requirements,
+  type PaymentRequiredV2,
+  type PaymentRequirementsV2,
+} from './v2.js';
 export {
   InMemoryGateStore,
   type GateStorePort,

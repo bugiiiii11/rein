@@ -155,7 +155,10 @@ describe('gateMiddleware over real HTTP', () => {
     expect(world.ledger.entries()).toHaveLength(0);
   });
 
-  it('answers 500 on unexpected rails failures and keeps serving', async () => {
+  it('answers 503 on rails transport failures and keeps serving (S19 hardening)', async () => {
+    // Pre-hardening this was an escape-to-500; the gate now retries transport
+    // failures and refuses honestly with rails_unavailable. Either way the
+    // load-bearing property is the same: the vendor's server keeps serving.
     const gate = createGate({
       routes: [{ path: '/api/answer', price: '0.05' }],
       rails: {
@@ -166,6 +169,7 @@ describe('gateMiddleware over real HTTP', () => {
           throw new TypeError('unreachable');
         },
       },
+      retry: { attempts: 1, backoffMs: 0 },
       payTo: VENDOR,
       network: 'base',
       asset: 'USDC',
@@ -181,8 +185,12 @@ describe('gateMiddleware over real HTTP', () => {
     ).toString('base64');
 
     const broken = await fetch(`${vendorUrl}/api/answer`, { headers: { 'X-PAYMENT': header } });
-    expect(broken.status).toBe(500);
-    expect(await broken.json()).toMatchObject({ error: 'internal_error' });
+    expect(broken.status).toBe(503);
+    expect(await broken.json()).toMatchObject({
+      error: 'refused',
+      code: 'rails_unavailable',
+      retriable: true,
+    });
 
     // The vendor server survived: the next request still quotes normally.
     const next = await fetch(`${vendorUrl}/api/answer`);
