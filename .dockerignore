@@ -1,0 +1,15 @@
+# Keep the build context lean and force a clean install/build inside the image.
+.git
+**/node_modules
+**/dist
+**/.turbo
+.turbo
+
+# Local runtime state / secrets — never ship these into the image.
+.rein-data
+.rein-graph-data
+.rein-console-data*
+.env
+**/.env
+**/*.pem
+*.log
