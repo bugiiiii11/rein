@@ -99,6 +99,23 @@ export class PgSessionStore implements SessionStorePort {
     this.mem.unburnDecision(decisionId);
   }
 
+  /**
+   * TTL pruning: a burned voucher is dead weight once the signer's decision
+   * staleness window has long passed — any replay after it refuses as stale
+   * before the burn set is consulted, so dropping the row re-opens nothing.
+   * Pass a TTL comfortably above the staleness window (openReinStore defaults
+   * to 1 hour against the signer's 300s). Disk first, then the working set.
+   */
+  async pruneUsedDecisions(olderThanMs: number): Promise<number> {
+    const cutoff = Date.now() - olderThanMs;
+    const res = await this.db.query<{ decision_id: string }>(
+      'DELETE FROM signer_used_decisions WHERE burned_at < $1 RETURNING decision_id',
+      [cutoff],
+    );
+    for (const row of res.rows) this.mem.unburnDecision(row.decision_id);
+    return res.rows.length;
+  }
+
   findByTokenHash(hash: string): Session | undefined {
     return this.mem.findByTokenHash(hash);
   }

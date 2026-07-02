@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS signer_sessions (
 );
 
 CREATE TABLE IF NOT EXISTS signer_used_decisions (
-  decision_id TEXT PRIMARY KEY
+  decision_id TEXT PRIMARY KEY,
+  burned_at   BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT)
 );
 
 CREATE TABLE IF NOT EXISTS gate_receipts (
@@ -118,7 +119,8 @@ CREATE TABLE IF NOT EXISTS gate_receipts (
 );
 
 CREATE TABLE IF NOT EXISTS gate_replays (
-  key TEXT PRIMARY KEY
+  key       TEXT PRIMARY KEY,
+  burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT)
 );
 
 CREATE TABLE IF NOT EXISTS gate_counters (
@@ -128,10 +130,24 @@ CREATE TABLE IF NOT EXISTS gate_counters (
 );
 `;
 
+/**
+ * Additive migrations for data dirs created before the column existed.
+ * `ADD COLUMN ... DEFAULT (volatile)` backfills existing rows at ALTER time —
+ * pre-migration burns start their TTL clock at the migration, which is the
+ * conservative direction (never prunes early).
+ */
+const MIGRATIONS = `
+ALTER TABLE signer_used_decisions
+  ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
+ALTER TABLE gate_replays
+  ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
+`;
+
 /** Open (or create) the PGlite database and ensure the schema exists. */
 export async function openDb(dir?: string): Promise<PGlite> {
   const db = dir ? new PGlite(dir) : new PGlite();
   await db.waitReady;
   await db.exec(SCHEMA);
+  await db.exec(MIGRATIONS);
   return db;
 }

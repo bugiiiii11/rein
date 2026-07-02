@@ -493,6 +493,34 @@ describe('PgGateStore across restarts', () => {
     await expect(store.burnReplay('slot_flaky')).resolves.toBe(false);
   });
 
+  it('TTL pruning drops aged burns from disk AND the working set, sparing fresh ones', async () => {
+    const db = await openDb();
+    dbs.push(db);
+    const sessions = await PgSessionStore.open(db);
+    const gateStore = await PgGateStore.open(db);
+
+    await sessions.burnDecision('dec_old');
+    await sessions.burnDecision('dec_new');
+    await gateStore.burnReplay('slot_old');
+    await gateStore.burnReplay('slot_new');
+    // Age the old rows retroactively — burned_at is the pruning clock.
+    await db.query(`UPDATE signer_used_decisions SET burned_at = $1 WHERE decision_id = 'dec_old'`, [
+      Date.now() - 7_200_000,
+    ]);
+    await db.query(`UPDATE gate_replays SET burned_at = $1 WHERE key = 'slot_old'`, [
+      Date.now() - 172_800_000,
+    ]);
+
+    expect(await sessions.pruneUsedDecisions(3_600_000)).toBe(1);
+    expect(await gateStore.pruneReplays(86_400_000)).toBe(1);
+
+    // Working set followed the disk: only the aged entries re-opened.
+    expect(sessions.isDecisionUsed('dec_old')).toBe(false);
+    expect(sessions.isDecisionUsed('dec_new')).toBe(true);
+    expect(await gateStore.burnReplay('slot_old')).toBe(true); // presentable again
+    expect(await gateStore.burnReplay('slot_new')).toBe(false); // still burned
+  });
+
   it('a failed telemetry write surfaces on flush(), then clears', async () => {
     const dir = tempDir();
     const store = await open(dir);

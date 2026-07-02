@@ -66,6 +66,24 @@ export class PgGateStore implements GateStorePort {
     });
   }
 
+  /**
+   * TTL pruning for replay slots. SAFE against real rails: an EIP-3009
+   * authorization expires at validBefore (the requirement's maxTimeoutSeconds,
+   * ~300s), so a header older than the TTL is refused by the rails themselves
+   * and its slot re-opens nothing. MOCK rails have no expiry — a pruned header
+   * COULD re-present there, which is acceptable for the mock's demo scope but
+   * is why the TTL default (24h in openReinStore) is deliberately generous.
+   */
+  async pruneReplays(olderThanMs: number): Promise<number> {
+    const cutoff = Date.now() - olderThanMs;
+    const res = await this.db.query<{ key: string }>(
+      'DELETE FROM gate_replays WHERE burned_at < $1 RETURNING key',
+      [cutoff],
+    );
+    for (const row of res.rows) this.mem.releaseReplay(row.key);
+    return res.rows.length;
+  }
+
   appendReceipt(receipt: GateReceipt): Promise<void> {
     this.mem.appendReceipt(receipt);
     return this.tail.enqueue(async () => {

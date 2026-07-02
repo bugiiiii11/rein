@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, it, expect } from 'vitest';
 import { newId, type Receipt, type ReinEvent } from '@rein/core';
-import { subjectKey } from './evidence.js';
+import { EvidenceLedger, subjectKey } from './evidence.js';
 import { ReputationGraph, payerCheck } from './graph.js';
 
 const DAY = 86_400_000;
@@ -257,6 +257,25 @@ describe('ReputationGraph.ingest — gate-side events', () => {
     const graph = graphAt();
     graph.ingest(gateRefused({ code: 'malformed_payment' }));
     expect(graph.subjects()).toBe(0);
+  });
+
+  it('a synchronously-throwing ledger cannot crash ingest (fire takes a thunk)', () => {
+    // Parity with the gate's fire() (S19): telemetry failures surface via
+    // flush(), never as an exception out of a bus handler.
+    const ledger = new EvidenceLedger();
+    const throwing = new Proxy(ledger, {
+      get(target, prop, receiver) {
+        if (prop === 'recordAttempt') {
+          return () => {
+            throw new Error('sync ledger explosion');
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const graph = new ReputationGraph({ now: () => NOW, ledger: throwing });
+    expect(() => graph.ingest(gateSettled({}))).not.toThrow();
   });
 
   it('no-fault refusals (throttle + rails codes) carry NO evidence — not even the attempt', () => {

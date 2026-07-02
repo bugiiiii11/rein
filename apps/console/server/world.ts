@@ -1227,8 +1227,30 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     return () => listeners.delete(listener);
   }
 
+  // Durable-store maintenance (S19): flush() is the write-behind error
+  // channel — if it only ran at close(), a mid-run disk failure would stay
+  // invisible until shutdown. Drain gate + graph tails every 30s (surfacing
+  // the first failure in the logs within seconds of it happening) and TTL-
+  // prune the burn tables so a long-lived console doesn't accrete them.
+  let maintenanceTimer: NodeJS.Timeout | undefined;
+  if (store) {
+    maintenanceTimer = setInterval(() => {
+      void (async () => {
+        try {
+          await gate.flush();
+          await graph.flush();
+          await store.prune();
+        } catch (err) {
+          console.error('[console] store maintenance failed (telemetry may be lagging):', err);
+        }
+      })();
+    }, 30_000);
+    maintenanceTimer.unref?.();
+  }
+
   async function close(): Promise<void> {
     if (syncTimer) clearTimeout(syncTimer);
+    if (maintenanceTimer) clearInterval(maintenanceTimer);
     await app.close();
     // Flush write-behind reputation evidence before the handle goes away. A
     // failure here means some evidence was NOT persisted — log it loudly, but

@@ -52,8 +52,23 @@ export interface ReinStore {
   resumedSessions: number;
   /** Number of gate receipts resumed from disk (0 on first boot). */
   resumedReceipts: number;
+  /**
+   * TTL-prune the unbounded burn tables: signer voucher burns (dead once the
+   * signer's 300s staleness window has long passed) and gate replay slots
+   * (dead once the payment's on-chain authorization has expired — see
+   * PgGateStore.pruneReplays for the mock-rails caveat behind the generous
+   * default). Runs once at open; long-lived servers should call it
+   * periodically. Defaults: usedDecisions 1h, replays 24h; pass 0 to skip one.
+   */
+  prune(options?: {
+    usedDecisionsOlderThanMs?: number;
+    replaysOlderThanMs?: number;
+  }): Promise<{ usedDecisions: number; replays: number }>;
   close(): Promise<void>;
 }
+
+const PRUNE_USED_DECISIONS_MS = 3_600_000; // 12x the signer's 300s staleness window
+const PRUNE_REPLAYS_MS = 86_400_000; // authorizations expire in ~300s; 24h is generous
 
 /**
  * Open (or create) a durable Rein store. Hydrates the working set, loads or
@@ -88,6 +103,20 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       },
     });
 
+    const prune = async (
+      options: { usedDecisionsOlderThanMs?: number; replaysOlderThanMs?: number } = {},
+    ) => {
+      const usedTtl = options.usedDecisionsOlderThanMs ?? PRUNE_USED_DECISIONS_MS;
+      const replayTtl = options.replaysOlderThanMs ?? PRUNE_REPLAYS_MS;
+      return {
+        usedDecisions: usedTtl > 0 ? await sessions.pruneUsedDecisions(usedTtl) : 0,
+        replays: replayTtl > 0 ? await gate.pruneReplays(replayTtl) : 0,
+      };
+    };
+    // Boot-time sweep: restarts are when accretion actually bites (every boot
+    // resumed the whole burn history until now).
+    await prune();
+
     return {
       spend,
       policies,
@@ -103,6 +132,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       resumedSubjects: ledger.size,
       resumedSessions: sessions.size,
       resumedReceipts: gate.receipts().length,
+      prune,
       // Drain pending write-behind state (reputation evidence, gate telemetry)
       // before closing the handle — a clean shutdown must flush to be durable.
       // The db is closed even when a flush fails — the handle must not leak —

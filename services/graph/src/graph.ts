@@ -166,8 +166,15 @@ export class ReputationGraph {
    * durable write must never become an unhandled rejection (Node kills the
    * process). Failures are the port's to surface — flush() throws them.
    */
-  private fire(write: MaybePromise<void>): void {
-    void Promise.resolve(write).catch(() => undefined);
+  private fire(write: () => MaybePromise<void>): void {
+    // Thunk form (parity with the gate's fire, S19): a ledger that THROWS
+    // synchronously must not turn an ingest into a crash — telemetry failures
+    // are the port's to surface, and flush() throws them.
+    try {
+      void Promise.resolve(write()).catch(() => undefined);
+    } catch {
+      // swallowed by design — see above
+    }
   }
 
   /**
@@ -187,7 +194,7 @@ export class ReputationGraph {
     for (const [key, resolved] of this.aliases) {
       if (subjectKey(resolved) === aliasKey) this.aliases.set(key, target);
     }
-    this.fire(this.ledger.merge(target, alias));
+    this.fire(() => this.ledger.merge(target, alias));
   }
 
   /** The canonical subject for a possibly-aliased one. */
@@ -199,7 +206,7 @@ export class ReputationGraph {
     const atMs = event.at.getTime();
     switch (event.type) {
       case 'intent.created': {
-        this.fire(
+        this.fire(() =>
           this.intents.remember(event.intent.id, {
             agentId: event.intent.agentId,
             host: event.intent.vendor.host,
@@ -212,8 +219,8 @@ export class ReputationGraph {
         if (event.decision.outcome !== 'allow') return;
         const facts = this.intents.peek(event.decision.intentId);
         if (!facts) return;
-        this.fire(this.ledger.recordAttempt(this.resolve({ kind: 'agent', id: facts.agentId }), atMs));
-        this.fire(this.ledger.recordAttempt(this.resolve({ kind: 'vendor', id: facts.host }), atMs));
+        this.fire(() => this.ledger.recordAttempt(this.resolve({ kind: 'agent', id: facts.agentId }), atMs));
+        this.fire(() => this.ledger.recordAttempt(this.resolve({ kind: 'vendor', id: facts.host }), atMs));
         return;
       }
       case 'payment.settled': {
@@ -221,26 +228,27 @@ export class ReputationGraph {
         if (!facts) return; // unattributable — no subject to credit
         const agent = this.resolve({ kind: 'agent', id: facts.agentId });
         const vendor = this.resolve({ kind: 'vendor', id: facts.host });
-        this.fire(this.ledger.recordSettlement(agent, vendor, facts.amount, atMs));
+        this.fire(() => this.ledger.recordSettlement(agent, vendor, facts.amount, atMs));
         return;
       }
       case 'shadow.spend': {
-        this.fire(this.ledger.recordShadowSpend(this.resolve({ kind: 'agent', id: event.agentId }), atMs));
+        this.fire(() => this.ledger.recordShadowSpend(this.resolve({ kind: 'agent', id: event.agentId }), atMs));
         return;
       }
       case 'signature.refused': {
-        if (!event.agentId) return;
-        this.fire(
-          this.ledger.recordRefusal(this.resolve({ kind: 'agent', id: event.agentId }), event.code, atMs),
+        const agentId = event.agentId; // hoisted: narrowing must survive the thunk
+        if (!agentId) return;
+        this.fire(() =>
+          this.ledger.recordRefusal(this.resolve({ kind: 'agent', id: agentId }), event.code, atMs),
         );
         return;
       }
       case 'gate.settled': {
         const payer = this.resolve({ kind: 'agent', id: event.receipt.payer });
         const recipient = this.resolve({ kind: 'vendor', id: event.receipt.payTo });
-        this.fire(this.ledger.recordAttempt(payer, atMs));
-        this.fire(this.ledger.recordAttempt(recipient, atMs));
-        this.fire(this.ledger.recordSettlement(payer, recipient, event.receipt.amount, atMs));
+        this.fire(() => this.ledger.recordAttempt(payer, atMs));
+        this.fire(() => this.ledger.recordAttempt(recipient, atMs));
+        this.fire(() => this.ledger.recordSettlement(payer, recipient, event.receipt.amount, atMs));
         return;
       }
       case 'gate.refused': {
@@ -253,8 +261,8 @@ export class ReputationGraph {
         // drag settlementReliability down.
         if (!event.payer || NO_FAULT_GATE_CODES.has(event.code)) return;
         const payer = this.resolve({ kind: 'agent', id: event.payer });
-        this.fire(this.ledger.recordAttempt(payer, atMs));
-        this.fire(this.ledger.recordRefusal(payer, event.code, atMs));
+        this.fire(() => this.ledger.recordAttempt(payer, atMs));
+        this.fire(() => this.ledger.recordRefusal(payer, event.code, atMs));
         return;
       }
       // signature.released and gate.quoted carry no evidence the engine-side
@@ -276,10 +284,10 @@ export class ReputationGraph {
     const atMs = receipt.createdAt.getTime();
     const agent = this.resolve({ kind: 'agent', id: receipt.agentId });
     const vendor = this.resolve({ kind: 'vendor', id: receipt.vendorHost });
-    this.fire(this.ledger.recordAttempt(agent, atMs));
-    this.fire(this.ledger.recordAttempt(vendor, atMs));
+    this.fire(() => this.ledger.recordAttempt(agent, atMs));
+    this.fire(() => this.ledger.recordAttempt(vendor, atMs));
     if (receipt.settlement?.txHash) {
-      this.fire(this.ledger.recordSettlement(agent, vendor, receipt.amount, atMs));
+      this.fire(() => this.ledger.recordSettlement(agent, vendor, receipt.amount, atMs));
     }
   }
 
@@ -287,8 +295,8 @@ export class ReputationGraph {
   report(input: ManualReport): void {
     const atMs = (input.at ?? this.now()).getTime();
     const subject = this.resolve(input.subject);
-    if (input.kind === 'dispute') this.fire(this.ledger.recordDispute(subject, atMs));
-    else this.fire(this.ledger.recordEndorsement(subject, atMs));
+    if (input.kind === 'dispute') this.fire(() => this.ledger.recordDispute(subject, atMs));
+    else this.fire(() => this.ledger.recordEndorsement(subject, atMs));
   }
 
   /** Await any pending durable writes (no-op for in-memory stores). */
