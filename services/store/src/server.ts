@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * The persistent policy-engine service: the exact HTTP API of
  * @rein/policy-engine's server, but agents, policies, spend history, the
@@ -30,14 +31,23 @@ export async function startPersistentEngine(options: {
   const store = await openReinStore({ dir: options.dir });
   const engine = new PolicyEngine(store);
   const app = buildServer(engine);
-  await app.listen({ port: options.port, host: options.host ?? '0.0.0.0' });
+  try {
+    await app.listen({ port: options.port, host: options.host ?? '0.0.0.0' });
+  } catch (err) {
+    // A failed listen (port in use) must not leak the open PGlite handle.
+    await store.close().catch(() => undefined);
+    throw err;
+  }
   return {
     app,
     engine,
     store,
     close: async () => {
-      await app.close();
-      await store.close();
+      try {
+        await app.close();
+      } finally {
+        await store.close();
+      }
     },
   };
 }

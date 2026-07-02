@@ -53,6 +53,7 @@ import {
   type GateRails,
 } from '@rein/gate';
 import { ReputationGraph, payerCheck } from '@rein/graph';
+import { openReinStore } from '@rein/store';
 import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@rein/signer';
 import {
   chainIdForNetwork,
@@ -140,15 +141,30 @@ interface AgentRuntime {
 export interface World {
   getState(): ConsoleState;
   subscribe(listener: (ev: ServerEvent) => void): () => void;
-  freeze(agentId: string): boolean;
-  unfreeze(agentId: string): boolean;
+  freeze(agentId: string): Promise<boolean>;
+  unfreeze(agentId: string): Promise<boolean>;
   pingAgent(agentId: string): Promise<boolean>;
   runDemo(): boolean;
   close(): Promise<void>;
 }
 
-export async function createWorld(): Promise<World> {
-  const engine = new PolicyEngine();
+export interface WorldOptions {
+  /**
+   * PGlite data directory. When set, the policy engine AND the reputation
+   * graph run on @rein/store — agents, policies, the decision chain, rolling
+   * spend, and reputation evidence survive restarts (the boot seed + scenario
+   * run only when the store is fresh). Omit for the classic in-memory world.
+   * The feed, mock ledger, gate stats, and signer sessions stay ephemeral
+   * either way: they are this process's telemetry, not durable state — which
+   * also means resumed agents render (and freeze) but are not pingable until
+   * a new scenario run provisions fresh runtimes.
+   */
+  dataDir?: string;
+}
+
+export async function createWorld(options: WorldOptions = {}): Promise<World> {
+  const store = options.dataDir ? await openReinStore({ dir: options.dataDir }) : undefined;
+  const engine = store ? new PolicyEngine(store) : new PolicyEngine();
   const app = buildServer(engine);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -170,7 +186,11 @@ export async function createWorld(): Promise<World> {
   // pure functions of the evidence it accumulates — recomputed per call, never
   // stored — and feed back into enforcement on both sides: vendor scores sync
   // into the engine (vendorReputationLt fires), payer scores screen the gate.
-  const graph = new ReputationGraph();
+  // On a persistent world the SAME store backs the evidence ledger, so the
+  // scoreboard survives restarts alongside the engine state it governs.
+  const graph = store
+    ? new ReputationGraph({ ledger: store.ledger, intents: store.intents })
+    : new ReputationGraph();
 
   // EIP-3009 nonces are keccak256(intent.id); remembering the mapping lets the
   // rails settle session-tier payments onto the ledger with the intent-id memo
@@ -316,7 +336,12 @@ export async function createWorld(): Promise<World> {
   const feed: FeedItem[] = [];
   const listeners = new Set<(ev: ServerEvent) => void>();
   let seq = 0;
-  let demoRuns = 0;
+  // Resume the run counter from resumed agent names so a restarted persistent
+  // world's next run doesn't mint a duplicate "research-agent-1".
+  let demoRuns = engine.agents.list().reduce((max, a) => {
+    const m = /^research-agent-(\d+)$/.exec(a.name);
+    return m ? Math.max(max, Number(m[1])) : max;
+  }, 0);
   let demo: DemoStatus = { running: false, phase: 'idle' };
   let syncTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSyncAt: string | null = null;
@@ -724,11 +749,12 @@ export async function createWorld(): Promise<World> {
   }
 
   // ── agent provisioning ───────────────────────────────────────────────────
-  // Engine writes return promises for durable stores; this world is in-memory,
-  // where the effect lands synchronously before the (already-resolved) promise,
-  // so the view emits below see it. `void` documents the deliberate non-await.
-  function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): void {
-    void engine.registerAgent({
+  // Engine writes are AWAITED: on a persistent store they land on disk before
+  // the working set reflects them, and the very next scenario beat evaluates
+  // against this agent — an unawaited write would race it. (In-memory stores
+  // resolve immediately, so the await costs nothing there.)
+  async function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): Promise<void> {
+    await engine.registerAgent({
       id: agentId,
       orgId: newId('org'),
       name,
@@ -736,7 +762,7 @@ export async function createWorld(): Promise<World> {
       status: 'active',
       createdAt: new Date(),
     });
-    void engine.addPolicy({
+    await engine.addPolicy({
       policyId: `policy-${name}`,
       appliesTo: { agents: [agentId] },
       rules: [
@@ -763,15 +789,15 @@ export async function createWorld(): Promise<World> {
   }
 
   /** SDK tier: the agent holds its own (mock) wallet key. */
-  function provisionAgent(name: string): {
+  async function provisionAgent(name: string): Promise<{
     agentId: string;
     wallet: string;
     fetch: FetchLike;
     lastHeader: () => string;
-  } {
+  }> {
     const agentId = newId('agt');
     const wallet = `0x${name.replace(/[^a-z0-9]/gi, '')}Wallet`;
-    addAgentPolicy(name, agentId, { address: wallet, mode: 'sdk' });
+    await addAgentPolicy(name, agentId, { address: wallet, mode: 'sdk' });
     // Capture raw X-PAYMENT headers — the replay scenario re-presents one.
     let captured = '';
     const inner = facilitator.payerFor(wallet);
@@ -785,16 +811,16 @@ export async function createWorld(): Promise<World> {
   }
 
   /** Session-key tier: the wallet key never leaves the signer. */
-  function provisionSessionAgent(name: string): {
+  async function provisionSessionAgent(name: string): Promise<{
     agentId: string;
     wallet: string;
     fetch: FetchLike;
     sessionToken: string;
     lastSignRequest: () => SignRequest | undefined;
-  } {
+  }> {
     const agentId = newId('agt');
     const wallet = signer.registerWallet(agentId, generatePrivateKey());
-    addAgentPolicy(name, agentId, { address: wallet, mode: 'session-key' });
+    await addAgentPolicy(name, agentId, { address: wallet, mode: 'session-key' });
     const { token } = signer.createSession({
       agentId,
       capAmount: SESSION_CAP,
@@ -824,7 +850,7 @@ export async function createWorld(): Promise<World> {
     demoRuns += 1;
     const name = `research-agent-${demoRuns}`;
     setPhase(`spinning up ${name}`);
-    const sdk = provisionAgent(name);
+    const sdk = await provisionAgent(name);
     await sleep(gap);
 
     // 1 — four allowed, paid calls within the rolling budget (quote → allow →
@@ -870,7 +896,7 @@ export async function createWorld(): Promise<World> {
     // 8 — the custody tier: a session-key agent, wallet held by the signer
     const sessionName = `session-agent-${demoRuns}`;
     setPhase(`spinning up ${sessionName} (key in custody)`);
-    const session = provisionSessionAgent(sessionName);
+    const session = await provisionSessionAgent(sessionName);
     await sleep(gap);
 
     // 9 — two voucher-gated EIP-3009 purchases (signature.released each time)
@@ -895,7 +921,7 @@ export async function createWorld(): Promise<World> {
     // 12 — reputation closes the loop on the engine: a fresh agent probes a
     //      vendor the network already burned — denied before any payment exists
     setPhase(`reputation check: ${SKETCHY_VENDOR}`);
-    const proc = provisionAgent(`procurement-agent-${demoRuns}`);
+    const proc = await provisionAgent(`procurement-agent-${demoRuns}`);
     await proc.fetch(`https://${SKETCHY_VENDOR}/v1/query`).catch(swallowGoverned);
     await sleep(gap);
 
@@ -929,17 +955,17 @@ export async function createWorld(): Promise<World> {
     return true;
   }
 
-  function freeze(agentId: string): boolean {
+  async function freeze(agentId: string): Promise<boolean> {
     if (!engine.agents.list().some((a) => a.id === agentId)) return false;
-    void engine.freeze(agentId); // in-memory: effect is synchronous (see addAgentPolicy)
+    await engine.freeze(agentId); // durable stores persist BEFORE the registry reflects it
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'stats', stats: computeStats() });
     return true;
   }
 
-  function unfreeze(agentId: string): boolean {
+  async function unfreeze(agentId: string): Promise<boolean> {
     if (!engine.agents.list().some((a) => a.id === agentId)) return false;
-    void engine.unfreeze(agentId); // in-memory: effect is synchronous (see addAgentPolicy)
+    await engine.unfreeze(agentId);
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'stats', stats: computeStats() });
     return true;
@@ -974,14 +1000,34 @@ export async function createWorld(): Promise<World> {
   async function close(): Promise<void> {
     if (syncTimer) clearTimeout(syncTimer);
     await app.close();
+    // Flush write-behind reputation evidence before the handle goes away. A
+    // failure here means some evidence was NOT persisted — log it loudly, but
+    // don't take the dev-server teardown down with it.
+    if (store) {
+      await store.close().catch((err: unknown) => {
+        console.error('[console] store close failed (unflushed evidence may be lost):', err);
+      });
+    }
   }
 
-  // Seed an initial story so the console is alive on first load. Reputation
-  // history lands first and is synced into the engine BEFORE the scenario,
-  // so the reputation-gate beats evaluate against current scores.
-  seedReputationHistory();
+  // Seed an initial story so the console is alive on first load — but only on
+  // a FRESH store. A resumed world already carries its history (re-seeding
+  // would double-count the imported evidence), so it boots straight onto the
+  // resumed state; the feed starts empty because it is telemetry, not state.
+  // Reputation history lands first and is synced into the engine BEFORE the
+  // scenario, so the reputation-gate beats evaluate against current scores.
+  const fresh = store?.fresh ?? true;
+  if (fresh) seedReputationHistory();
   await syncGraph();
-  await playScenario(false);
+  if (fresh) await playScenario(false);
+  if (store) {
+    console.log(
+      `[rein] console world on ${options.dataDir}: ` +
+        (fresh
+          ? 'fresh store (seeded)'
+          : `resumed ${store.resumedDecisions} decisions, ${store.resumedSubjects} reputation subjects, ${engine.agents.list().length} agents`),
+    );
+  }
 
   return { getState, subscribe, freeze, unfreeze, pingAgent, runDemo, close };
 }

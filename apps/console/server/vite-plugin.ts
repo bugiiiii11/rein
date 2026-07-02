@@ -12,7 +12,9 @@ export function reinConsole(): Plugin {
     name: 'rein-console-api',
     apply: 'serve',
     async configureServer(server) {
-      const world = await createWorld();
+      // Same env knob as the standalone server: set REIN_CONSOLE_DATA_DIR to
+      // make engine state + reputation evidence survive dev-server restarts.
+      const world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
       const handle = createApiHandler(world);
       server.middlewares.use((req, res, next) => {
         if (!handle(req, res)) next();

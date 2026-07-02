@@ -22,7 +22,9 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
 };
 
-const world = await createWorld();
+// Set REIN_CONSOLE_DATA_DIR to run the console on @rein/store: engine state
+// and reputation evidence survive restarts (the boot seed runs once per dir).
+const world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
 const handle = createApiHandler(world);
 
 async function serveFile(path: string): Promise<{ body: Buffer; type: string } | null> {

@@ -26,17 +26,17 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/console`** — a live "mission control" web UI over the whole stack: decisions, vendor-gate quotes/receipts/refusals, signer releases, settlements, and shadow spends streaming in real time; kill switch, vendor revenue panel, the live reputation scoreboard (scores, confidence, and the evidence behind them), and the tamper-evident audit chain.
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
-- **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam.
+- **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam. The reputation graph's **evidence ledger persists here too** (scores are never stored — they recompute byte-identically from rehydrated evidence), including in-flight intent correlations, so a settlement that lands after a restart is still attributed.
 - **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening.
 
-**248 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
+**259 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 248 tests, fully offline
+pnpm test            # 259 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -73,6 +73,8 @@ Click **Run scenario** to play the full two-sided story, paced so you can watch 
 
 The session-key payments in this world are real EIP-3009 signatures, verified cryptographically (signature recovery against the quoted USDC contract domain) before the gate settles them — a forged or tampered authorization genuinely fails. For a production-style serve (built UI + API on one port): `pnpm --filter @rein/console build && pnpm --filter @rein/console start`.
 
+Set `REIN_CONSOLE_DATA_DIR` to run the console world on `@rein/store`: agents, policies, the kill switch, the decision chain, rolling budgets, and the reputation scoreboard all survive a restart (the boot seed runs once per data directory; the feed is telemetry and starts fresh). Kill the server mid-story, start it again, and run the scenario — the new agents pick up numbered names where the old ones left off, the chain extends the pre-restart hashes, and the door still turns away the offender on evidence recorded before the kill.
+
 Run the policy engine standalone:
 
 ```bash
@@ -96,13 +98,27 @@ REIN_DATA_DIR=.rein-data node services/store/dist/server.js
 
 Kill it and start it again: agents, the kill switch, policies (in evaluation order), rolling budgets ("$0.60 of the daily $1.00 already spent — _before_ the restart"), and the decision log all come back. The ed25519 signing key is persisted too, so the hash chain **continues** across restarts — the first post-restart decision links to the last pre-restart hash, and `verifyDecisionChain` validates the whole history under one key, no seam.
 
-Composing it in code is one line:
+The reputation graph gets the same treatment — the same store persists its evidence ledger (and the in-flight intent correlation map, so a settlement that lands after a restart is still attributed to the agent and vendor behind it). Scores are never stored: they recompute from the rehydrated evidence, byte-identical under the same clock.
+
+```bash
+# The graph HTTP API, durable (use a DIFFERENT data dir than the engine —
+# two processes can't share one PGlite directory):
+# PowerShell
+$env:REIN_GRAPH_DATA_DIR=".rein-graph-data"; node services/store/dist/graph-server.js
+# bash
+REIN_GRAPH_DATA_DIR=.rein-graph-data node services/store/dist/graph-server.js
+```
+
+Composing it in code is one line per side — in a single process, one store backs both:
 
 ```ts
 import { PolicyEngine } from '@rein/policy-engine';
+import { ReputationGraph } from '@rein/graph';
 import { openReinStore } from '@rein/store';
 
-const engine = new PolicyEngine(await openReinStore({ dir: '.rein-data' }));
+const store = await openReinStore({ dir: '.rein-data' });
+const engine = new PolicyEngine(store);
+const graph = new ReputationGraph({ ledger: store.ledger, intents: store.intents });
 ```
 
 ## Real rails: Base Sepolia
@@ -207,7 +223,7 @@ createGate({ screen: { check: payerCheck(graph, { denyBelow: 40 }) }, ... });
 pnpm --filter @rein/demo demo:graph   # five scenarios, offline: both feedback loops close live
 ```
 
-Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores`. Or watch it live: the console world runs a graph over all four buses, re-syncs it into the engine after every burst of evidence, and renders the scoreboard with click-to-expand explanations.
+Run it as a service (`buildGraphServer`): remote producers `POST /v1/events`, anyone reads `GET /v1/scores` — or run the **durable variant** (`services/store/dist/graph-server.js`), where the evidence survives restarts (see Persistence). Or watch it live: the console world runs a graph over all four buses, re-syncs it into the engine after every burst of evidence, and renders the scoreboard with click-to-expand explanations.
 
 ## The SDK one-liner
 
@@ -282,7 +298,7 @@ services/
   mock-rails/    @rein/mock-rails     — mock x402 facilitator + ledger + indexer
   x402-rails/    @rein/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
   signer/        @rein/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
-  store/         @rein/store          — persistence: PGlite-backed engine stores; key, chain, agents, policies, spend survive restarts
+  store/         @rein/store          — persistence: PGlite-backed engine + graph stores; key, chain, agents, policies, spend, reputation evidence survive restarts
   graph/         @rein/graph          — reputation: evidence off every bus, explainable scores, feedback into policy + gate screening
 apps/
   demo/          @rein/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate + graph

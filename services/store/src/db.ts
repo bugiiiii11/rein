@@ -11,6 +11,11 @@ import { PGlite } from '@electric-sql/pglite';
  *   registry has never seen persists too, mirroring InMemoryAgentRegistry.
  * - `policies.seq` is evaluation order: first-applicable-wins, and an upserted
  *   policy moves to the END, exactly like the in-memory store.
+ * - `graph_*` hold @rein/graph's reputation evidence (one aggregated row per
+ *   subject + the settled-money edges + the in-flight intent correlation map).
+ *   Scores are NEVER stored — they recompute from this evidence on demand. All
+ *   `volume` columns are TEXT (decimal strings summed exactly); storing money
+ *   as float would drift the scores. `refusals` is a small code->count JSONB.
  */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS engine_keys (
@@ -54,6 +59,37 @@ CREATE TABLE IF NOT EXISTS decisions (
   seq BIGSERIAL PRIMARY KEY,
   id  TEXT NOT NULL UNIQUE,
   doc TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS graph_subjects (
+  subject_key   TEXT PRIMARY KEY,
+  kind          TEXT NOT NULL,
+  id            TEXT NOT NULL,
+  first_seen_ms BIGINT NOT NULL,
+  last_seen_ms  BIGINT NOT NULL,
+  attempts      BIGINT NOT NULL,
+  settled       BIGINT NOT NULL,
+  volume        TEXT NOT NULL,
+  shadow_spends BIGINT NOT NULL,
+  disputes      BIGINT NOT NULL,
+  endorsements  BIGINT NOT NULL,
+  refusals      JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS graph_counterparties (
+  subject_key TEXT NOT NULL,
+  peer_key    TEXT NOT NULL,
+  settled     BIGINT NOT NULL,
+  volume      TEXT NOT NULL,
+  PRIMARY KEY (subject_key, peer_key)
+);
+
+CREATE TABLE IF NOT EXISTS graph_intents (
+  seq       BIGSERIAL PRIMARY KEY,
+  intent_id TEXT NOT NULL UNIQUE,
+  agent_id  TEXT NOT NULL,
+  host      TEXT NOT NULL,
+  amount    TEXT NOT NULL
 );
 `;
 

@@ -1,6 +1,5 @@
 import {
   ReputationScore,
-  sumDecimal,
   type Receipt,
   type ReinEvent,
   type ReputationComponents,
@@ -8,10 +7,15 @@ import {
 } from '@rein/core';
 import {
   EvidenceLedger,
-  normalizeSubject,
-  subjectKey,
+  type EvidenceLedgerPort,
+  type MaybePromise,
   type SubjectEvidence,
 } from './evidence.js';
+import {
+  DEFAULT_CORRELATION_LIMIT,
+  InMemoryIntentStore,
+  type IntentCorrelationPort,
+} from './intents.js';
 import {
   blend,
   blendBase,
@@ -42,8 +46,18 @@ export interface ReputationGraphOptions {
   weights?: Partial<ScoreWeights>;
   /** Injectable clock (scores are functions of evidence AND time). */
   now?: () => Date;
-  /** Max undecided intents remembered for settlement correlation. */
+  /**
+   * Max undecided intents remembered for settlement correlation. Ignored when
+   * a custom `intents` store is injected (that store owns its own bound).
+   */
   correlationLimit?: number;
+  /**
+   * Durable evidence ledger. Defaults to in-memory; @rein/store provides a
+   * PGlite-backed one so scores survive a restart.
+   */
+  ledger?: EvidenceLedgerPort;
+  /** Durable intent correlation store. Defaults to in-memory (bounded by `correlationLimit`). */
+  intents?: IntentCorrelationPort;
 }
 
 export interface ManualReport {
@@ -87,14 +101,6 @@ export interface ReputationExplanation {
   };
 }
 
-interface IntentFacts {
-  agentId: string;
-  host: string;
-  amount: string;
-}
-
-const DEFAULT_CORRELATION_LIMIT = 10_000;
-
 /**
  * The Rein reputation graph (Phase 3). Subscribes to the event buses both
  * sides already publish — the engine/indexer name vendors by host and agents
@@ -116,16 +122,18 @@ const DEFAULT_CORRELATION_LIMIT = 10_000;
  * policy worked, not that the agent or vendor misbehaved.
  */
 export class ReputationGraph {
-  private readonly ledger = new EvidenceLedger();
+  private readonly ledger: EvidenceLedgerPort;
+  private readonly intents: IntentCorrelationPort;
   private readonly weights: ScoreWeights;
   private readonly now: () => Date;
-  private readonly correlationLimit: number;
-  private readonly intents = new Map<string, IntentFacts>();
 
   constructor(options: ReputationGraphOptions = {}) {
     this.weights = { ...DEFAULT_WEIGHTS, ...options.weights };
     this.now = options.now ?? (() => new Date());
-    this.correlationLimit = options.correlationLimit ?? DEFAULT_CORRELATION_LIMIT;
+    this.ledger = options.ledger ?? new EvidenceLedger();
+    this.intents =
+      options.intents ??
+      new InMemoryIntentStore(options.correlationLimit ?? DEFAULT_CORRELATION_LIMIT);
   }
 
   /** Subscribe to a bus. Returns `this` so construction chains. */
@@ -134,57 +142,66 @@ export class ReputationGraph {
     return this;
   }
 
+  /**
+   * Fire-and-forget a port write: bus handlers cannot await, and a rejecting
+   * durable write must never become an unhandled rejection (Node kills the
+   * process). Failures are the port's to surface — flush() throws them.
+   */
+  private fire(write: MaybePromise<void>): void {
+    void Promise.resolve(write).catch(() => undefined);
+  }
+
   ingest(event: ReinEvent): void {
     const atMs = event.at.getTime();
     switch (event.type) {
       case 'intent.created': {
-        this.remember(event.intent.id, {
-          agentId: event.intent.agentId,
-          host: event.intent.vendor.host,
-          amount: event.intent.amount,
-        });
+        this.fire(
+          this.intents.remember(event.intent.id, {
+            agentId: event.intent.agentId,
+            host: event.intent.vendor.host,
+            amount: event.intent.amount,
+          }),
+        );
         return;
       }
       case 'decision.made': {
         if (event.decision.outcome !== 'allow') return;
-        const facts = this.intents.get(event.decision.intentId);
+        const facts = this.intents.peek(event.decision.intentId);
         if (!facts) return;
-        this.ledger.touch({ kind: 'agent', id: facts.agentId }, atMs).attempts += 1;
-        this.ledger.touch({ kind: 'vendor', id: facts.host }, atMs).attempts += 1;
+        this.fire(this.ledger.recordAttempt({ kind: 'agent', id: facts.agentId }, atMs));
+        this.fire(this.ledger.recordAttempt({ kind: 'vendor', id: facts.host }, atMs));
         return;
       }
       case 'payment.settled': {
-        const facts = this.intents.get(event.payment.intentId);
+        const facts = this.intents.take(event.payment.intentId);
         if (!facts) return; // unattributable — no subject to credit
-        this.intents.delete(event.payment.intentId);
         const agent = { kind: 'agent', id: facts.agentId } as const;
         const vendor = { kind: 'vendor', id: facts.host } as const;
-        this.settle(agent, vendor, facts.amount, atMs);
+        this.fire(this.ledger.recordSettlement(agent, vendor, facts.amount, atMs));
         return;
       }
       case 'shadow.spend': {
-        this.ledger.touch({ kind: 'agent', id: event.agentId }, atMs).shadowSpends += 1;
+        this.fire(this.ledger.recordShadowSpend({ kind: 'agent', id: event.agentId }, atMs));
         return;
       }
       case 'signature.refused': {
         if (!event.agentId) return;
-        const ev = this.ledger.touch({ kind: 'agent', id: event.agentId }, atMs);
-        ev.refusals[event.code] = (ev.refusals[event.code] ?? 0) + 1;
+        this.fire(this.ledger.recordRefusal({ kind: 'agent', id: event.agentId }, event.code, atMs));
         return;
       }
       case 'gate.settled': {
         const payer = { kind: 'agent', id: event.receipt.payer } as const;
         const recipient = { kind: 'vendor', id: event.receipt.payTo } as const;
-        this.ledger.touch(payer, atMs).attempts += 1;
-        this.ledger.touch(recipient, atMs).attempts += 1;
-        this.settle(payer, recipient, event.receipt.amount, atMs);
+        this.fire(this.ledger.recordAttempt(payer, atMs));
+        this.fire(this.ledger.recordAttempt(recipient, atMs));
+        this.fire(this.ledger.recordSettlement(payer, recipient, event.receipt.amount, atMs));
         return;
       }
       case 'gate.refused': {
         if (!event.payer) return;
-        const ev = this.ledger.touch({ kind: 'agent', id: event.payer }, atMs);
-        ev.attempts += 1;
-        ev.refusals[event.code] = (ev.refusals[event.code] ?? 0) + 1;
+        const payer = { kind: 'agent', id: event.payer } as const;
+        this.fire(this.ledger.recordAttempt(payer, atMs));
+        this.fire(this.ledger.recordRefusal(payer, event.code, atMs));
         return;
       }
       // signature.released and gate.quoted carry no evidence the engine-side
@@ -206,17 +223,24 @@ export class ReputationGraph {
     const atMs = receipt.createdAt.getTime();
     const agent = { kind: 'agent', id: receipt.agentId } as const;
     const vendor = { kind: 'vendor', id: receipt.vendorHost } as const;
-    this.ledger.touch(agent, atMs).attempts += 1;
-    this.ledger.touch(vendor, atMs).attempts += 1;
-    if (receipt.settlement?.txHash) this.settle(agent, vendor, receipt.amount, atMs);
+    this.fire(this.ledger.recordAttempt(agent, atMs));
+    this.fire(this.ledger.recordAttempt(vendor, atMs));
+    if (receipt.settlement?.txHash) {
+      this.fire(this.ledger.recordSettlement(agent, vendor, receipt.amount, atMs));
+    }
   }
 
   /** Record an out-of-band dispute or endorsement against a subject. */
   report(input: ManualReport): void {
     const atMs = (input.at ?? this.now()).getTime();
-    const ev = this.ledger.touch(input.subject, atMs);
-    if (input.kind === 'dispute') ev.disputes += 1;
-    else ev.endorsements += 1;
+    if (input.kind === 'dispute') this.fire(this.ledger.recordDispute(input.subject, atMs));
+    else this.fire(this.ledger.recordEndorsement(input.subject, atMs));
+  }
+
+  /** Await any pending durable writes (no-op for in-memory stores). */
+  async flush(): Promise<void> {
+    await this.ledger.flush?.();
+    await this.intents.flush?.();
   }
 
   /** The score for one subject, or undefined when nothing is known (fairness). */
@@ -318,35 +342,6 @@ export class ReputationGraph {
       total += other ? blendBase(other, nowMs, this.weights) : 50;
     }
     return total / ev.counterparties.size;
-  }
-
-  private settle(
-    a: ReputationSubject,
-    b: ReputationSubject,
-    amount: string,
-    atMs: number,
-  ): void {
-    for (const [subject, other] of [
-      [a, b],
-      [b, a],
-    ] as const) {
-      const ev = this.ledger.touch(subject, atMs);
-      ev.settled += 1;
-      ev.volume = sumDecimal([ev.volume, amount]);
-      const key = subjectKey(other);
-      const line = ev.counterparties.get(key) ?? { settled: 0, volume: '0' };
-      line.settled += 1;
-      line.volume = sumDecimal([line.volume, amount]);
-      ev.counterparties.set(key, line);
-    }
-  }
-
-  private remember(intentId: string, facts: IntentFacts): void {
-    if (this.intents.size >= this.correlationLimit) {
-      const oldest = this.intents.keys().next().value;
-      if (oldest !== undefined) this.intents.delete(oldest);
-    }
-    this.intents.set(intentId, facts);
   }
 }
 

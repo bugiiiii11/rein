@@ -20,6 +20,7 @@
     "@rein/policy-engine": "workspace:*",
     "@rein/sdk": "workspace:*",
     "@rein/signer": "workspace:*",
+    "@rein/store": "workspace:*",
     "@rein/x402-rails": "workspace:*",
     "framer-motion": "^11.11.0",
     "react": "^18.3.1",

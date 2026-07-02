@@ -53,6 +53,9 @@ importers:
       '@rein/signer':
         specifier: workspace:*
         version: link:../../services/signer
+      '@rein/store':
+        specifier: workspace:*
+        version: link:../../services/store
       '@rein/x402-rails':
         specifier: workspace:*
         version: link:../../services/x402-rails
@@ -341,6 +344,9 @@ importers:
       '@rein/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rein/graph':
+        specifier: workspace:*
+        version: link:../graph
       '@rein/policy-engine':
         specifier: workspace:*
         version: link:../policy-engine

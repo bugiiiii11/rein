@@ -8,12 +8,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "rein-engine": "./dist/server.js"
+    "rein-engine": "./dist/server.js",
+    "rein-graph": "./dist/graph-server.js"
   },
   "scripts": {
     "build": "tsup",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
+    "start:graph": "node dist/graph-server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -22,6 +24,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.1",
     "@rein/core": "workspace:*",
+    "@rein/graph": "workspace:*",
     "@rein/policy-engine": "workspace:*",
     "fastify": "^5.2.0"
   },

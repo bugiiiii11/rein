@@ -34,15 +34,20 @@ export function buildGraphServer(graph: ReputationGraph = new ReputationGraph())
   app.get('/health', () => ({ status: 'ok', subjects: graph.subjects() }));
 
   // --- Ingestion ---
-  app.post('/v1/events', (req) => {
+  // The HTTP path can await durability even though the in-process bus path
+  // cannot — flush the durable writes before answering so a POST that returns
+  // 200 is persisted.
+  app.post('/v1/events', async (req) => {
     const events = z.union([ReinEvent.transform((e) => [e]), z.array(ReinEvent)]).parse(req.body);
     for (const event of events) graph.ingest(event);
+    await graph.flush();
     return { ingested: events.length };
   });
 
-  app.post('/v1/reports', (req) => {
+  app.post('/v1/reports', async (req) => {
     const input = ReportInput.parse(req.body);
     graph.report(input);
+    await graph.flush();
     return graph.score(input.subject);
   });
 

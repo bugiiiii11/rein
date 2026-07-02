@@ -65,12 +65,19 @@ export function createApiHandler(world: World) {
     if (method === 'POST' && parts[0] === 'api' && parts[1] === 'agents' && parts[3]) {
       const agentId = parts[2] ?? '';
       const action = parts[3];
-      if (action === 'freeze') return reply(res, world.freeze(agentId));
-      if (action === 'unfreeze') return reply(res, world.unfreeze(agentId));
-      if (action === 'ping') {
-        world
-          .pingAgent(agentId)
-          .then((ok) => sendJson(res, ok ? 202 : 404, { ok }))
+      // All three are async now — freeze/unfreeze await the (possibly durable)
+      // engine write before answering, so a 200 means the state change stuck.
+      const act =
+        action === 'freeze'
+          ? world.freeze
+          : action === 'unfreeze'
+            ? world.unfreeze
+            : action === 'ping'
+              ? world.pingAgent
+              : undefined;
+      if (act) {
+        act(agentId)
+          .then((ok) => sendJson(res, ok ? (action === 'ping' ? 202 : 200) : 404, { ok }))
           .catch((err: unknown) => sendJson(res, 500, { error: String(err) }));
         return true;
       }
@@ -79,9 +86,4 @@ export function createApiHandler(world: World) {
     sendJson(res, 404, { error: 'not_found', path: pathname });
     return true;
   };
-}
-
-function reply(res: ServerResponse, ok: boolean): boolean {
-  sendJson(res, ok ? 200 : 404, { ok });
-  return true;
 }

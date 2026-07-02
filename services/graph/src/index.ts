@@ -15,8 +15,16 @@ export {
   normalizeSubject,
   subjectKey,
   type CounterpartyLine,
+  type EvidenceLedgerPort,
+  type MaybePromise,
   type SubjectEvidence,
 } from './evidence.js';
+export {
+  DEFAULT_CORRELATION_LIMIT,
+  InMemoryIntentStore,
+  type IntentCorrelationPort,
+  type IntentFacts,
+} from './intents.js';
 export {
   DEFAULT_WEIGHTS,
   blend,
