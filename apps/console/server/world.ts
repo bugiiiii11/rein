@@ -24,6 +24,7 @@ import type { AddressInfo } from 'node:net';
 import { recoverTypedDataAddress, type Hex } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
 import {
+  formatErc8004Id,
   newId,
   parseErc8004Id,
   sumDecimal,
@@ -34,9 +35,13 @@ import {
   type ReputationSubject,
 } from '@rein/core';
 import {
+  BASE_SEPOLIA_REGISTRY,
   MockIdentityRegistry,
+  REIN_SCORE_TAG,
+  identityRegistryReader,
   linkAgentFromRegistry,
   linkVendorFromRegistry,
+  readSummary,
 } from '@rein/erc8004';
 import { PolicyEngine, buildServer } from '@rein/policy-engine';
 import {
@@ -63,6 +68,7 @@ import { openReinStore } from '@rein/store';
 import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@rein/signer';
 import {
   chainIdForNetwork,
+  createBaseSepoliaClient,
   encodeSettlementHeader,
   intentNonce,
   transferWithAuthorizationTypes,
@@ -749,6 +755,96 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   });
   for (const agent of engine.agents.list()) await linkAgentIdentity(agent); // resumed agents
 
+  /**
+   * REAL-registry mode (env-gated): `REIN_CONSOLE_REGISTRY=sepolia` provisions
+   * a "live identity" agent whose erc8004Id is the REAL Base Sepolia
+   * registration (`REIN_SEPOLIA_ERC8004_ID`) — its link facts (ownerOf,
+   * agentWallet) are read from the actual chain through the viem reader, a
+   * drop-in for the same port the mock twin implements. READ-ONLY: the console
+   * never writes on-chain (no gas, no keys) and world-generated agents stay on
+   * the mock registry. If the RPC is unreachable the world still boots — a
+   * resumed doc keeps the lenient local links the generic loop above already
+   * asserted, and the miss is logged loudly (S17 rule: a dead RPC must never
+   * read as "not registered").
+   */
+  async function wireLiveIdentity(): Promise<void> {
+    if (process.env['REIN_CONSOLE_REGISTRY'] !== 'sepolia') return;
+    const rawId = process.env['REIN_SEPOLIA_ERC8004_ID'];
+    const ref = rawId === undefined ? undefined : parseErc8004Id(rawId);
+    if (!ref) {
+      console.error(
+        `[console] REIN_CONSOLE_REGISTRY=sepolia needs a parseable REIN_SEPOLIA_ERC8004_ID (got ${rawId ?? 'nothing'}) — live identity skipped`,
+      );
+      return;
+    }
+    if (
+      ref.chainId !== BASE_SEPOLIA_REGISTRY.chainId ||
+      ref.registry !== BASE_SEPOLIA_REGISTRY.address.toLowerCase()
+    ) {
+      console.error(`[console] ${rawId} names a foreign registry — live identity skipped`);
+      return;
+    }
+    const erc8004Id = formatErc8004Id(ref);
+    try {
+      const publicClient = createBaseSepoliaClient(process.env['REIN_SEPOLIA_RPC_URL']);
+      const reader = identityRegistryReader(publicClient);
+      const owner = await reader.ownerOf(ref.tokenId);
+
+      let agent = engine.agents.list().find((a) => a.erc8004Id === erc8004Id);
+      if (!agent) {
+        const agentId = newId('agt');
+        agent = await engine.registerAgent({
+          id: agentId,
+          orgId: newId('org'),
+          name: `sepolia-agent-${ref.tokenId}`,
+          erc8004Id,
+          wallets: [{ chain: 'base', address: owner, mode: 'sdk' }],
+          status: 'active',
+          createdAt: new Date(),
+        });
+        await engine.addPolicy({
+          policyId: `policy-sepolia-agent-${ref.tokenId}`,
+          appliesTo: { agents: [agentId] },
+          rules: [
+            { id: 'tx-cap', deny: { amountGt: TX_CAP } },
+            { id: 'hour-budget', deny: { rollingSum: { window: '1h', gt: HOUR_BUDGET } } },
+            { id: 'reputation-gate', deny: { vendorReputationLt: REP_FLOOR } },
+          ],
+          default: 'allow',
+        });
+      }
+      // Link facts from the REAL chain (same port, real adapter). Idempotent:
+      // a resumed boot's local links fold into the same canonical row.
+      await linkAgentFromRegistry(graph, reader, agent);
+      // Pingable like any SDK-tier agent (mock rails take any payer address —
+      // the console's payments stay mock; only IDENTITY facts are live).
+      if (!runtimes.has(agent.id)) {
+        const guard = createGuard({
+          engineUrl,
+          agentId: agent.id,
+          fetch: gatedFetch,
+          payer: facilitator.payerFor(owner),
+        });
+        registerRuntime(agent.id, owner, guard.wrap());
+      }
+      const summary = await readSummary(publicClient, {
+        agentId: ref.tokenId,
+        tag1: REIN_SCORE_TAG,
+      });
+      console.log(
+        `[rein] live identity ${erc8004Id}: owner ${owner}, on-chain ${REIN_SCORE_TAG} ` +
+          (summary.count > 0n
+            ? `${summary.value}/100 (${summary.count} entr${summary.count === 1n ? 'y' : 'ies'})`
+            : '(none yet)'),
+      );
+    } catch (err) {
+      console.error(
+        '[console] live registry unreachable — the live identity keeps its local links this boot:',
+        (err as Error).message,
+      );
+    }
+  }
+
   /** Push confident vendor scores into the engine and broadcast the panel. */
   async function syncGraph(): Promise<void> {
     const pushed = await graph.syncVendors(engine.spend, { minConfidence: REP_MIN_CONFIDENCE });
@@ -1156,6 +1252,8 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // scenario provisions its own). Session-tier keys rotate here, BEFORE the
   // first sync, so the scoreboard's first frame already shows merged identities.
   for (const agent of engine.agents.list()) await rebuildRuntime(agent);
+  // Env-gated: the live Base Sepolia identity joins the world (read-only).
+  await wireLiveIdentity();
   await syncGraph();
   if (fresh) await playScenario(false);
   if (store) {
