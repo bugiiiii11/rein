@@ -13,22 +13,33 @@
  * is read-only. Losing .env after registering orphans the registration
  * (a re-run mints a fresh identity — fine on testnet).
  *
+ * The FEEDBACK beat (S19) publishes the graph's score for this agent to the
+ * real Reputation Registry. The contract bans self-feedback (the owner cannot
+ * score its own agent), so a separate counterparty wallet — persisted as
+ * REIN_SEPOLIA_FEEDBACK_KEY, gas-funded once from the agent wallet — plays
+ * the vendor operator. Also once: re-runs read the published entry back.
+ *
  * Run (PowerShell — the CA var matters on machines with TLS interception):
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"
  *   pnpm --filter @rein/demo demo:sepolia-8004
  */
 
 import type { Hex } from 'viem';
-import { createWalletClient, formatEther, http } from 'viem';
+import { createWalletClient, formatEther, http, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { newId, parseErc8004Id, type Receipt, type ReinEvent } from '@rein/core';
 import { ReputationGraph } from '@rein/graph';
 import {
   BASE_SEPOLIA_REGISTRY,
+  REIN_SCORE_TAG,
   getIdentityRegistryAddress,
   identityRegistryReader,
+  lastFeedbackIndex,
   linkAgentFromRegistry,
+  publishAgentScore,
+  readFeedbackEntry,
+  readSummary,
   registerAgent,
 } from '@rein/erc8004';
 import { basescanTxUrl, createBaseSepoliaClient, generateWallet } from '@rein/x402-rails';
@@ -263,12 +274,101 @@ async function main() {
     `    ${merged!.evidence.attempts} attempts · ${merged!.evidence.settled} settled · $${merged!.evidence.volume} — 5 engine-side + 3 gate-side, one party`,
   );
 
+  // ── Feedback: the score goes on the REAL chain ─────────────────────────────
+  console.log(section('Feedback: publishing the score to the Reputation Registry'));
+
+  if (linked.source !== 'erc8004') {
+    console.log('  (identity facts did not resolve on-chain this run — skipping the');
+    console.log('   feedback beat; re-run once the RPC has caught up)');
+  } else {
+    // The contract bans self-feedback (owner/operator), so a separate
+    // counterparty wallet plays the vendor operator — generated once,
+    // persisted, and gas-funded from the agent wallet on first use.
+    let feedbackKey = readEnv('REIN_SEPOLIA_FEEDBACK_KEY') as Hex | undefined;
+    if (feedbackKey === undefined) {
+      const fresh = generateWallet();
+      feedbackKey = fresh.privateKey;
+      const path = appendEnv({ REIN_SEPOLIA_FEEDBACK_KEY: feedbackKey });
+      console.log(`  generated counterparty (feedback) wallet ${fresh.address}`);
+      console.log(`  saved to ${path}`);
+    }
+    const feedbackAccount = privateKeyToAccount(feedbackKey);
+    const already = await lastFeedbackIndex(publicClient, {
+      agentId: ref.tokenId,
+      clientAddress: feedbackAccount.address,
+    });
+
+    if (already > 0n) {
+      console.log(`  resumed: this counterparty already published ${already} entr${already === 1n ? 'y' : 'ies'} — read-only run`);
+      const stored = await readFeedbackEntry(publicClient, {
+        agentId: ref.tokenId,
+        clientAddress: feedbackAccount.address,
+        index: already,
+      });
+      console.log(`  readFeedback   value ${stored.value}/100 · tags ${stored.tag1}/${stored.tag2} · revoked ${stored.revoked}`);
+    } else {
+      // Gas: giveFeedback with a ~450-byte evidence URI costs a fraction of
+      // 0.0001 ETH; fund the counterparty once from the agent wallet.
+      const FEEDBACK_FUND = parseEther('0.0002');
+      const feedbackGas = await publicClient.getBalance({ address: feedbackAccount.address });
+      if (feedbackGas < FEEDBACK_FUND / 2n) {
+        const mainGas = await publicClient.getBalance({ address: wallet });
+        if (mainGas < FEEDBACK_FUND * 2n) {
+          console.log(`  agent wallet has ${formatEther(mainGas)} ETH — not enough to fund the`);
+          console.log(`  counterparty (${formatEther(FEEDBACK_FUND)} needed). Top up and re-run:`);
+          for (const f of GAS_FAUCETS) console.log(`    ${f}`);
+          console.log('  (identity + reputation beats above all succeeded — only feedback skipped)\n');
+          return;
+        }
+        console.log(`  funding counterparty with ${formatEther(FEEDBACK_FUND)} ETH from the agent wallet…`);
+        const fundTx = await walletClient.sendTransaction({
+          to: feedbackAccount.address,
+          value: FEEDBACK_FUND,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: fundTx });
+        console.log(`  funded         ${basescanTxUrl(fundTx)}`);
+      }
+
+      const score = graph.score(linked.canonical)!;
+      const feedbackWallet = createWalletClient({
+        account: feedbackAccount,
+        chain: baseSepolia,
+        transport: http(rpcUrl),
+      });
+      const t1 = Date.now();
+      const { published, evidenceUri } = await publishAgentScore({
+        publicClient,
+        walletClient: feedbackWallet,
+        score,
+        identity: BASE_SEPOLIA_REGISTRY,
+      });
+      console.log(`  published in ${((Date.now() - t1) / 1000).toFixed(1)}s`);
+      console.log(`  giveFeedback   agentId ${published.agentId} · score ${score.score}/100 · index ${published.feedbackIndex}`);
+      console.log(`  tx             ${basescanTxUrl(published.txHash)}`);
+      console.log(`  evidence       ${evidenceUri.slice(0, 56)}… (keccak-anchored on-chain)`);
+    }
+
+    // Read the aggregate back from the REAL contract (with the same fresh-write
+    // propagation tolerance as the mint read-backs).
+    let summary = await readSummary(publicClient, { agentId: ref.tokenId, tag1: REIN_SCORE_TAG });
+    for (let attempt = 1; summary.count === 0n && attempt <= 5; attempt += 1) {
+      console.log(`  (rpc still propagating the feedback — retry ${attempt}/5)`);
+      await new Promise((r) => setTimeout(r, 3000));
+      summary = await readSummary(publicClient, { agentId: ref.tokenId, tag1: REIN_SCORE_TAG });
+    }
+    console.log(`  getSummary     ${summary.value}/100 across ${summary.count} ${REIN_SCORE_TAG} entr${summary.count === 1n ? 'y' : 'ies'}`);
+    console.log('\n  This agent now has PUBLIC, on-chain reputation: any x402 vendor can');
+    console.log(`  read getSummary(${ref.tokenId}, [], "${REIN_SCORE_TAG}", "") before serving it.`);
+  }
+
   console.log(section('Summary'));
   console.log('  The registry is the source of link facts: ownerOf and the verified');
   console.log('  agentWallet came from the chain, not from local configuration. Any');
   console.log('  Rein deployment that reads the same registry keys this agent the');
   console.log('  same way — reputation that follows the identity, not the install.');
-  console.log(`\n  Re-runs are read-only (the id lives in .env). Gas was spent once.\n`);
+  console.log('  The graph\'s judgment is published back to the chain as feedback —');
+  console.log('  scores that follow the identity too, readable by anyone.');
+  console.log(`\n  Re-runs are read-only (ids + keys live in .env). Gas was spent once.\n`);
 }
 
 main().catch((err) => {

@@ -67,12 +67,16 @@ export interface IdentityRegistryReader {
  * SAME wrapper with an HttpRequestError cause). Only a
  * ContractFunctionRevertedError in the chain means the contract answered.
  */
-function rethrowRead(err: unknown, what: string): never {
+export function rethrowRead(
+  err: unknown,
+  what: string,
+  code: 'unknown_agent' | 'feedback_failed' = 'unknown_agent',
+): never {
   if (
     err instanceof ContractFunctionExecutionError &&
     err.walk((e) => e instanceof ContractFunctionRevertedError) !== null
   ) {
-    throw new Erc8004Error('unknown_agent', `${what} reverted: ${err.shortMessage}`);
+    throw new Erc8004Error(code, `${what} reverted: ${err.shortMessage}`);
   }
   throw err; // network/RPC/config failures must never read as "not registered"
 }

@@ -8,21 +8,32 @@
  * agentWallet — into link facts: the identity becomes the canonical
  * reputation subject and everything else folds in as aliases.
  *
- * Five scenarios, fully offline (in-memory registry twin), <1s:
+ * Six scenarios, fully offline (in-memory registry twins), <1s:
  *   1. Split identity — one party, two scoreboard rows
  *   2. Registration links them — one eip155-keyed row, history merged
  *   3. Same registration, second local agent — still one row
  *   4. Key rotation — setAgentWallet folds the new key into the same identity
  *   5. Vendors stay host-canonical — the treasury folds into the host and
  *      syncVendors pushes hosts, never identities
+ *   6. The score goes on-chain — giveFeedback publishes the graph's judgment
+ *      to the Reputation Registry with a keccak-anchored evidence document
  *
  * Run: pnpm --filter @rein/demo demo:erc8004
  */
 
+import { keccak256, stringToBytes } from 'viem';
 import { newId, type ReinEvent, type ReputationSubject } from '@rein/core';
 import { PolicyEngine } from '@rein/policy-engine';
 import { ReputationGraph } from '@rein/graph';
-import { MockIdentityRegistry, linkAgentFromRegistry, linkVendorFromRegistry } from '@rein/erc8004';
+import {
+  MockIdentityRegistry,
+  MockReputationRegistry,
+  REIN_SCORE_TAG,
+  feedbackEvidence,
+  linkAgentFromRegistry,
+  linkVendorFromRegistry,
+  scoreToFeedback,
+} from '@rein/erc8004';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 
@@ -217,11 +228,43 @@ async function main() {
   console.log('  Hosts are what intents carry and what vendorReputationLt matches —');
   console.log('  identities and treasuries are aliases, never enforcement keys.');
 
+  // ── Scenario 6: the score goes on-chain ─────────────────────────────────────
+  console.log(section('Scenario 6  ·  giveFeedback: the judgment becomes public'));
+
+  const reputationRegistry = new MockReputationRegistry(registry); // offline twin
+  const score = graph.score({ kind: 'agent', id: erc8004Id })!;
+  const evidence = feedbackEvidence(score, { clientAddress: TREASURY });
+  const feedback = scoreToFeedback(score, {
+    identity: registry.ref,
+    feedbackURI: evidence.dataUri,
+    feedbackHash: evidence.feedbackHash,
+  });
+  // The vendor's operator publishes — NEVER the agent itself: the contract
+  // rejects self-feedback from the identity's owner or its operators.
+  const published = await reputationRegistry.giveFeedback(TREASURY, feedback);
+  console.log(`  score        ${score.score}/100 at confidence ${score.confidence.toFixed(2)}`);
+  console.log(`  published    giveFeedback(agentId ${published.agentId}) -> index ${published.feedbackIndex}`);
+  console.log(`  tags         ${feedback.tag1} / ${feedback.tag2}`);
+  console.log(`  evidence     ${evidence.dataUri.slice(0, 56)}… (${evidence.json.length} bytes)`);
+  console.log(`  anchored     keccak256(evidence) = ${evidence.feedbackHash.slice(0, 18)}…`);
+
+  const summary = await reputationRegistry.getSummary(tokenId, { tag1: REIN_SCORE_TAG });
+  const stored = await reputationRegistry.readFeedback(tokenId, TREASURY, published.feedbackIndex);
+  const verified =
+    keccak256(stringToBytes(Buffer.from(evidence.dataUri.split(',')[1]!, 'base64').toString('utf8'))) ===
+    evidence.feedbackHash;
+  console.log(`\n  read back    getSummary(tag1=${REIN_SCORE_TAG}) -> ${summary.value}/100 across ${summary.count} entries`);
+  console.log(`  stored       value ${stored.value}, revoked ${stored.revoked}`);
+  console.log(`  verified     evidence content matches on-chain hash: ${verified ? 'YES' : 'NO'}`);
+  console.log('\n  Anyone can now read this agent\'s Rein score straight off the chain —');
+  console.log('  and recompute WHY from the hash-anchored evidence document.');
+
   // ── Summary ─────────────────────────────────────────────────────────────────
   console.log(section('Summary'));
   console.log(`  agent rows    ${rows(graph, 'agent').length} (was 2 before linking; 2 local ULIDs + 2 wallets folded in)`);
   console.log(`  vendor rows   ${rows(graph, 'vendor').length} (host-keyed; treasury + identity are aliases)`);
   console.log(`  registry      links derived from ownerOf/agentWallet — never persisted, re-asserted at boot`);
+  console.log(`  reputation    score ${score.score} published on-chain (${REIN_SCORE_TAG}), evidence keccak-anchored`);
   console.log(`\n  done in ${Date.now() - t0}ms\n`);
 }
 

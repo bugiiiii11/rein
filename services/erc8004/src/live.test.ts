@@ -4,6 +4,7 @@ import { createPublicClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { parseErc8004Id } from '@rein/core';
+import { lastFeedbackIndex, readSummary, REIN_SCORE_TAG } from './feedback.js';
 import {
   BASE_SEPOLIA_REGISTRY,
   IDENTITY_REGISTRY_TESTNET,
@@ -53,6 +54,31 @@ describe.skipIf(!live)('live: ERC-8004 registries on Base Sepolia', () => {
       expect((await reader.ownerOf(ref!.tokenId)).toLowerCase()).toBe(ours);
       expect((await reader.agentWallet(ref!.tokenId))?.toLowerCase()).toBe(ours);
       expect(await reader.agentURI(ref!.tokenId)).not.toBe('');
+    },
+  );
+
+  it.skipIf(KEY === undefined || ERC8004_ID === undefined)(
+    'the Reputation Registry answers feedback reads for our agent (S19 wire pin)',
+    { timeout: 30_000 },
+    async () => {
+      const ref = parseErc8004Id(ERC8004_ID!)!;
+      const ours = privateKeyToAccount(KEY!).address;
+
+      // Shape pins, not value pins: zero feedback (fresh agent) and published
+      // feedback (after demo:sepolia-8004's feedback beat) both must parse.
+      const summary = await readSummary(client(), { agentId: ref.tokenId, tag1: REIN_SCORE_TAG });
+      expect(summary.count).toBeGreaterThanOrEqual(0n);
+      expect(summary.valueDecimals).toBeGreaterThanOrEqual(0);
+      if (summary.count > 0n) {
+        // Rein publishes 0-100 integer scores; the average must sit in range.
+        expect(summary.value).toBeGreaterThanOrEqual(0n);
+        expect(summary.value).toBeLessThanOrEqual(100n * 10n ** BigInt(summary.valueDecimals));
+      }
+
+      // Our OWN wallet cannot have published (self-feedback is banned on-chain).
+      expect(await lastFeedbackIndex(client(), { agentId: ref.tokenId, clientAddress: ours })).toBe(
+        0n,
+      );
     },
   );
 });
