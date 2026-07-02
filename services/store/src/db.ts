@@ -16,6 +16,13 @@ import { PGlite } from '@electric-sql/pglite';
  *   Scores are NEVER stored — they recompute from this evidence on demand. All
  *   `volume` columns are TEXT (decimal strings summed exactly); storing money
  *   as float would drift the scores. `refusals` is a small code->count JSONB.
+ * - `signer_*` hold @rein/signer's custody accounting: session grants (doc
+ *   JSONB carries the Session — token HASH only, never a token; `spent` is a
+ *   TEXT decimal beside it) and the burned-voucher set. Wallet private keys
+ *   are deliberately NOT stored anywhere in this schema.
+ * - `gate_*` hold @rein/gate's vendor-side state: receipts (JSONB docs),
+ *   burned replay slots (sha256 of the presented header), and the
+ *   quoted/refused counters (settled derives from receipts).
  */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS engine_keys (
@@ -90,6 +97,34 @@ CREATE TABLE IF NOT EXISTS graph_intents (
   agent_id  TEXT NOT NULL,
   host      TEXT NOT NULL,
   amount    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS signer_sessions (
+  seq        BIGSERIAL,
+  id         TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  spent      TEXT NOT NULL,
+  doc        JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS signer_used_decisions (
+  decision_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS gate_receipts (
+  seq BIGSERIAL PRIMARY KEY,
+  id  TEXT NOT NULL UNIQUE,
+  doc JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gate_replays (
+  key TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS gate_counters (
+  id      TEXT PRIMARY KEY,
+  quoted  BIGINT NOT NULL,
+  refused BIGINT NOT NULL
 );
 `;
 

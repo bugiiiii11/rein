@@ -14,9 +14,12 @@ export { SessionSigner, type SessionSignerOptions, type SignRequest, type SignRe
 export { sessionPayerFor, createRemoteSessionPayer, type RemoteSessionPayerOptions } from './payer.js';
 export { buildSignerServer } from './server.js';
 export {
-  SessionStore,
+  InMemorySessionStore,
   hashToken,
   sessionState,
+  DEFAULT_TTL_SECONDS,
+  type SessionStorePort,
+  type MaybePromise,
   type CreateSessionInput,
   type CreatedSession,
   type SessionState,

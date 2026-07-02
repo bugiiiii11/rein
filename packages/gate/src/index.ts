@@ -33,6 +33,11 @@ export {
   type MockFacilitatorLike,
   type FacilitatorClientLike,
 } from './rails.js';
+export {
+  InMemoryGateStore,
+  type GateStorePort,
+  type MaybePromise,
+} from './stores.js';
 export { gateMiddleware, type GateMiddlewareOptions } from './node.js';
 export { createGatedFetch, type GatedFetchOptions } from './fetch.js';
 export { inspectPaymentHeader, type InspectedPayment } from './wire.js';

@@ -5,9 +5,13 @@ import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
 import { PgAgentRegistry, PgPolicyStore, PgSpendStore } from './stores.js';
 import { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
+import { PgSessionStore } from './signer-stores.js';
+import { PgGateStore } from './gate-stores.js';
 
 export { PgAgentRegistry, PgPolicyStore, PgSpendStore } from './stores.js';
 export { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
+export { PgSessionStore } from './signer-stores.js';
+export { PgGateStore } from './gate-stores.js';
 export { openDb } from './db.js';
 export { loadOrCreateKeyPair } from './keys.js';
 
@@ -31,6 +35,11 @@ export interface ReinStore {
   ledger: PgEvidenceLedger;
   /** Intent correlation map — pass to `new ReputationGraph({ intents })`. */
   intents: PgIntentStore;
+  /** Signer custody accounting — pass to `new SessionSigner({ store })`.
+   *  Wallet private keys are NOT here; re-register wallets at boot. */
+  sessions: PgSessionStore;
+  /** Gate receipts + replay slots + counters — pass to `createGate({ store })`. */
+  gate: PgGateStore;
   /** The engine's public verification key — stable across restarts. */
   publicKeyPem: string;
   /** True when this open CREATED the store (nothing resumed) — callers may seed. */
@@ -39,6 +48,10 @@ export interface ReinStore {
   resumedDecisions: number;
   /** Number of reputation subjects resumed from disk (0 on first boot). */
   resumedSubjects: number;
+  /** Number of signer sessions resumed from disk (0 on first boot). */
+  resumedSessions: number;
+  /** Number of gate receipts resumed from disk (0 on first boot). */
+  resumedReceipts: number;
   close(): Promise<void>;
 }
 
@@ -56,6 +69,8 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const spend = await PgSpendStore.open(db);
     const ledger = await PgEvidenceLedger.open(db);
     const intents = await PgIntentStore.open(db);
+    const sessions = await PgSessionStore.open(db);
+    const gate = await PgGateStore.open(db);
 
     const persisted = await db.query<{ doc: string }>('SELECT doc FROM decisions ORDER BY seq');
     // doc is the exact JSON.stringify of the decision; zod re-validates and
@@ -80,16 +95,25 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       log,
       ledger,
       intents,
+      sessions,
+      gate,
       publicKeyPem: log.publicKeyPem,
       fresh: created,
       resumedDecisions: resume.length,
       resumedSubjects: ledger.size,
-      // Drain pending reputation writes before closing the handle (the graph
-      // persists write-behind, so a clean shutdown must flush to be durable).
+      resumedSessions: sessions.size,
+      resumedReceipts: gate.receipts().length,
+      // Drain pending write-behind state (reputation evidence, gate telemetry)
+      // before closing the handle — a clean shutdown must flush to be durable.
       // The db is closed even when a flush fails — the handle must not leak —
       // and the first flush failure is rethrown so "clean" shutdown can't lie.
+      // (Session writes are all awaited at the call site; nothing to drain.)
       close: async () => {
-        const flushes = await Promise.allSettled([ledger.flush(), intents.flush()]);
+        const flushes = await Promise.allSettled([
+          ledger.flush(),
+          intents.flush(),
+          gate.flush(),
+        ]);
         await db.close();
         const failed = flushes.find((r) => r.status === 'rejected');
         if (failed) throw failed.reason;

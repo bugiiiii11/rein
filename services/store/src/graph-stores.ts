@@ -9,6 +9,7 @@ import {
   type IntentCorrelationPort,
   type IntentFacts,
 } from '@rein/graph';
+import { WriteTail } from './tail.js';
 
 /**
  * Durable backing for @rein/graph. Unlike the engine stores (persist-then-cache:
@@ -31,9 +32,7 @@ import {
  */
 export class PgEvidenceLedger implements EvidenceLedgerPort {
   private readonly mem = new EvidenceLedger();
-  private tail: Promise<void> = Promise.resolve();
-  private failed = false;
-  private failure: unknown;
+  private readonly tail = new WriteTail();
 
   private constructor(private readonly db: PGlite) {}
 
@@ -108,7 +107,7 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
     // One transaction: both endpoints and both edges land together or not at
     // all — edges have no other write path, so a torn edge would silently
     // degrade counterpartyQuality to the lonely-subject 50 forever.
-    return this.enqueue(() =>
+    return this.tail.enqueue(() =>
       this.db.transaction(async (tx) => {
         await this.writeSubject(ka, tx);
         await this.writeSubject(kb, tx);
@@ -153,7 +152,7 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
     // One transaction: the merged canonical row, its re-keyed edges (both
     // directions), and the alias's disappearance land atomically — a crash
     // cannot leave the alias half-merged (which a boot re-link would double).
-    return this.enqueue(() =>
+    return this.tail.enqueue(() =>
       this.db.transaction(async (tx) => {
         await this.writeSubject(canonicalKey, tx);
         // Peers' subject rows are untouched by a merge — only their edges re-key.
@@ -186,19 +185,13 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
     return this.mem.size;
   }
 
-  async flush(): Promise<void> {
-    await drain(() => this.tail);
-    if (this.failed) {
-      const err = this.failure;
-      this.failed = false;
-      this.failure = undefined;
-      throw err;
-    }
+  flush(): Promise<void> {
+    return this.tail.flush();
   }
 
   private persistSubject(subject: ReputationSubject): Promise<void> {
     const key = subjectKey(subject);
-    return this.enqueue(() => this.writeSubject(key));
+    return this.tail.enqueue(() => this.writeSubject(key));
   }
 
   private async writeSubject(key: string, tx: Queryable = this.db): Promise<void> {
@@ -248,23 +241,6 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
       [fromKey, toKey, line.settled, line.volume],
     );
   }
-
-  private enqueue(work: () => Promise<void>): Promise<void> {
-    const next = this.tail.then(work);
-    // The tail records the FIRST failure for flush() to surface — and swallows
-    // the rejection so one failed write cannot wedge the queue. The returned
-    // promise still rejects for callers that await the write directly.
-    this.tail = next.then(
-      () => undefined,
-      (err) => {
-        if (!this.failed) {
-          this.failed = true;
-          this.failure = err;
-        }
-      },
-    );
-    return next;
-  }
 }
 
 /**
@@ -284,9 +260,7 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
  */
 export class PgIntentStore implements IntentCorrelationPort {
   private readonly mem: InMemoryIntentStore;
-  private tail: Promise<void> = Promise.resolve();
-  private failed = false;
-  private failure: unknown;
+  private readonly tail = new WriteTail();
 
   private constructor(
     private readonly db: PGlite,
@@ -315,7 +289,7 @@ export class PgIntentStore implements IntentCorrelationPort {
 
   remember(intentId: string, facts: IntentFacts): Promise<void> {
     this.mem.remember(intentId, facts);
-    return this.enqueue(async () => {
+    return this.tail.enqueue(async () => {
       await this.db.query(
         `INSERT INTO graph_intents (intent_id, agent_id, host, amount) VALUES ($1, $2, $3, $4)
          ON CONFLICT (intent_id) DO UPDATE SET
@@ -340,7 +314,7 @@ export class PgIntentStore implements IntentCorrelationPort {
   take(intentId: string): IntentFacts | undefined {
     const facts = this.mem.take(intentId);
     if (facts) {
-      void this.enqueue(async () => {
+      void this.tail.enqueue(async () => {
         await this.db.query('DELETE FROM graph_intents WHERE intent_id = $1', [intentId]);
       });
     }
@@ -351,30 +325,8 @@ export class PgIntentStore implements IntentCorrelationPort {
     return this.mem.size;
   }
 
-  async flush(): Promise<void> {
-    await drain(() => this.tail);
-    if (this.failed) {
-      const err = this.failure;
-      this.failed = false;
-      this.failure = undefined;
-      throw err;
-    }
-  }
-
-  private enqueue(work: () => Promise<void>): Promise<void> {
-    const next = this.tail.then(work);
-    // Same failure contract as PgEvidenceLedger.enqueue: record the first
-    // failure for flush(), never wedge the queue.
-    this.tail = next.then(
-      () => undefined,
-      (err) => {
-        if (!this.failed) {
-          this.failed = true;
-          this.failure = err;
-        }
-      },
-    );
-    return next;
+  flush(): Promise<void> {
+    return this.tail.flush();
   }
 }
 
@@ -382,14 +334,4 @@ export class PgIntentStore implements IntentCorrelationPort {
  *  connection or inside a transaction. */
 interface Queryable {
   query<T>(query: string, params?: unknown[]): Promise<{ rows: T[] }>;
-}
-
-/** Await a moving tail until it is quiescent: writes enqueued while draining
- *  (the bus keeps firing during shutdown) are drained too. */
-async function drain(tail: () => Promise<void>): Promise<void> {
-  let snapshot: Promise<void>;
-  do {
-    snapshot = tail();
-    await snapshot;
-  } while (snapshot !== tail());
 }

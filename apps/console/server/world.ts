@@ -150,14 +150,19 @@ export interface World {
 
 export interface WorldOptions {
   /**
-   * PGlite data directory. When set, the policy engine AND the reputation
-   * graph run on @rein/store — agents, policies, the decision chain, rolling
-   * spend, and reputation evidence survive restarts (the boot seed + scenario
-   * run only when the store is fresh). Omit for the classic in-memory world.
-   * The feed, mock ledger, gate stats, and signer sessions stay ephemeral
-   * either way: they are this process's telemetry, not durable state — which
-   * also means resumed agents render (and freeze) but are not pingable until
-   * a new scenario run provisions fresh runtimes.
+   * PGlite data directory. When set, the WHOLE world runs on @rein/store —
+   * the policy engine (agents, policies, decision chain, rolling spend), the
+   * reputation graph (evidence + intent correlation), the gate (receipts,
+   * revenue, replay slots), and the signer (sessions, spend accounting,
+   * burned vouchers) all survive restarts; the boot seed + scenario run only
+   * when the store is fresh. Omit for the classic in-memory world.
+   *
+   * The feed and mock ledger stay ephemeral either way (this process's
+   * telemetry, not state). Resumed agents are PINGABLE: SDK-tier runtimes
+   * rebuild from the persisted wallet address, and session-tier agents get a
+   * ROTATED key + fresh session at boot — custody private keys are
+   * deliberately never persisted, and identity linking keeps one reputation
+   * across the rotation.
    */
   dataDir?: string;
 }
@@ -180,7 +185,12 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
 
   // The signer holds session-tier wallet keys; vouchers verify against the
   // engine's pinned public key — the same one the console's audit panel shows.
-  const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+  // On a persistent world, sessions/spend/burned vouchers ride the store; the
+  // KEYS never do (rotated at boot — see rebuildRuntime).
+  const signer = new SessionSigner({
+    enginePublicKeyPem: engine.publicKeyPem,
+    ...(store ? { store: store.sessions } : {}),
+  });
 
   // The reputation graph (Phase 3) watches every bus in this world. Scores are
   // pure functions of the evidence it accumulates — recomputed per call, never
@@ -315,6 +325,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       // door before any settle leg; unknowns and thin histories always pass.
       check: payerCheck(graph, { denyBelow: REP_FLOOR, minConfidence: REP_MIN_CONFIDENCE }),
     },
+    // Persistent world: receipts/revenue resume, and a payment settled before
+    // a kill is refused as a replay after the restart.
+    ...(store ? { store: store.gate } : {}),
   });
   const gatedFetch = createGatedFetch(gate, {
     serve: ({ url }) =>
@@ -838,7 +851,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     const agentId = newId('agt');
     const wallet = signer.registerWallet(agentId, generatePrivateKey());
     await addAgentPolicy(name, agentId, { address: wallet, mode: 'session-key' });
-    const { token } = signer.createSession({
+    const { token } = await signer.createSession({
       agentId,
       capAmount: SESSION_CAP,
       ttlSeconds: 24 * 3600,
@@ -854,6 +867,55 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     const guard = createGuard({ engineUrl, agentId, fetch: gatedFetch, payer });
     const wrapped = registerRuntime(agentId, wallet, guard.wrap());
     return { agentId, wallet, fetch: wrapped, sessionToken: token, lastSignRequest: () => captured };
+  }
+
+  /**
+   * Rebuild a pingable runtime for an agent RESUMED from the store. SDK-tier
+   * runtimes rebuild directly from the persisted wallet address. Session-tier
+   * runtimes need secrets a restart loses on purpose — the custodied private
+   * key and the bearer token are never persisted — so the agent's key is
+   * ROTATED: a fresh key into the signer's custody, the agent doc re-registered
+   * under the new address, and a fresh capped session minted. Identity linking
+   * folds the new wallet into the agent's existing reputation (the old
+   * wallet's evidence was durably merged when it was linked), so one party
+   * keeps one score across the rotation.
+   */
+  async function rebuildRuntime(agent: Agent): Promise<void> {
+    if (runtimes.has(agent.id)) return;
+    const wallet = agent.wallets[0];
+    if (!wallet) return;
+    if (wallet.mode === 'session-key') {
+      const address = signer.registerWallet(agent.id, generatePrivateKey());
+      // The new wallet goes FIRST (wallets[0] = current); the old ones stay in
+      // the doc so every future boot's re-link still knows them — evidence that
+      // arrives against a retired wallet (e.g. a replayed pre-kill payment
+      // header refused at the gate) must keep folding into THIS agent, not
+      // mint a stray unlinked scoreboard row.
+      const rotated = await engine.registerAgent({
+        ...agent,
+        wallets: [{ chain: 'base', address, mode: 'session-key' }, ...agent.wallets],
+      });
+      linkAgentIdentity(rotated);
+      // The previous boot's grant died with its token — revoke it (durably)
+      // rather than leave spent authority dangling until TTL.
+      for (const stale of signer.sessions()) {
+        if (stale.agentId === agent.id && stale.revokedAt === undefined) {
+          await signer.revokeSession(stale.id);
+        }
+      }
+      const { token } = await signer.createSession({
+        agentId: agent.id,
+        capAmount: SESSION_CAP,
+        ttlSeconds: 24 * 3600,
+      });
+      const payer = sessionPayerFor(signer, token);
+      const guard = createGuard({ engineUrl, agentId: agent.id, fetch: gatedFetch, payer });
+      registerRuntime(agent.id, address, guard.wrap());
+    } else {
+      const payer: Payer = facilitator.payerFor(wallet.address);
+      const guard = createGuard({ engineUrl, agentId: agent.id, fetch: gatedFetch, payer });
+      registerRuntime(agent.id, wallet.address, guard.wrap());
+    }
   }
 
   // ── scripted scenario ──────────────────────────────────────────────────────
@@ -1035,6 +1097,10 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // scenario, so the reputation-gate beats evaluate against current scores.
   const fresh = store?.fresh ?? true;
   if (fresh) seedReputationHistory();
+  // Resumed agents get live runtimes again (no-op on a fresh world — the
+  // scenario provisions its own). Session-tier keys rotate here, BEFORE the
+  // first sync, so the scoreboard's first frame already shows merged identities.
+  for (const agent of engine.agents.list()) await rebuildRuntime(agent);
   await syncGraph();
   if (fresh) await playScenario(false);
   if (store) {
@@ -1042,7 +1108,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       `[rein] console world on ${options.dataDir}: ` +
         (fresh
           ? 'fresh store (seeded)'
-          : `resumed ${store.resumedDecisions} decisions, ${store.resumedSubjects} reputation subjects, ${engine.agents.list().length} agents`),
+          : `resumed ${store.resumedDecisions} decisions, ${store.resumedSubjects} reputation subjects, ` +
+            `${engine.agents.list().length} agents, ${store.resumedSessions} signer sessions, ` +
+            `${store.resumedReceipts} gate receipts`),
     );
   }
 

@@ -11,6 +11,7 @@ import {
   type GateRoute,
   type PaymentDefaults,
 } from './routes.js';
+import { InMemoryGateStore, type GateStorePort, type MaybePromise } from './stores.js';
 import { inspectPaymentHeader, type InspectedPayment } from './wire.js';
 
 /** Wallet-address screening. Addresses compare case-insensitively (EVM rule). */
@@ -46,6 +47,11 @@ export interface GateOptions {
   screen?: GateScreen;
   /** Injectable clock (tests). */
   now?: () => Date;
+  /**
+   * Gate storage. Defaults in-memory; pass @rein/store's gate store and
+   * receipts, revenue stats, and burned replay slots survive restarts.
+   */
+  store?: GateStorePort;
 }
 
 /** The transport-agnostic request shape every adapter reduces to. */
@@ -105,10 +111,7 @@ export class Gate {
   private readonly screenCheck: ((payer: string) => string | undefined) | undefined;
   private readonly now: () => Date;
   private readonly bus = new EventEmitter();
-  private readonly seenPayments = new Set<string>();
-  private readonly receiptLog: GateReceipt[] = [];
-  private quoted = 0;
-  private refusedCount = 0;
+  private readonly store: GateStorePort;
 
   constructor(options: GateOptions) {
     this.routes = options.routes;
@@ -127,6 +130,7 @@ export class Gate {
     this.denyPayers = new Set((options.screen?.denyPayers ?? []).map((a) => a.toLowerCase()));
     this.screenCheck = options.screen?.check;
     this.now = options.now ?? (() => new Date());
+    this.store = options.store ?? new InMemoryGateStore();
   }
 
   onEvent(handler: (event: ReinEvent) => void): void {
@@ -134,7 +138,24 @@ export class Gate {
   }
 
   get receipts(): readonly GateReceipt[] {
-    return this.receiptLog;
+    return this.store.receipts();
+  }
+
+  /** Drain trailing telemetry writes; throws the first failure (durable stores). */
+  async flush(): Promise<void> {
+    await this.store.flush?.();
+  }
+
+  /** Telemetry writes may trail (cache-then-persist) — a store failure,
+   *  rejected OR thrown synchronously, must surface through flush() and can
+   *  never alter a payment outcome (a receipt write turning a SETTLED payment
+   *  into a 500 would charge the payer and serve nothing). */
+  private fire(write: () => MaybePromise<void>): void {
+    try {
+      void Promise.resolve(write()).catch(() => undefined);
+    } catch {
+      // swallowed by design — see above
+    }
   }
 
   /** The requirement a given request would be quoted (or undefined if free). */
@@ -156,7 +177,7 @@ export class Gate {
     );
 
     if (request.payment === null) {
-      this.quoted += 1;
+      this.fire(() => this.store.recordQuote());
       this.emit({
         type: 'gate.quoted',
         at: this.now(),
@@ -179,7 +200,7 @@ export class Gate {
       payer = payment.payer;
       this.checkConsistency(payment, requirement);
       this.screenPayer(payment.payer);
-      this.burnReplay(request.payment);
+      await this.burnReplay(request.payment);
       await this.rails.verify(request.payment, requirement);
       const settlement = await this.rails.settle(request.payment, requirement);
 
@@ -197,7 +218,7 @@ export class Gate {
         network: requirement.network,
         transaction: settlement.transaction,
       });
-      this.receiptLog.push(receipt);
+      this.fire(() => this.store.appendReceipt(receipt));
       this.emit({ type: 'gate.settled', at: receipt.at, receipt });
       return { kind: 'paid', receipt, settlementHeader: settlement.header };
     } catch (err) {
@@ -207,10 +228,11 @@ export class Gate {
   }
 
   stats(): GateStats {
+    const receipts = this.store.receipts();
     const revenue: Record<string, string[]> = {};
     const routes: Record<string, { settled: number; amounts: string[] }> = {};
     const payers: Record<string, { settled: number; amounts: string[] }> = {};
-    for (const receipt of this.receiptLog) {
+    for (const receipt of receipts) {
       (revenue[receipt.asset] ??= []).push(receipt.amount);
       const routeLine = (routes[receipt.route] ??= { settled: 0, amounts: [] });
       routeLine.settled += 1;
@@ -227,9 +249,9 @@ export class Gate {
         ]),
       );
     return {
-      quoted: this.quoted,
-      settled: this.receiptLog.length,
-      refused: this.refusedCount,
+      quoted: this.store.quoted(),
+      settled: receipts.length,
+      refused: this.store.refused(),
       revenue: Object.fromEntries(
         Object.entries(revenue).map(([asset, amounts]) => [asset, sumDecimal(amounts)]),
       ),
@@ -283,15 +305,22 @@ export class Gate {
     }
   }
 
-  private burnReplay(paymentHeader: string): void {
+  /**
+   * Burn the replay slot. The store's check-and-set is sync at call time
+   * (concurrent copies cannot both pass); the await is the durability barrier
+   * — on a durable store the burn is on disk before verify/settle run, so a
+   * crash mid-settle cannot resurrect the slot on restart. A store WRITE
+   * failure is not a GateError: it escapes as a 500, because "we cannot
+   * guarantee replay protection" must never settle a payment.
+   */
+  private async burnReplay(paymentHeader: string): Promise<void> {
     const key = createHash('sha256').update(paymentHeader).digest('hex');
-    if (this.seenPayments.has(key)) {
+    if (!(await this.store.burnReplay(key))) {
       throw new GateError(
         'payment_replayed',
         'this exact payment was already presented; one settlement per payment',
       );
     }
-    this.seenPayments.add(key);
   }
 
   private refuse(
@@ -300,7 +329,7 @@ export class Gate {
     requirement: PaymentRequirement,
     payer: string | undefined,
   ): GateOutcome {
-    this.refusedCount += 1;
+    this.fire(() => this.store.recordRefusal());
     this.emit({
       type: 'gate.refused',
       at: this.now(),

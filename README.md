@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@rein/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. The supply side ships as **`@rein/gate`**, vendor monetization middleware (Phase 2). The engine is **durable**: `@rein/store` persists agents, policies, spend history, and the signed decision chain across restarts. And **`@rein/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door.
+> Status: **v0.1 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@rein/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@rein/signer`. The supply side ships as **`@rein/gate`**, vendor monetization middleware (Phase 2). The stack is **durable**: `@rein/store` persists the engine (agents, policies, spend, the signed decision chain), the reputation evidence, gate receipts + replay slots, and signer sessions across restarts. And **`@rein/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door.
 
 ## Product phases
 
@@ -26,17 +26,17 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@rein/console`** — a live "mission control" web UI over the whole stack: decisions, vendor-gate quotes/receipts/refusals, signer releases, settlements, and shadow spends streaming in real time; kill switch, vendor revenue panel, the live reputation scoreboard (scores, confidence, and the evidence behind them), and the tamper-evident audit chain.
 - **`@rein/signer`** — the custody tier. Wallet keys live in the signer, agents get capped, expiring session tokens, and every EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once. Where SDK mode _detects_ bypass, this tier _prevents_ it.
 - **`@rein/gate`** — the supply side (Phase 2). Middleware a vendor drops in front of any Node HTTP API to monetize it over x402: price routes by glob, quote strict v1 402s, cross-check + screen + replay-protect incoming payments, settle through pluggable rails (mock or the real facilitator), and keep vendor-side receipts and revenue stats. **Verified live on Base Sepolia** against the hosted facilitator.
-- **`@rein/store`** — persistence. Postgres-backed engine stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind the engine's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam. The reputation graph's **evidence ledger persists here too** (scores are never stored — they recompute byte-identically from rehydrated evidence), including in-flight intent correlations, so a settlement that lands after a restart is still attributed.
+- **`@rein/store`** — persistence. Postgres-backed stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind every service's store ports: agents, the kill switch, policies in evaluation order, rolling spend history, the ed25519 signing key, and the hash-chained decision log all survive restarts — the chain resumes from the last persisted hash and verifies end to end across the seam. The reputation graph's **evidence ledger persists here too** (scores are never stored — they recompute byte-identically from rehydrated evidence), including in-flight intent correlations, so a settlement that lands after a restart is still attributed. So do the **gate's receipts and replay slots** (a pre-kill payment is refused as a replay post-restart) and the **signer's session grants** — spend against caps, revocations, and burned vouchers; wallet private keys deliberately never (KMS territory).
 - **`@rein/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening. `graph.link()` merges identities across id spaces (an agent's engine ULID and its paying wallet, a vendor's host and its payTo address — the ERC-8004 story) so one party carries one history: an agent's engine-side sins follow its wallet to every gate's door.
 
-**266 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
+**279 tests passing** (plus 2 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC.
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 266 tests, fully offline
+pnpm test            # 279 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -109,16 +109,22 @@ $env:REIN_GRAPH_DATA_DIR=".rein-graph-data"; node services/store/dist/graph-serv
 REIN_GRAPH_DATA_DIR=.rein-graph-data node services/store/dist/graph-server.js
 ```
 
-Composing it in code is one line per side — in a single process, one store backs both:
+The gate and the signer ride the same store: vendor receipts, revenue stats, and burned replay slots resume (a payment settled before a kill is refused as a replay after the restart), and session grants — token hashes, per-session spend against the cap, revocations, and the burned-voucher set — survive a signer restart, so an agent holding a token keeps paying while a revoked one stays dead. Wallet **private keys are deliberately never persisted** (custody keys at rest belong in a KMS/HSM); deployments re-register wallets at boot.
+
+Composing it in code is one line per side — in a single process, one store backs all four:
 
 ```ts
 import { PolicyEngine } from '@rein/policy-engine';
 import { ReputationGraph } from '@rein/graph';
+import { createGate } from '@rein/gate';
+import { SessionSigner } from '@rein/signer';
 import { openReinStore } from '@rein/store';
 
 const store = await openReinStore({ dir: '.rein-data' });
 const engine = new PolicyEngine(store);
 const graph = new ReputationGraph({ ledger: store.ledger, intents: store.intents });
+const gate = createGate({ /* routes, rails, ... */ store: store.gate });
+const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem, store: store.sessions });
 ```
 
 ## Real rails: Base Sepolia

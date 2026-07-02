@@ -344,12 +344,18 @@ importers:
       '@rein/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rein/gate':
+        specifier: workspace:*
+        version: link:../../packages/gate
       '@rein/graph':
         specifier: workspace:*
         version: link:../graph
       '@rein/policy-engine':
         specifier: workspace:*
         version: link:../policy-engine
+      '@rein/signer':
+        specifier: workspace:*
+        version: link:../signer
       fastify:
         specifier: ^5.2.0
         version: 5.8.5
@@ -366,6 +372,9 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      viem:
+        specifier: ^2.47.0
+        version: 2.52.2(typescript@5.9.3)(zod@3.25.76)
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.20)

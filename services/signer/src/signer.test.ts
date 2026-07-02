@@ -25,7 +25,7 @@ async function makeWorld(sessionInput: Partial<CreateSessionInput> = {}) {
   signer.onEvent((e) => events.push(e));
   const privateKey = generatePrivateKey();
   const walletAddress = signer.registerWallet(agentId, privateKey);
-  const { session, token } = signer.createSession({ agentId, ...sessionInput });
+  const { session, token } = await signer.createSession({ agentId, ...sessionInput });
   return { engine, agentId, signer, clock, events, walletAddress, session, token };
 }
 
@@ -98,7 +98,7 @@ describe('SessionSigner', () => {
   it('refuses a revoked session', async () => {
     const w = await makeWorld();
     const { intent, decision } = await evaluateFor(w.engine, w.agentId);
-    w.signer.revokeSession(w.session.id);
+    await w.signer.revokeSession(w.session.id);
     await expectRefusal(
       w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
       'session_revoked',
@@ -125,7 +125,7 @@ describe('SessionSigner', () => {
   it('refuses when no wallet is in custody for the agent', async () => {
     const { engine, agentId } = await makeEngine();
     const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
-    const { token } = signer.createSession({ agentId });
+    const { token } = await signer.createSession({ agentId });
     const { intent, decision } = await evaluateFor(engine, agentId);
     await expectRefusal(
       signer.sign({ sessionToken: token, requirement: makeRequirement(), intent, decision }),
@@ -191,6 +191,24 @@ describe('SessionSigner', () => {
     const results = await Promise.all([attempt(), attempt()]);
     expect(results.filter((r) => r === 'signed')).toHaveLength(1);
     expect(results.filter((r) => r === 'decision_replayed')).toHaveLength(1);
+    expect(w.signer.sessionSpent(w.session.id)).toBe('0.01');
+  });
+
+  it('lets exactly one of two concurrent signs fit under the session cap', async () => {
+    // Two DISTINCT vouchers, each individually fine, but only one fits the
+    // cap. Without serialization both pass the cap check before either
+    // records its spend — the last-line backstop would leak.
+    const w = await makeWorld({ capAmount: '0.015' });
+    const a = await evaluateFor(w.engine, w.agentId);
+    const b = await evaluateFor(w.engine, w.agentId);
+    const attempt = (v: typeof a) =>
+      w.signer
+        .sign({ sessionToken: w.token, requirement: makeRequirement(), ...v })
+        .then(() => 'signed' as const)
+        .catch((err: SignerError) => err.code);
+    const results = await Promise.all([attempt(a), attempt(b)]);
+    expect(results.filter((r) => r === 'signed')).toHaveLength(1);
+    expect(results.filter((r) => r === 'session_cap_exceeded')).toHaveLength(1);
     expect(w.signer.sessionSpent(w.session.id)).toBe('0.01');
   });
 

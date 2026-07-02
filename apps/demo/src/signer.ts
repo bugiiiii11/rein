@@ -173,7 +173,7 @@ async function main() {
   const events: ReinEvent[] = [];
   signer.onEvent((e) => events.push(e));
   const walletAddress = signer.registerWallet(agentId, generatePrivateKey());
-  const { session, token } = signer.createSession({
+  const { session, token } = await signer.createSession({
     agentId,
     capAmount: SESSION_CAP,
     ttlSeconds: 3600,

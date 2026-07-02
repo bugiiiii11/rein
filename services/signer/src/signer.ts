@@ -1,16 +1,17 @@
 import { EventEmitter } from 'node:events';
-import { createPublicKey, type KeyObject } from 'node:crypto';
+import { createPublicKey, randomBytes, type KeyObject } from 'node:crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex, LocalAccount } from 'viem';
 import {
   compareDecimal,
   gt,
+  newId,
   sumDecimal,
+  Session,
   type Asset,
   type Decision,
   type PaymentIntent,
   type ReinEvent,
-  type Session,
 } from '@rein/core';
 import {
   atomicToDecimal,
@@ -27,7 +28,15 @@ import {
   type ExactEvmAuthorization,
 } from '@rein/x402-rails';
 import { SignerError, type RefusalCode } from './errors.js';
-import { SessionStore, sessionState, type CreateSessionInput, type CreatedSession } from './sessions.js';
+import {
+  DEFAULT_TTL_SECONDS,
+  InMemorySessionStore,
+  hashToken,
+  sessionState,
+  type CreateSessionInput,
+  type CreatedSession,
+  type SessionStorePort,
+} from './sessions.js';
 import { verifyVoucher } from './verify.js';
 
 export interface SessionSignerOptions {
@@ -43,6 +52,12 @@ export interface SessionSignerOptions {
   assetAddresses?: Record<string, Asset>;
   /** Injectable ms clock for deterministic tests. */
   now?: () => number;
+  /**
+   * Session storage. Defaults in-memory; pass @rein/store's session store and
+   * grants, spend accounting, revocations, and burned vouchers survive signer
+   * restarts. Wallet keys are NOT stored — re-register them at boot.
+   */
+  store?: SessionStorePort;
 }
 
 /** What the agent side sends: the 402 offer plus the engine-signed voucher. */
@@ -70,15 +85,16 @@ export interface SignResult {
  */
 export class SessionSigner {
   private readonly enginePublicKey: KeyObject;
-  private readonly store: SessionStore;
+  private readonly store: SessionStorePort;
   private readonly wallets = new Map<string, LocalAccount>();
-  private readonly usedDecisions = new Set<string>();
   private readonly bus = new EventEmitter();
   private readonly maxDecisionAgeMs: number;
   private readonly skewSeconds: number;
   private readonly defaultTimeoutSeconds: number;
   private readonly assetAddresses: Record<string, Asset>;
   private readonly now: () => number;
+  /** Serializes sign() — see {@link sign}. */
+  private tail: Promise<unknown> = Promise.resolve();
 
   constructor(options: SessionSignerOptions) {
     this.enginePublicKey = createPublicKey(options.enginePublicKeyPem);
@@ -87,7 +103,7 @@ export class SessionSigner {
     this.defaultTimeoutSeconds = options.defaultTimeoutSeconds ?? 300;
     this.assetAddresses = options.assetAddresses ?? {};
     this.now = options.now ?? (() => Date.now());
-    this.store = new SessionStore(this.now);
+    this.store = options.store ?? new InMemorySessionStore();
   }
 
   onEvent(handler: (event: ReinEvent) => void): void {
@@ -109,12 +125,32 @@ export class SessionSigner {
     return this.wallets.get(agentId)?.address;
   }
 
-  createSession(input: CreateSessionInput): CreatedSession {
-    return this.store.create(input);
+  /**
+   * Mint a session grant. The bearer token is returned exactly once — the
+   * store only ever sees its hash. The write is awaited: a durable store has
+   * the grant on disk before the token exists anywhere outside this return.
+   */
+  async createSession(input: CreateSessionInput): Promise<CreatedSession> {
+    const token = randomBytes(32).toString('hex');
+    const createdAt = new Date(this.now());
+    const ttl = input.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    const session = Session.parse({
+      id: newId('ses'),
+      agentId: input.agentId,
+      tokenHash: hashToken(token),
+      capAmount: input.capAmount,
+      maxPerPayment: input.maxPerPayment,
+      expiresAt: new Date(createdAt.getTime() + ttl * 1000),
+      createdAt,
+    });
+    await this.store.create(session);
+    return { session, token };
   }
 
-  revokeSession(id: string): void {
-    this.store.revoke(id);
+  /** Kill a grant. Awaited — on a durable store, acknowledged = revoked on disk. */
+  async revokeSession(id: string): Promise<void> {
+    if (!this.store.get(id)) throw new Error(`unknown session: ${id}`);
+    await this.store.revoke(id, new Date(this.now()));
   }
 
   sessions(): readonly Session[] {
@@ -130,11 +166,28 @@ export class SessionSigner {
    * The gate. Refusals throw {@link SignerError} and emit `signature.refused`;
    * a release emits `signature.released`. Check order matters: cheapest and
    * least-trusting first, the key touched last.
+   *
+   * Serialized through an internal queue: the session-cap check and the spend
+   * record that backs it straddle awaits (the signing leg, and durable store
+   * writes), so two concurrent signs on one session could otherwise BOTH pass
+   * the cap check before either records — the same rolling-budget race the
+   * engine serializes evaluateIntent against.
    */
-  async sign(request: SignRequest): Promise<SignResult> {
+  sign(request: SignRequest): Promise<SignResult> {
+    const run = () => this.doSign(request);
+    const next = this.tail.then(run, run);
+    // Refusals reject the caller's promise but must not wedge the queue.
+    this.tail = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private async doSign(request: SignRequest): Promise<SignResult> {
     const { requirement, intent, decision } = request;
 
-    const session = this.store.findByToken(request.sessionToken);
+    const session = this.store.findByTokenHash(hashToken(request.sessionToken));
     if (!session) {
       throw this.refuse('session_unknown', 'no session matches this token', {
         agentId: intent.agentId,
@@ -177,7 +230,7 @@ export class SessionSigner {
       throw this.refuse('decision_stale', 'decision is too old to act on — re-evaluate', ctx);
     }
 
-    if (this.usedDecisions.has(decision.id)) {
+    if (this.store.isDecisionUsed(decision.id)) {
       throw this.refuse('decision_replayed', 'this decision already released a signature', ctx);
     }
 
@@ -202,25 +255,42 @@ export class SessionSigner {
     }
 
     // Burn the decision BEFORE the async signing step so two concurrent
-    // requests carrying the same voucher cannot both pass the replay check.
-    this.usedDecisions.add(decision.id);
+    // requests carrying the same voucher cannot both pass the replay check
+    // (the store's check-and-set is sync at call time); a durable store also
+    // persists the burn before the key is touched — a crash after signing
+    // cannot resurrect the voucher on restart.
+    if (!(await this.store.burnDecision(decision.id))) {
+      throw this.refuse('decision_replayed', 'this decision already released a signature', ctx);
+    }
+    let result: SignResult;
     try {
-      const result = await this.signAuthorization(account, requirement, intent);
-      this.store.recordSpend(session.id, intent.amount);
-      this.emit({
-        type: 'signature.released',
-        at: new Date(),
-        sessionId: session.id,
-        agentId: session.agentId,
-        intentId: intent.id,
-        decisionId: decision.id,
-        amount: intent.amount,
-      });
-      return result;
+      result = await this.signAuthorization(account, requirement, intent);
+      await this.store.recordSpend(session.id, intent.amount);
     } catch (err) {
-      this.usedDecisions.delete(decision.id);
+      // Un-burn so the voucher stays usable after a transient failure. If the
+      // un-burn itself fails (rejects OR throws sync) on a durable store, the
+      // burn row stays — the voucher dies unspent, which fails CLOSED
+      // (re-evaluate for a new one) — and the caller sees the ORIGINAL error.
+      try {
+        await this.store.unburnDecision(decision.id);
+      } catch {
+        // burn stays; fails closed
+      }
       throw err;
     }
+    // Emitted OUTSIDE the try: a throwing event handler must not un-burn a
+    // voucher whose spend was already recorded (retry would double-spend the
+    // session cap for one logical authorization).
+    this.emit({
+      type: 'signature.released',
+      at: new Date(),
+      sessionId: session.id,
+      agentId: session.agentId,
+      intentId: intent.id,
+      decisionId: decision.id,
+      amount: intent.amount,
+    });
+    return result;
   }
 
   /**

@@ -47,9 +47,11 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
   app.get('/health', () => ({ status: 'ok' }));
 
   // --- Sessions ---
-  app.post('/v1/sessions', (req) => {
+  // Writes are awaited: on a durable store, a 2xx means the grant (or the
+  // revocation) is on disk, not merely in memory.
+  app.post('/v1/sessions', async (req) => {
     const input = SessionInput.parse(req.body);
-    const created = signer.createSession(input);
+    const created = await signer.createSession(input);
     return { session: redact(created.session, '0'), token: created.token };
   });
 
@@ -57,12 +59,14 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
     signer.sessions().map((s) => redact(s, signer.sessionSpent(s.id))),
   );
 
-  app.post('/v1/sessions/:id/revoke', (req, reply) => {
-    try {
-      signer.revokeSession((req.params as { id: string }).id);
-    } catch {
+  app.post('/v1/sessions/:id/revoke', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    // Existence checked up front so a durable-store WRITE failure surfaces as
+    // a 500 through the error handler instead of masquerading as a 404.
+    if (!signer.sessions().some((s) => s.id === id)) {
       return reply.status(404).send({ error: 'unknown_session' });
     }
+    await signer.revokeSession(id);
     return reply.status(204).send();
   });
 
