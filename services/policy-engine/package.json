@@ -1,12 +1,41 @@
 {
   "name": "@rein/policy-engine",
   "version": "0.1.0",
-  "private": true,
   "description": "Rein policy evaluation service — sandboxed declarative rule engine with hash-chained, signed decisions.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "services/policy-engine"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "x402",
+    "policy",
+    "spend-control",
+    "ai-agents",
+    "agent-payments",
+    "audit-log"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": ["./dist/server.js"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "bin": {
     "rein-policy-engine": "./dist/server.js"
   },
@@ -20,7 +49,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:*",
+    "@rein/core": "workspace:^",
     "fastify": "^5.2.0",
     "zod": "^3.24.1"
   },

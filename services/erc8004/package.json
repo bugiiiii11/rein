@@ -1,12 +1,43 @@
 {
   "name": "@rein/erc8004",
   "version": "0.1.0",
-  "private": true,
   "description": "ERC-8004 Identity Registry integration — reads on-chain identity facts (ownerOf, agentWallet) and turns them into reputation-graph link facts; registers agents on the real registry.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "services/erc8004"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "erc-8004",
+    "erc8004",
+    "agent-identity",
+    "identity-registry",
+    "reputation",
+    "base",
+    "viem",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -15,7 +46,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:*",
+    "@rein/core": "workspace:^",
     "viem": "^2.47.0"
   },
   "devDependencies": {

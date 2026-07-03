@@ -3,6 +3,20 @@
   "version": "0.1.0",
   "description": "Canonical zod schemas and shared types for Rein — the single source of truth for DB rows, API payloads, and SDK types.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": ["rein", "x402", "ai-agents", "agent-payments", "payments", "zod", "schemas"],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {

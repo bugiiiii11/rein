@@ -1,12 +1,43 @@
 {
   "name": "@rein/x402-rails",
   "version": "0.1.0",
-  "private": true,
   "description": "Real x402 rails for Rein — EIP-3009 payer, hosted-facilitator client, and on-chain indexer for Base Sepolia.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "services/x402-rails"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "x402",
+    "base",
+    "base-sepolia",
+    "usdc",
+    "eip-3009",
+    "viem",
+    "payments",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -15,8 +46,8 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:*",
-    "@rein/sdk": "workspace:*",
+    "@rein/core": "workspace:^",
+    "@rein/sdk": "workspace:^",
     "viem": "^2.47.0",
     "zod": "^3.24.1"
   },

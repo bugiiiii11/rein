@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';

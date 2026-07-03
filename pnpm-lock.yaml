@@ -162,10 +162,10 @@ importers:
   packages/gate:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@rein/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../sdk
       zod:
         specifier: ^3.24.1
@@ -196,7 +196,7 @@ importers:
   packages/sdk:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       zod:
         specifier: ^3.24.1
@@ -221,7 +221,7 @@ importers:
   services/erc8004:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       viem:
         specifier: ^2.47.0
@@ -246,7 +246,7 @@ importers:
   services/graph:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       fastify:
         specifier: ^5.2.0
@@ -277,10 +277,10 @@ importers:
   services/mock-rails:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       '@rein/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/sdk
       zod:
         specifier: ^3.24.1
@@ -305,7 +305,7 @@ importers:
   services/policy-engine:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       fastify:
         specifier: ^5.2.0
@@ -413,10 +413,10 @@ importers:
   services/x402-rails:
     dependencies:
       '@rein/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       '@rein/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/sdk
       viem:
         specifier: ^2.47.0

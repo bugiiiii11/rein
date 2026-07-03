@@ -3,6 +3,29 @@
   "version": "0.1.0",
   "description": "Rein Gate — vendor-side x402 monetization middleware. Price your routes, verify and settle agent payments, screen payers, and get receipts and revenue observability from one middleware.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "packages/gate"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "x402",
+    "402",
+    "micropayments",
+    "api-monetization",
+    "middleware",
+    "usdc",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -15,9 +38,7 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -27,8 +48,8 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:*",
-    "@rein/sdk": "workspace:*",
+    "@rein/core": "workspace:^",
+    "@rein/sdk": "workspace:^",
     "zod": "^3.24.1"
   },
   "devDependencies": {
