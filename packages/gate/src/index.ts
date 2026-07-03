@@ -1,5 +1,5 @@
 /**
- * @rein/gate — the supply-side gate (Phase 2).
+ * @reinconsole/gate — the supply-side gate (Phase 2).
  *
  * Price your routes once and every x402 payment into your API is quoted,
  * cross-checked, screened, settled, and receipted before your handler runs:
@@ -55,5 +55,5 @@ export { inspectPaymentHeader, type InspectedPayment } from './wire.js';
 export { GateError, type GateRefusalCode } from './errors.js';
 
 // Re-exported for convenience so gate users rarely need the other packages.
-export type { GateReceipt, ReinEvent } from '@rein/core';
-export type { PaymentRequirement, PaymentRequired } from '@rein/sdk';
+export type { GateReceipt, ReinEvent } from '@reinconsole/core';
+export type { PaymentRequirement, PaymentRequired } from '@reinconsole/sdk';

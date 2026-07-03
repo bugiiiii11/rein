@@ -8,14 +8,14 @@
  *   4. Kill switch — engine.freeze() / engine.unfreeze()
  *   5. Shadow spend — direct ledger.transfer() flagged by the indexer
  *
- * Run: pnpm --filter @rein/demo demo
+ * Run: pnpm --filter @reinconsole/demo demo
  */
 
 import type { AddressInfo } from 'node:net';
-import { newId } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { createGuard, PaymentBlockedError } from '@rein/sdk';
-import { MockLedger, MockFacilitator, MockIndexer, createMockVendor } from '@rein/mock-rails';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { createGuard, PaymentBlockedError } from '@reinconsole/sdk';
+import { MockLedger, MockFacilitator, MockIndexer, createMockVendor } from '@reinconsole/mock-rails';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 

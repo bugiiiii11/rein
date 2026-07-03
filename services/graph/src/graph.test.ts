@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, it, expect } from 'vitest';
-import { newId, type Receipt, type ReinEvent } from '@rein/core';
+import { newId, type Receipt, type ReinEvent } from '@reinconsole/core';
 import { EvidenceLedger, subjectKey } from './evidence.js';
 import { ReputationGraph, payerCheck } from './graph.js';
 

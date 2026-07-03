@@ -4,7 +4,7 @@ import {
   type ReinEvent,
   type ReputationComponents,
   type ReputationSubject,
-} from '@rein/core';
+} from '@reinconsole/core';
 import {
   EvidenceLedger,
   normalizeSubject,
@@ -38,7 +38,7 @@ export interface EventSource {
 /**
  * Gate refusal codes that are the vendor's throttle or the vendor's rails
  * failing — not payer misbehavior. They must never become reputation evidence
- * (see the `gate.refused` case below). Mirrors @rein/gate's no-fault classes;
+ * (see the `gate.refused` case below). Mirrors @reinconsole/gate's no-fault classes;
  * kept as strings because the event schema deliberately carries codes as
  * strings (remote gates may run other versions).
  */
@@ -52,7 +52,7 @@ const NO_FAULT_GATE_CODES = new Set([
 /**
  * Where vendor scores land. `PolicyEngine.spend` satisfies this structurally,
  * so `graph.syncVendors(engine.spend)` closes the loop — durable when the
- * engine runs on @rein/store.
+ * engine runs on @reinconsole/store.
  */
 export interface VendorReputationSink {
   setVendorReputation(host: string, score: number): void | Promise<void>;
@@ -68,7 +68,7 @@ export interface ReputationGraphOptions {
    */
   correlationLimit?: number;
   /**
-   * Durable evidence ledger. Defaults to in-memory; @rein/store provides a
+   * Durable evidence ledger. Defaults to in-memory; @reinconsole/store provides a
    * PGlite-backed one so scores survive a restart.
    */
   ledger?: EvidenceLedgerPort;
@@ -417,7 +417,7 @@ export interface PayerCheckOptions {
 }
 
 /**
- * Reputation-driven gate screening: plugs into @rein/gate's `screen.check`.
+ * Reputation-driven gate screening: plugs into @reinconsole/gate's `screen.check`.
  * Unknown wallets and thin histories pass (same fairness rule as the engine
  * sync); a confident low score is turned away at the door, before any
  * facilitator round-trip.

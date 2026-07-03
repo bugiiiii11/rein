@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { recoverTypedDataAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { newId, type ReinEvent } from '@rein/core';
+import { newId, type ReinEvent } from '@reinconsole/core';
 import {
   BASE_SEPOLIA_USDC,
   decodePaymentHeader,
   intentNonce,
   transferWithAuthorizationTypes,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import { SessionSigner } from './signer.js';
 import { SignerError } from './errors.js';
 import type { CreateSessionInput } from './sessions.js';

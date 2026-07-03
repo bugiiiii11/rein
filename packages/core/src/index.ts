@@ -1,5 +1,5 @@
 /**
- * @rein/core — the single source of truth.
+ * @reinconsole/core — the single source of truth.
  *
  * Every DB row, API payload, and SDK type derives from the zod schemas here.
  * Import the schema to validate at a boundary; import the inferred type for

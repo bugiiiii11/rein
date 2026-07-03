@@ -1,5 +1,5 @@
 /**
- * @rein/signer — the session-key custody tier.
+ * @reinconsole/signer — the session-key custody tier.
  *
  * SDK mode governs an agent that holds its own key: advisory, bypassable,
  * with shadow.spend as the tripwire. This tier removes the key from the agent

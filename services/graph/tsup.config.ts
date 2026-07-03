@@ -8,7 +8,7 @@ export default defineConfig({
   clean: true,
   target: 'node22',
   splitting: false,
-  // @rein/core is bundled so the graph is a self-contained import.
+  // @reinconsole/core is bundled so the graph is a self-contained import.
   // fastify stays external (regular dependency).
-  noExternal: ['@rein/core'],
+  noExternal: ['@reinconsole/core'],
 });

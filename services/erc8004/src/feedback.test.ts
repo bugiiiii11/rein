@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { keccak256, stringToBytes } from 'viem';
-import type { ReputationScore } from '@rein/core';
-import { ReputationGraph } from '@rein/graph';
+import type { ReputationScore } from '@reinconsole/core';
+import { ReputationGraph } from '@reinconsole/graph';
 import {
   feedbackEvidence,
   REIN_SCORE_TAG,

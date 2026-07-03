@@ -3,7 +3,7 @@
  *
  * In SDK mode the agent holds its own wallet key: the guard is advisory and a
  * rogue agent is only *detected* (shadow.spend). Here the key moves into
- * @rein/signer and the agent gets a capped, expiring session token. Every
+ * @reinconsole/signer and the agent gets a capped, expiring session token. Every
  * EIP-3009 signature requires an engine-signed allow voucher for the exact
  * transfer being signed — verified offline, usable once.
  *
@@ -16,7 +16,7 @@
  *   5. Kill switch — freeze now reaches the key itself
  *   6. Session cap — the signer's backstop under policy
  *
- * Run: pnpm --filter @rein/demo demo:signer
+ * Run: pnpm --filter @reinconsole/demo demo:signer
  */
 
 import type { AddressInfo } from 'node:net';
@@ -29,25 +29,25 @@ import {
   PaymentIntent,
   type Decision,
   type ReinEvent,
-} from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
+} from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
 import {
   createGuard,
   PaymentBlockedError,
   type FetchLike,
   type PaymentRequirement,
-} from '@rein/sdk';
+} from '@reinconsole/sdk';
 import {
   SessionSigner,
   SignerError,
   intentHashOf,
   sessionPayerFor,
-} from '@rein/signer';
+} from '@reinconsole/signer';
 import {
   BASE_SEPOLIA_USDC,
   decodePaymentHeader,
   transferWithAuthorizationTypes,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 
@@ -189,7 +189,7 @@ async function main() {
 
   console.log(`\n  Agent     ${agentId}  (research-agent)`);
   console.log(`  Wallet    ${walletAddress}  [base-sepolia]`);
-  console.log(`            key lives in @rein/signer — never in the agent process`);
+  console.log(`            key lives in @reinconsole/signer — never in the agent process`);
   console.log(`  Session   ${session.id}  cap $${SESSION_CAP} · expires in 1h`);
   console.log(`            agent holds: token ${token.slice(0, 8)}…  (that's all it gets)`);
   console.log(`  Engine    ${engineUrl}`);

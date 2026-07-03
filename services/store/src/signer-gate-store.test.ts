@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { generatePrivateKey } from 'viem/accounts';
 import type { Hex } from 'viem';
-import { newId, type Decision, type GateReceipt, type PaymentIntent } from '@rein/core';
-import { PolicyEngine } from '@rein/policy-engine';
-import { SessionSigner, SignerError } from '@rein/signer';
-import { createGate, GateError, type Gate, type GateRails } from '@rein/gate';
+import { newId, type Decision, type GateReceipt, type PaymentIntent } from '@reinconsole/core';
+import { PolicyEngine } from '@reinconsole/policy-engine';
+import { SessionSigner, SignerError } from '@reinconsole/signer';
+import { createGate, GateError, type Gate, type GateRails } from '@reinconsole/gate';
 import type { PGlite } from '@electric-sql/pglite';
 import { openDb } from './db.js';
 import { PgGateStore } from './gate-stores.js';
@@ -17,7 +17,7 @@ import { openReinStore, type ReinStore } from './index.js';
 /**
  * Restart suites for the custody tier and the gate: sessions (token hashes,
  * spend accounting, revocations), burned vouchers, gate receipts, counters,
- * and replay slots all live on @rein/store — kill the process between any two
+ * and replay slots all live on @reinconsole/store — kill the process between any two
  * operations and the resumed working set must behave byte-for-byte like the
  * one that died.
  */

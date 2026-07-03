@@ -5,7 +5,7 @@ import {
   parseEventLogs,
   zeroAddress,
 } from 'viem';
-import { formatErc8004Id } from '@rein/core';
+import { formatErc8004Id } from '@reinconsole/core';
 import { identityRegistryAbi, reputationRegistryAbi } from './abi.js';
 import { Erc8004Error } from './errors.js';
 

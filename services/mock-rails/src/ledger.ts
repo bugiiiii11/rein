@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { Chain, Asset, DecimalString } from '@rein/core';
+import { Chain, Asset, DecimalString } from '@reinconsole/core';
 
 /**
  * The simulated chain. One MockLedger plays every chain at once: entries carry

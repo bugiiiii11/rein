@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Agent, Decision, PaymentIntent, Policy } from '@rein/core';
+import { Agent, Decision, PaymentIntent, Policy } from '@reinconsole/core';
 import { EngineError } from './errors.js';
 import type { IntentSubmission } from './x402.js';
 
@@ -19,7 +19,7 @@ export interface EngineClientOptions {
 
 /**
  * Thin typed client for the policy-engine HTTP API. Every response is parsed
- * through the @rein/core schemas, so wire drift fails loudly at the boundary.
+ * through the @reinconsole/core schemas, so wire drift fails loudly at the boundary.
  */
 export class EngineClient {
   private readonly baseUrl: string;

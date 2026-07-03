@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createPublicKey, generateKeyPairSync } from 'node:crypto';
-import { Decision, PaymentIntent } from '@rein/core';
+import { Decision, PaymentIntent } from '@reinconsole/core';
 import { intentHashOf, verifyVoucher } from './verify.js';
 import { evaluateFor, makeEngine } from './testkit.js';
 

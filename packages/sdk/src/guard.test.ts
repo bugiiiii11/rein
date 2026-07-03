@@ -1,7 +1,7 @@
-﻿import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import { newId } from '@rein/core';
-import { buildServer } from '@rein/policy-engine';
+import { newId } from '@reinconsole/core';
+import { buildServer } from '@reinconsole/policy-engine';
 import { createGuard } from './guard.js';
 import { EngineClient, type FetchLike } from './client.js';
 import { EngineError, PaymentBlockedError, UnsupportedRequirementError } from './errors.js';

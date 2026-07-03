@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ReinEvent } from '@rein/core';
+import type { ReinEvent } from '@reinconsole/core';
 import { GateError } from './errors.js';
 import { createGate, type GateOptions, type GateOutcome } from './gate.js';
 import {

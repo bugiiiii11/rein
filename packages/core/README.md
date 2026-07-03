@@ -1,4 +1,4 @@
-# @rein/core
+# @reinconsole/core
 
 Canonical [zod](https://zod.dev) schemas and shared types for **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. This package is the single source of truth for DB rows, API payloads, and SDK types across the whole stack.
 
@@ -7,7 +7,7 @@ Canonical [zod](https://zod.dev) schemas and shared types for **[Rein](https://g
 ## Install
 
 ```bash
-npm install @rein/core
+npm install @reinconsole/core
 ```
 
 ## What's in it
@@ -19,7 +19,7 @@ npm install @rein/core
 - **Shared glob matcher** — `globMatch` / `globMatchAny`, used by policy targeting and gate route pricing.
 
 ```ts
-import { PaymentIntent, Decision, formatErc8004Id } from '@rein/core';
+import { PaymentIntent, Decision, formatErc8004Id } from '@reinconsole/core';
 
 const intent = PaymentIntent.parse(untrustedInput); // validated, typed
 const id = formatErc8004Id({
@@ -33,12 +33,12 @@ const id = formatErc8004Id({
 
 | Package | Role |
 | --- | --- |
-| [`@rein/sdk`](https://www.npmjs.com/package/@rein/sdk) | Guard — wrap your agent's fetch; every x402 payment policy-checked first |
-| [`@rein/policy-engine`](https://www.npmjs.com/package/@rein/policy-engine) | The rule engine with signed, hash-chained decisions |
-| [`@rein/gate`](https://www.npmjs.com/package/@rein/gate) | Vendor-side x402 monetization middleware |
-| [`@rein/graph`](https://www.npmjs.com/package/@rein/graph) | Explainable reputation over agents and vendors |
-| [`@rein/x402-rails`](https://www.npmjs.com/package/@rein/x402-rails) | Real rails: EIP-3009 payer + x402.org facilitator client (Base Sepolia) |
-| [`@rein/mock-rails`](https://www.npmjs.com/package/@rein/mock-rails) | Offline twin: mock facilitator, ledger, indexer |
-| [`@rein/erc8004`](https://www.npmjs.com/package/@rein/erc8004) | ERC-8004 identity + reputation registry integration |
+| [`@reinconsole/sdk`](https://www.npmjs.com/package/@reinconsole/sdk) | Guard — wrap your agent's fetch; every x402 payment policy-checked first |
+| [`@reinconsole/policy-engine`](https://www.npmjs.com/package/@reinconsole/policy-engine) | The rule engine with signed, hash-chained decisions |
+| [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate) | Vendor-side x402 monetization middleware |
+| [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph) | Explainable reputation over agents and vendors |
+| [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails) | Real rails: EIP-3009 payer + x402.org facilitator client (Base Sepolia) |
+| [`@reinconsole/mock-rails`](https://www.npmjs.com/package/@reinconsole/mock-rails) | Offline twin: mock facilitator, ledger, indexer |
+| [`@reinconsole/erc8004`](https://www.npmjs.com/package/@reinconsole/erc8004) | ERC-8004 identity + reputation registry integration |
 
 MIT © Rein contributors · [Repository](https://github.com/bugiiiii11/rein) · [Issues](https://github.com/bugiiiii11/rein/issues)

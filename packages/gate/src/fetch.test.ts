@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { MockFacilitator, MockLedger } from '@rein/mock-rails';
-import { PaymentRequired } from '@rein/sdk';
+import { MockFacilitator, MockLedger } from '@reinconsole/mock-rails';
+import { PaymentRequired } from '@reinconsole/sdk';
 import { createGatedFetch } from './fetch.js';
 import { createGate } from './gate.js';
 import { mockFacilitatorRails } from './rails.js';

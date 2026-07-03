@@ -24,6 +24,6 @@ export {
   type PolicyStorePort,
   type AgentRegistryPort,
 } from './stores.js';
-// Re-exported from @rein/core (moved there so @rein/gate shares the matcher).
-export { globMatch, globMatchAny } from '@rein/core';
+// Re-exported from @reinconsole/core (moved there so @reinconsole/gate shares the matcher).
+export { globMatch, globMatchAny } from '@reinconsole/core';
 export { buildServer } from './server.js';

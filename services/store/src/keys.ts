@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync } from 'node:crypto';
 import type { PGlite } from '@electric-sql/pglite';
-import type { DecisionLogKeyPair } from '@rein/policy-engine';
+import type { DecisionLogKeyPair } from '@reinconsole/policy-engine';
 
 /**
  * Load the engine's ed25519 signing key, generating and persisting one on

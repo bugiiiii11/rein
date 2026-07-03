@@ -14,15 +14,15 @@
  *
  * Run (PowerShell — the CA var matters on machines with TLS interception):
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"
- *   pnpm --filter @rein/demo demo:sepolia
+ *   pnpm --filter @reinconsole/demo demo:sepolia
  */
 
 import type { AddressInfo } from 'node:net';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PaymentIntent, newId, type Decision } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { createGuard } from '@rein/sdk';
+import { PaymentIntent, newId, type Decision } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { createGuard } from '@reinconsole/sdk';
 import {
   CIRCLE_FAUCET_URL,
   FacilitatorClient,
@@ -33,7 +33,7 @@ import {
   createRealVendor,
   generateWallet,
   getUsdcBalance,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import { appendEnv, readEnv } from './env.js';
 
 const VENDOR_URL = 'https://demo.rein.dev/v1/report';

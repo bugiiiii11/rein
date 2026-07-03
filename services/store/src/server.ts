@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * The persistent policy-engine service: the exact HTTP API of
- * @rein/policy-engine's server, but agents, policies, spend history, the
+ * @reinconsole/policy-engine's server, but agents, policies, spend history, the
  * signing key, and the hash-chained decision log live in a PGlite data
  * directory and survive restarts.
  *
  * Run:
  *   $env:REIN_DATA_DIR = ".rein-data"   # optional, this is the default
- *   pnpm --filter @rein/store start
+ *   pnpm --filter @reinconsole/store start
  */
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 
 export interface PersistentEngine {

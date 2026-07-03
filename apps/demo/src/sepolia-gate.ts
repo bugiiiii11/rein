@@ -19,17 +19,17 @@
  *
  * Run (PowerShell — the CA var matters on machines with TLS interception):
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"
- *   pnpm --filter @rein/demo demo:sepolia-gate
+ *   pnpm --filter @reinconsole/demo demo:sepolia-gate
  */
 
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { newId, type ReinEvent } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { createGuard, PaymentRequired, type Payer } from '@rein/sdk';
-import { createGate, facilitatorClientRails, gateMiddleware, type Gate } from '@rein/gate';
+import { newId, type ReinEvent } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { createGuard, PaymentRequired, type Payer } from '@reinconsole/sdk';
+import { createGate, facilitatorClientRails, gateMiddleware, type Gate } from '@reinconsole/gate';
 import {
   BASE_SEPOLIA_USDC,
   CIRCLE_FAUCET_URL,
@@ -39,7 +39,7 @@ import {
   createBaseSepoliaClient,
   createX402Payer,
   getUsdcBalance,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import { readEnv } from './env.js';
 
 const ATOMIC_PRICE = '10000'; // $0.01 USDC
@@ -73,7 +73,7 @@ async function main() {
   const privateKey = readEnv('REIN_SEPOLIA_PRIVATE_KEY') as Hex | undefined;
   if (privateKey === undefined) {
     console.log('\n  No agent wallet found in .env — run the wallet bootstrap first:');
-    console.log('    pnpm --filter @rein/demo demo:sepolia');
+    console.log('    pnpm --filter @reinconsole/demo demo:sepolia');
     console.log(`  then fund it at ${CIRCLE_FAUCET_URL} and re-run this demo.`);
     return;
   }

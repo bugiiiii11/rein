@@ -1,4 +1,4 @@
-import type { GateReceipt } from '@rein/core';
+import type { GateReceipt } from '@reinconsole/core';
 
 /** Sync for in-memory stores; durable stores return a promise. */
 export type MaybePromise<T> = T | Promise<T>;

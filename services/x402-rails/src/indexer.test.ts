@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Address, Hex } from 'viem';
-import { newId } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { EngineClient } from '@rein/sdk';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { EngineClient } from '@reinconsole/sdk';
 import { OnchainIndexer, type ChainReader, type RailLog } from './indexer.js';
 import { intentNonce } from './nonce.js';
 

@@ -2,7 +2,7 @@
  * Rein — Graph Demo (Phase 3: reputation closes the loop)
  *
  * Guard receipts say what agents tried to spend; gate receipts say what
- * vendors actually earned. @rein/graph turns both into explainable reputation
+ * vendors actually earned. @reinconsole/graph turns both into explainable reputation
  * scores and feeds them back into enforcement on BOTH sides of the wire:
  * vendor scores land in the engine (policies with `vendorReputationLt` start
  * firing), payer scores land in gate screening (low-rep wallets are turned
@@ -17,13 +17,13 @@
  *   5. The door — replays at one vendor's gate get a mule turned away at
  *      another's, while a brand-new wallet still passes (no data ≠ bad)
  *
- * Run: pnpm --filter @rein/demo demo:graph
+ * Run: pnpm --filter @reinconsole/demo demo:graph
  */
 
-import { newId, type ReputationSubject } from '@rein/core';
-import { PolicyEngine } from '@rein/policy-engine';
-import { createGate, type GateRails } from '@rein/gate';
-import { ReputationGraph, payerCheck } from '@rein/graph';
+import { newId, type ReputationSubject } from '@reinconsole/core';
+import { PolicyEngine } from '@reinconsole/policy-engine';
+import { createGate, type GateRails } from '@reinconsole/gate';
+import { ReputationGraph, payerCheck } from '@reinconsole/graph';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ async function main() {
   const allowed = await engine.evaluateIntent(intentTo(GOOD_API));
   verdict(allowed.decision.outcome === 'allow', `$0.05 to ${GOOD_API}`, 'reputation 80+, business as usual');
   console.log('\n  Same agent, same policy, same five cents. The only thing that changed');
-  console.log('  is what the network now knows. With the engine on @rein/store, the');
+  console.log('  is what the network now knows. With the engine on @reinconsole/store, the');
   console.log('  pushed scores survive restarts like everything else.');
 
   // ── Scenario 5: the door ───────────────────────────────────────────────────

@@ -3,7 +3,7 @@
  *
  * Pure types only — no runtime, no node imports — so the browser bundle can
  * `import type` from here with zero leakage. The server normalizes the raw
- * `@rein/core` events into these flat, render-ready shapes.
+ * `@reinconsole/core` events into these flat, render-ready shapes.
  */
 
 export type FeedKind =

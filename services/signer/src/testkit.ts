@@ -1,7 +1,7 @@
-import { newId, type Decision, type PaymentIntent } from '@rein/core';
-import { PolicyEngine, type IntentInput } from '@rein/policy-engine';
-import type { PaymentRequirement } from '@rein/sdk';
-import { BASE_SEPOLIA_USDC } from '@rein/x402-rails';
+import { newId, type Decision, type PaymentIntent } from '@reinconsole/core';
+import { PolicyEngine, type IntentInput } from '@reinconsole/policy-engine';
+import type { PaymentRequirement } from '@reinconsole/sdk';
+import { BASE_SEPOLIA_USDC } from '@reinconsole/x402-rails';
 
 /**
  * Shared fixtures for signer tests: a real policy engine issuing real signed

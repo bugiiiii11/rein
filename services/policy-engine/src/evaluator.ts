@@ -8,7 +8,7 @@ import {
   sumDecimal,
   mulDecimal,
   globMatchAny,
-} from '@rein/core';
+} from '@reinconsole/core';
 
 /**
  * The data the evaluator needs about an agent's history to test predicates.

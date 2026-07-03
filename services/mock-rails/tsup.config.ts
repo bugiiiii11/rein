@@ -9,5 +9,5 @@ export default defineConfig({
   target: 'node22',
   splitting: false,
   // Workspace deps are bundled so the mock rails are a self-contained import.
-  noExternal: ['@rein/core', '@rein/sdk'],
+  noExternal: ['@reinconsole/core', '@reinconsole/sdk'],
 });

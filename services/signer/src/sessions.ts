@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Session, sumDecimal } from '@rein/core';
+import { Session, sumDecimal } from '@reinconsole/core';
 
 export interface CreateSessionInput {
   agentId: string;

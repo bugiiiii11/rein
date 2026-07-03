@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { newId } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { createGuard } from '@rein/sdk';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { createGuard } from '@reinconsole/sdk';
 import { FacilitatorClient } from './facilitator.js';
 import { createX402Payer } from './payer.js';
 import { createRealVendor } from './vendor.js';
@@ -15,7 +15,7 @@ import { createRealVendor } from './vendor.js';
  * on this machine — NODE_EXTRA_CA_CERTS pointing at the local CA pem.
  *
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"; $env:RUN_LIVE = "1"
- *   pnpm --filter @rein/x402-rails test
+ *   pnpm --filter @reinconsole/x402-rails test
  *
  * The settlement test spends $0.01 of testnet USDC per run.
  */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { GateReceipt, type ReinEvent } from '@rein/core';
-import { PaymentRequired } from '@rein/sdk';
+import { GateReceipt, type ReinEvent } from '@reinconsole/core';
+import { PaymentRequired } from '@reinconsole/sdk';
 import { createGate, type GateOptions, type GateOutcome } from './gate.js';
 import type { GateRails } from './rails.js';
 

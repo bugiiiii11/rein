@@ -12,7 +12,7 @@ import { z } from 'zod';
  * carry, AND the reputation-subject id a registered agent's evidence keys by.
  *
  * Casing is load-bearing: reputation subject keys for agent-kind ids are
- * case-sensitive unless they start with `0x` (see @rein/graph
+ * case-sensitive unless they start with `0x` (see @reinconsole/graph
  * `normalizeSubject`), and an eip155 string does not. `formatErc8004Id`
  * therefore always emits the registry address in lowercase, and consumers must
  * never hand-build the string — parse then re-format to normalize.

@@ -1,5 +1,5 @@
 {
-  "name": "@rein/gate",
+  "name": "@reinconsole/gate",
   "version": "0.1.0",
   "description": "Rein Gate — vendor-side x402 monetization middleware. Price your routes, verify and settle agent payments, screen payers, and get receipts and revenue observability from one middleware.",
   "license": "MIT",
@@ -48,14 +48,14 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:^",
-    "@rein/sdk": "workspace:^",
+    "@reinconsole/core": "workspace:^",
+    "@reinconsole/sdk": "workspace:^",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@rein/mock-rails": "workspace:*",
-    "@rein/policy-engine": "workspace:*",
-    "@rein/x402-rails": "workspace:*",
+    "@reinconsole/mock-rails": "workspace:*",
+    "@reinconsole/policy-engine": "workspace:*",
+    "@reinconsole/x402-rails": "workspace:*",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

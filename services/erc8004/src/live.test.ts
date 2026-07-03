@@ -3,7 +3,7 @@ import type { Hex } from 'viem';
 import { createPublicClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
-import { parseErc8004Id } from '@rein/core';
+import { parseErc8004Id } from '@reinconsole/core';
 import { lastFeedbackIndex, readSummary, REIN_SCORE_TAG } from './feedback.js';
 import {
   BASE_SEPOLIA_REGISTRY,
@@ -16,10 +16,10 @@ import {
  * LIVE read-only tests against the real ERC-8004 registries on Base Sepolia.
  * Gated: they need network and — on this machine — NODE_EXTRA_CA_CERTS
  * pointing at the local CA pem. No gas is spent (reads only; the WRITE path
- * is exercised by `pnpm --filter @rein/demo demo:sepolia-8004`).
+ * is exercised by `pnpm --filter @reinconsole/demo demo:sepolia-8004`).
  *
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"; $env:RUN_LIVE = "1"
- *   pnpm --filter @rein/erc8004 test
+ *   pnpm --filter @reinconsole/erc8004 test
  *
  * The second test additionally needs REIN_SEPOLIA_ERC8004_ID (written to .env
  * by the demo) and REIN_SEPOLIA_PRIVATE_KEY exported into the process.

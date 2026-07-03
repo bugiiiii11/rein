@@ -2,14 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { recoverTypedDataAddress } from 'viem';
 import { generatePrivateKey } from 'viem/accounts';
-import { newId } from '@rein/core';
-import { buildServer, PolicyEngine } from '@rein/policy-engine';
-import { createGuard, type FetchLike } from '@rein/sdk';
+import { newId } from '@reinconsole/core';
+import { buildServer, PolicyEngine } from '@reinconsole/policy-engine';
+import { createGuard, type FetchLike } from '@reinconsole/sdk';
 import {
   BASE_SEPOLIA_USDC,
   decodePaymentHeader,
   transferWithAuthorizationTypes,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import { buildSignerServer } from './server.js';
 import { SessionSigner } from './signer.js';
 import { SignerError } from './errors.js';

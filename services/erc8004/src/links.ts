@@ -1,5 +1,5 @@
-import type { ReputationSubject } from '@rein/core';
-import { formatErc8004Id, parseErc8004Id } from '@rein/core';
+import type { ReputationSubject } from '@reinconsole/core';
+import { formatErc8004Id, parseErc8004Id } from '@reinconsole/core';
 import { Erc8004Error } from './errors.js';
 import type { IdentityRegistryReader } from './registry.js';
 
@@ -24,7 +24,7 @@ import type { IdentityRegistryReader } from './registry.js';
  * wallet to be the identity's owner or agentWallet).
  */
 
-/** Structurally satisfied by ReputationGraph — this package never imports @rein/graph. */
+/** Structurally satisfied by ReputationGraph — this package never imports @reinconsole/graph. */
 export interface LinkSink {
   link(canonical: ReputationSubject, alias: ReputationSubject): void;
 }
@@ -34,7 +34,7 @@ export interface LinkPair {
   alias: ReputationSubject;
 }
 
-/** Dedupe key mirroring @rein/graph's normalizeSubject casing rules. */
+/** Dedupe key mirroring @reinconsole/graph's normalizeSubject casing rules. */
 function keyOf(subject: ReputationSubject): string {
   const id =
     subject.kind === 'vendor' || subject.id.startsWith('0x') || subject.id.startsWith('0X')

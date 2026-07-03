@@ -1,9 +1,9 @@
-import { type Agent, type Policy, type Window, sumDecimal, compareDecimal } from '@rein/core';
+import { type Agent, type Policy, type Window, sumDecimal, compareDecimal } from '@reinconsole/core';
 import { policyApplies, type SpendContext } from './evaluator.js';
 
 /**
  * One observed/pending spend event. The lightweight in-memory stores here
- * implement the ports the engine depends on; @rein/store swaps in
+ * implement the ports the engine depends on; @reinconsole/store swaps in
  * Postgres-backed implementations without touching the engine.
  */
 export interface SpendRecord {

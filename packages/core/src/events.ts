@@ -41,7 +41,7 @@ export const ReinEvent = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('signature.refused'),
     at: z.coerce.date(),
-    /** Refusal code, e.g. "decision_replayed" (see @rein/signer). */
+    /** Refusal code, e.g. "decision_replayed" (see @reinconsole/signer). */
     code: z.string(),
     reason: z.string(),
     sessionId: SessionId.optional(),
@@ -61,7 +61,7 @@ export const ReinEvent = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('gate.refused'),
     at: z.coerce.date(),
-    /** Refusal code, e.g. "payment_replayed" (see @rein/gate). */
+    /** Refusal code, e.g. "payment_replayed" (see @reinconsole/gate). */
     code: z.string(),
     reason: z.string(),
     resource: z.string(),

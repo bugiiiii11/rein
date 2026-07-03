@@ -1,7 +1,7 @@
 /**
  * Standalone production server: serves the built UI from `dist/` and mounts the
  * same console API. Run after `vite build`:  `tsx server/standalone.ts`
- * (or `pnpm --filter @rein/console start`).
+ * (or `pnpm --filter @reinconsole/console start`).
  */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -22,7 +22,7 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
 };
 
-// Set REIN_CONSOLE_DATA_DIR to run the console on @rein/store: engine state
+// Set REIN_CONSOLE_DATA_DIR to run the console on @reinconsole/store: engine state
 // and reputation evidence survive restarts (the boot seed runs once per dir).
 const world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
 const handle = createApiHandler(world);
@@ -52,7 +52,7 @@ const server = createServer(async (req, res) => {
   const hit = (await serveFile(target)) ?? (await serveFile(join(DIST, 'index.html')));
   if (!hit) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('UI not built — run `pnpm --filter @rein/console build` first.');
+    res.end('UI not built — run `pnpm --filter @reinconsole/console build` first.');
     return;
   }
   res.writeHead(200, { 'Content-Type': hit.type });

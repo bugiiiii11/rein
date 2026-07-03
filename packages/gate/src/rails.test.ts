@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { MockFacilitator, MockLedger } from '@rein/mock-rails';
-import { FacilitatorClient } from '@rein/x402-rails';
-import type { PaymentRequirement } from '@rein/sdk';
+import { MockFacilitator, MockLedger } from '@reinconsole/mock-rails';
+import { FacilitatorClient } from '@reinconsole/x402-rails';
+import type { PaymentRequirement } from '@reinconsole/sdk';
 import { GateError } from './errors.js';
 import { facilitatorClientRails, mockFacilitatorRails } from './rails.js';
 

@@ -1,5 +1,5 @@
-import { globMatch } from '@rein/core';
-import { PaymentRequirement, decimalToAtomic } from '@rein/sdk';
+import { globMatch } from '@reinconsole/core';
+import { PaymentRequirement, decimalToAtomic } from '@reinconsole/sdk';
 
 /**
  * One priced route. Anything a route doesn't override falls back to the

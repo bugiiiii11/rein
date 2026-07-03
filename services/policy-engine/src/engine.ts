@@ -17,7 +17,7 @@ import {
   Policy,
   type Decision,
   type ReinEvent,
-} from '@rein/core';
+} from '@reinconsole/core';
 import { evaluate, type EvaluationResult } from './evaluator.js';
 import {
   InMemorySpendStore,
@@ -54,7 +54,7 @@ export interface EngineStores {
   spend?: SpendStorePort;
   policies?: PolicyStorePort;
   agents?: AgentRegistryPort;
-  /** Pre-built decision log (e.g. persistent key + resumed chain from @rein/store). */
+  /** Pre-built decision log (e.g. persistent key + resumed chain from @reinconsole/store). */
   log?: DecisionLog;
 }
 
@@ -62,7 +62,7 @@ export interface EngineStores {
  * The policy engine: normalizes intents, applies the kill-switch, evaluates
  * policy, writes a signed decision, emits events, and (on ALLOW) records the
  * spend so rolling budgets/velocity update. Stores are injectable: in-memory
- * by default, durable via @rein/store. Writes are awaited before returning;
+ * by default, durable via @reinconsole/store. Writes are awaited before returning;
  * evaluations are serialized so concurrent intents cannot read a rolling
  * budget before an earlier allow has recorded its spend.
  */

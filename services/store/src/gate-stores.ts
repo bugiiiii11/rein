@@ -1,10 +1,10 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { GateReceipt } from '@rein/core';
-import { InMemoryGateStore, type GateStorePort } from '@rein/gate';
+import { GateReceipt } from '@reinconsole/core';
+import { InMemoryGateStore, type GateStorePort } from '@reinconsole/gate';
 import { WriteTail } from './tail.js';
 
 /**
- * Durable backing for @rein/gate. Split consistency, mirroring the port's
+ * Durable backing for @reinconsole/gate. Split consistency, mirroring the port's
  * contract:
  *
  * - `burnReplay` is persist-then-cache SECURITY state: the sync check-and-set

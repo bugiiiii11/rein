@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PaymentRequired, type FetchLike } from '@rein/sdk';
+import { PaymentRequired, type FetchLike } from '@reinconsole/sdk';
 import { FacilitatorClient } from './facilitator.js';
 import { createRealVendor } from './vendor.js';
 import { BASE_SEPOLIA_USDC } from './wallet.js';

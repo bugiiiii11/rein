@@ -1,4 +1,4 @@
-import type { PaymentRequirement } from '@rein/sdk';
+import type { PaymentRequirement } from '@reinconsole/sdk';
 import { GateError } from './errors.js';
 import { v2Requirements } from './v2.js';
 import { encodeSettlementHeader, inspectPaymentHeader } from './wire.js';
@@ -7,7 +7,7 @@ import { encodeSettlementHeader, inspectPaymentHeader } from './wire.js';
  * The gate's settlement seam. The gate decides WHETHER a payment is acceptable
  * (routes, screening, replay, amount cross-checks); the rails decide whether it
  * is VALID and move the money. Both Rein rails plug in via the structural
- * adapters below — @rein/gate deliberately imports neither, so vendors install
+ * adapters below — @reinconsole/gate deliberately imports neither, so vendors install
  * only what they run.
  */
 export interface GateRails {
@@ -71,7 +71,7 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** What the gate needs of @rein/mock-rails' MockFacilitator (structural). */
+/** What the gate needs of @reinconsole/mock-rails' MockFacilitator (structural). */
 export interface MockFacilitatorLike {
   verify(paymentHeader: string, requirement: PaymentRequirement): unknown;
   settle(
@@ -107,7 +107,7 @@ export function mockFacilitatorRails(facilitator: MockFacilitatorLike): GateRail
   };
 }
 
-/** What the gate needs of @rein/x402-rails' FacilitatorClient (structural).
+/** What the gate needs of @reinconsole/x402-rails' FacilitatorClient (structural).
  *  `requirements` is untyped because the DIALECT varies per payment: v1
  *  payments relay Rein's internal (v1-shaped) requirement, v2 payments the
  *  converted v2 shape (see facilitatorClientRails). */

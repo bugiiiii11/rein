@@ -1,4 +1,4 @@
-import type { ReputationComponents } from '@rein/core';
+import type { ReputationComponents } from '@reinconsole/core';
 import type { SubjectEvidence } from './evidence.js';
 
 /**

@@ -1,5 +1,5 @@
 import type { PGlite } from '@electric-sql/pglite';
-import type { ReputationSubject } from '@rein/core';
+import type { ReputationSubject } from '@reinconsole/core';
 import {
   DEFAULT_CORRELATION_LIMIT,
   EvidenceLedger,
@@ -8,11 +8,11 @@ import {
   type EvidenceLedgerPort,
   type IntentCorrelationPort,
   type IntentFacts,
-} from '@rein/graph';
+} from '@reinconsole/graph';
 import { WriteTail } from './tail.js';
 
 /**
- * Durable backing for @rein/graph. Unlike the engine stores (persist-then-cache:
+ * Durable backing for @reinconsole/graph. Unlike the engine stores (persist-then-cache:
  * every write awaits disk before it returns), the graph writes CACHE-THEN-PERSIST:
  * the in-memory working set is updated synchronously and the SQL write trails
  * behind on a serialized queue. The inversion is deliberate — the graph's reads

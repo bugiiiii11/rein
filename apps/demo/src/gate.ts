@@ -2,7 +2,7 @@
  * Rein — Gate Demo (Phase 2: the vendor side of the wire)
  *
  * So far Rein has governed the agent's side: Guard decides, signer signs.
- * @rein/gate is the SUPPLY side — middleware a vendor drops in front of any
+ * @reinconsole/gate is the SUPPLY side — middleware a vendor drops in front of any
  * Node HTTP API to monetize it over x402: price routes, quote 402s, screen
  * payers, verify + settle payments, and keep receipts so revenue is
  * observable, not anecdotal.
@@ -17,16 +17,16 @@
  *   5. Blocked payer — a denylisted wallet with a perfectly-formed payment
  *   6. Premium pricing + the revenue report
  *
- * Run: pnpm --filter @rein/demo demo:gate
+ * Run: pnpm --filter @reinconsole/demo demo:gate
  */
 
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { newId, type ReinEvent } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { MockFacilitator, MockIndexer, MockLedger } from '@rein/mock-rails';
-import { createGuard, PaymentRequired, type Payer } from '@rein/sdk';
-import { createGate, gateMiddleware, mockFacilitatorRails, type Gate } from '@rein/gate';
+import { newId, type ReinEvent } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { MockFacilitator, MockIndexer, MockLedger } from '@reinconsole/mock-rails';
+import { createGuard, PaymentRequired, type Payer } from '@reinconsole/sdk';
+import { createGate, gateMiddleware, mockFacilitatorRails, type Gate } from '@reinconsole/gate';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 

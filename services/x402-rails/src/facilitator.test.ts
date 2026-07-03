@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { FetchLike, PaymentRequirement } from '@rein/sdk';
-import { PaymentRequirement as Requirement } from '@rein/sdk';
+import type { FetchLike, PaymentRequirement } from '@reinconsole/sdk';
+import { PaymentRequirement as Requirement } from '@reinconsole/sdk';
 import { FacilitatorHttpError } from './errors.js';
 import { FacilitatorClient } from './facilitator.js';
 import type { PaymentPayload } from './wire.js';

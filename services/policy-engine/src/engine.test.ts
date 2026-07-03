@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newId, type ReinEvent } from '@rein/core';
+import { newId, type ReinEvent } from '@reinconsole/core';
 import { PolicyEngine } from './engine.js';
 import { verifyDecisionChain } from './decision-log.js';
 

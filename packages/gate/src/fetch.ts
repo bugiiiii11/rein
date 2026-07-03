@@ -1,4 +1,4 @@
-import type { FetchLike } from '@rein/sdk';
+import type { FetchLike } from '@reinconsole/sdk';
 import type { Gate } from './gate.js';
 
 export interface GatedFetchOptions {

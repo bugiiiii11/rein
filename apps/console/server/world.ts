@@ -33,7 +33,7 @@ import {
   type PaymentIntent,
   type Receipt,
   type ReputationSubject,
-} from '@rein/core';
+} from '@reinconsole/core';
 import {
   BASE_SEPOLIA_REGISTRY,
   MockIdentityRegistry,
@@ -42,8 +42,8 @@ import {
   linkAgentFromRegistry,
   linkVendorFromRegistry,
   readSummary,
-} from '@rein/erc8004';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
+} from '@reinconsole/erc8004';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
 import {
   createGuard,
   PaymentBlockedError,
@@ -54,18 +54,18 @@ import {
   type FetchLike,
   type Payer,
   type PaymentRequirement,
-} from '@rein/sdk';
-import { MockLedger, MockFacilitator, MockIndexer } from '@rein/mock-rails';
+} from '@reinconsole/sdk';
+import { MockLedger, MockFacilitator, MockIndexer } from '@reinconsole/mock-rails';
 import {
   createGate,
   createGatedFetch,
   mockFacilitatorRails,
   GateError,
   type GateRails,
-} from '@rein/gate';
-import { ReputationGraph, payerCheck } from '@rein/graph';
-import { openReinStore } from '@rein/store';
-import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@rein/signer';
+} from '@reinconsole/gate';
+import { ReputationGraph, payerCheck } from '@reinconsole/graph';
+import { openReinStore } from '@reinconsole/store';
+import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@reinconsole/signer';
 import {
   chainIdForNetwork,
   createBaseSepoliaClient,
@@ -73,7 +73,7 @@ import {
   intentNonce,
   transferWithAuthorizationTypes,
   PaymentPayload,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import type {
   AgentView,
   ConsoleState,
@@ -106,7 +106,7 @@ const SESSION_CAP = '0.02';
 const FEED_CAP = 300;
 
 /** The reputation cast, seeded with BACKDATED history at boot (same-day
- * evidence is confidence-discounted to 40%, by design — see @rein/graph):
+ * evidence is confidence-discounted to 40%, by design — see @reinconsole/graph):
  * a reputable feed, a sketchy broker that pockets most payments, and a wallet
  * that burned replay slots at OTHER vendors' gates. */
 const GOOD_VENDOR = 'good-feeds.test';
@@ -162,7 +162,7 @@ export interface World {
 
 export interface WorldOptions {
   /**
-   * PGlite data directory. When set, the WHOLE world runs on @rein/store —
+   * PGlite data directory. When set, the WHOLE world runs on @reinconsole/store —
    * the policy engine (agents, policies, decision chain, rolling spend), the
    * reputation graph (evidence + intent correlation), the gate (receipts,
    * revenue, replay slots), and the signer (sessions, spend accounting,

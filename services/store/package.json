@@ -1,5 +1,5 @@
 {
-  "name": "@rein/store",
+  "name": "@reinconsole/store",
   "version": "0.1.0",
   "private": true,
   "description": "Rein persistence — Postgres-backed (PGlite) engine stores. Agents, policies, spend history, the signing key, and the hash-chained decision log survive restarts.",
@@ -23,11 +23,11 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.1",
-    "@rein/core": "workspace:*",
-    "@rein/gate": "workspace:*",
-    "@rein/graph": "workspace:*",
-    "@rein/policy-engine": "workspace:*",
-    "@rein/signer": "workspace:*",
+    "@reinconsole/core": "workspace:*",
+    "@reinconsole/gate": "workspace:*",
+    "@reinconsole/graph": "workspace:*",
+    "@reinconsole/policy-engine": "workspace:*",
+    "@reinconsole/signer": "workspace:*",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

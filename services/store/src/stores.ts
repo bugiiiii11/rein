@@ -1,5 +1,5 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { Agent, Policy } from '@rein/core';
+import { Agent, Policy } from '@reinconsole/core';
 import {
   InMemoryAgentRegistry,
   InMemoryPolicyStore,
@@ -9,7 +9,7 @@ import {
   type SpendContext,
   type SpendRecord,
   type SpendStorePort,
-} from '@rein/policy-engine';
+} from '@reinconsole/policy-engine';
 
 /**
  * Each Pg store is a write-through pair: the database is the system of record

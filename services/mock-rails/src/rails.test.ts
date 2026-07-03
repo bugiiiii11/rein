@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import type { AddressInfo } from 'node:net';
-import { newId, type Decision, type PaymentIntent } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { createGuard, PaymentBlockedError } from '@rein/sdk';
+import { newId, type Decision, type PaymentIntent } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { createGuard, PaymentBlockedError } from '@reinconsole/sdk';
 import { MockLedger } from './ledger.js';
 import { MockFacilitator } from './facilitator.js';
 import { MockIndexer } from './indexer.js';

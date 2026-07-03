@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AgentId, Decision, DecimalString, PaymentIntent, type Session } from '@rein/core';
-import { PaymentRequirement } from '@rein/sdk';
+import { AgentId, Decision, DecimalString, PaymentIntent, type Session } from '@reinconsole/core';
+import { PaymentRequirement } from '@reinconsole/sdk';
 import { SignerError } from './errors.js';
 import type { SessionSigner } from './signer.js';
 

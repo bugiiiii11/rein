@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PaymentRequired } from '@rein/sdk';
+import { PaymentRequired } from '@reinconsole/sdk';
 import { createGate, type GateOptions, type GateOutcome } from './gate.js';
 import { facilitatorClientRails, type GateRails } from './rails.js';
 import { buildPaymentRequiredV2, caip2Of, sameNetwork, v2Requirements } from './v2.js';

@@ -1,5 +1,5 @@
 {
-  "name": "@rein/x402-rails",
+  "name": "@reinconsole/x402-rails",
   "version": "0.1.0",
   "description": "Real x402 rails for Rein — EIP-3009 payer, hosted-facilitator client, and on-chain indexer for Base Sepolia.",
   "license": "MIT",
@@ -46,13 +46,13 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:^",
-    "@rein/sdk": "workspace:^",
+    "@reinconsole/core": "workspace:^",
+    "@reinconsole/sdk": "workspace:^",
     "viem": "^2.47.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@rein/policy-engine": "workspace:*",
+    "@reinconsole/policy-engine": "workspace:*",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

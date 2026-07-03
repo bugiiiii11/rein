@@ -10,5 +10,5 @@ export default defineConfig({
   splitting: false,
   // Workspace deps are bundled so the rails are a self-contained import.
   // viem stays external (regular dependency).
-  noExternal: ['@rein/core', '@rein/sdk'],
+  noExternal: ['@reinconsole/core', '@reinconsole/sdk'],
 });

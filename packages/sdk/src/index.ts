@@ -1,5 +1,5 @@
 /**
- * @rein/sdk — the demand-side guard.
+ * @reinconsole/sdk — the demand-side guard.
  *
  * Wrap your agent's fetch once and every x402 payment is policy-checked,
  * receipted, and observable before a cent moves:
@@ -35,5 +35,5 @@ export {
   UnsupportedRequirementError,
 } from './errors.js';
 
-// Re-exported for convenience so SDK users rarely need @rein/core directly.
-export type { Receipt, ReceiptSettlement, Decision, PaymentIntent, TaskContext } from '@rein/core';
+// Re-exported for convenience so SDK users rarely need @reinconsole/core directly.
+export type { Receipt, ReceiptSettlement, Decision, PaymentIntent, TaskContext } from '@reinconsole/core';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { newId, type ReinEvent } from '@rein/core';
-import { ReputationGraph } from '@rein/graph';
+import { newId, type ReinEvent } from '@reinconsole/core';
+import { ReputationGraph } from '@reinconsole/graph';
 import { linkAgentFromRegistry, linkVendorFromRegistry } from './links.js';
 import { MockIdentityRegistry } from './mock.js';
 

@@ -1,4 +1,4 @@
-import { PaymentRequirement, type FetchLike } from '@rein/sdk';
+import { PaymentRequirement, type FetchLike } from '@reinconsole/sdk';
 import { FacilitatorError } from './errors.js';
 import type { MockFacilitator } from './facilitator.js';
 

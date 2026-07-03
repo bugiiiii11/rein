@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { Agent, Policy, OrgId, newId } from '@rein/core';
+import { Agent, Policy, OrgId, newId } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
 
 /** Input to register an agent (server fills id/createdAt/status). */

@@ -1,6 +1,6 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex, LocalAccount } from 'viem';
-import type { Payer, PaymentRequirement } from '@rein/sdk';
+import type { Payer, PaymentRequirement } from '@reinconsole/sdk';
 import { RailsError } from './errors.js';
 import { chainIdForNetwork } from './networks.js';
 import { intentNonce } from './nonce.js';

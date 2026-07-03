@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { newId } from '@rein/core';
-import { PolicyEngine, verifyDecisionChain } from '@rein/policy-engine';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine, verifyDecisionChain } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 
 function intent(agentId: string, amount: string) {

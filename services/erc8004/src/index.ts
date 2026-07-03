@@ -1,5 +1,5 @@
 /**
- * @rein/erc8004 — ERC-8004 registry integration.
+ * @reinconsole/erc8004 — ERC-8004 registry integration.
  *
  * Identity: reads on-chain identity facts (ownerOf, agentWallet) from the
  * ratified ERC-8004 Identity Registry (an ERC-721; tokenId = the spec's

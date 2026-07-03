@@ -1,7 +1,7 @@
 /**
- * @rein/x402-rails — the real payment world, on Base Sepolia.
+ * @reinconsole/x402-rails — the real payment world, on Base Sepolia.
  *
- * The live siblings of @rein/mock-rails: an EIP-3009 payer that signs real
+ * The live siblings of @reinconsole/mock-rails: an EIP-3009 payer that signs real
  * x402 v1 payments (plugs into the SDK guard), an HTTP client for the hosted
  * facilitator at x402.org (verify/settle — the facilitator submits the tx and
  * pays gas), an in-process vendor wired to it, and an on-chain indexer that

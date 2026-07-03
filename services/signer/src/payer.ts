@@ -1,4 +1,4 @@
-import type { FetchLike, Payer } from '@rein/sdk';
+import type { FetchLike, Payer } from '@reinconsole/sdk';
 import { SignerError, type RefusalCode } from './errors.js';
 import type { SessionSigner } from './signer.js';
 

@@ -1,5 +1,5 @@
 /**
- * @rein/graph — the reputation graph (Phase 3).
+ * @reinconsole/graph — the reputation graph (Phase 3).
  *
  * Guard receipts (what agents tried to spend) and gate receipts (what vendors
  * actually earned) are two halves of one dataset. The graph listens to both,

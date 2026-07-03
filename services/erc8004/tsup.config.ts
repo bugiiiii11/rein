@@ -8,7 +8,7 @@ export default defineConfig({
   clean: true,
   target: 'node22',
   splitting: false,
-  // @rein/core is bundled so the package is a self-contained import.
+  // @reinconsole/core is bundled so the package is a self-contained import.
   // viem stays external (regular dependency).
-  noExternal: ['@rein/core'],
+  noExternal: ['@reinconsole/core'],
 });

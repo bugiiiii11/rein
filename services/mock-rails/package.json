@@ -1,5 +1,5 @@
 {
-  "name": "@rein/mock-rails",
+  "name": "@reinconsole/mock-rails",
   "version": "0.1.0",
   "description": "Simulated payment rails for Rein v0.1 — mock x402 facilitator, on-chain ledger, and indexer with shadow-spend detection.",
   "license": "MIT",
@@ -36,12 +36,12 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:^",
-    "@rein/sdk": "workspace:^",
+    "@reinconsole/core": "workspace:^",
+    "@reinconsole/sdk": "workspace:^",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@rein/policy-engine": "workspace:*",
+    "@reinconsole/policy-engine": "workspace:*",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",

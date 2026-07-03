@@ -12,21 +12,21 @@ import {
   type Decision,
   type PaymentIntent,
   type ReinEvent,
-} from '@rein/core';
+} from '@reinconsole/core';
 import {
   atomicToDecimal,
   networkToChain,
   requirementDecimals,
   resolveAsset,
   type PaymentRequirement,
-} from '@rein/sdk';
+} from '@reinconsole/sdk';
 import {
   chainIdForNetwork,
   encodePaymentHeader,
   intentNonce,
   transferWithAuthorizationTypes,
   type ExactEvmAuthorization,
-} from '@rein/x402-rails';
+} from '@reinconsole/x402-rails';
 import { SignerError, type RefusalCode } from './errors.js';
 import {
   DEFAULT_TTL_SECONDS,
@@ -53,7 +53,7 @@ export interface SessionSignerOptions {
   /** Injectable ms clock for deterministic tests. */
   now?: () => number;
   /**
-   * Session storage. Defaults in-memory; pass @rein/store's session store and
+   * Session storage. Defaults in-memory; pass @reinconsole/store's session store and
    * grants, spend accounting, revocations, and burned vouchers survive signer
    * restarts. Wallet keys are NOT stored — re-register them at boot.
    */

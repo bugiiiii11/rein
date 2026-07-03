@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ReinEvent, ReputationSubject } from '@rein/core';
+import { ReinEvent, ReputationSubject } from '@reinconsole/core';
 import { ReputationGraph } from './graph.js';
 
 const ReportInput = z.object({
@@ -65,7 +65,7 @@ export function buildGraphServer(graph: ReputationGraph = new ReputationGraph())
   // --- Identity links ---
   // Unverified by DESIGN: this endpoint's trust level equals POST /v1/events —
   // whoever can post events can already fabricate the evidence itself. On-chain
-  // verification belongs to the CALLER (@rein/erc8004 derives link facts from
+  // verification belongs to the CALLER (@reinconsole/erc8004 derives link facts from
   // the Identity Registry, then asserts them here).
   app.post('/v1/links', async (req) => {
     const links = z.union([LinkInput.transform((l) => [l]), z.array(LinkInput)]).parse(req.body);

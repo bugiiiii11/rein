@@ -1,9 +1,9 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { Session, sumDecimal } from '@rein/core';
-import { InMemorySessionStore, type SessionStorePort } from '@rein/signer';
+import { Session, sumDecimal } from '@reinconsole/core';
+import { InMemorySessionStore, type SessionStorePort } from '@reinconsole/signer';
 
 /**
- * Durable backing for @rein/signer's custody accounting. Persist-then-cache,
+ * Durable backing for @reinconsole/signer's custody accounting. Persist-then-cache,
  * like the engine stores: every write awaits the database before the working
  * set reflects it — a failed write leaves memory untouched, and an
  * acknowledged revocation, spend record, or voucher burn is on disk. (This is

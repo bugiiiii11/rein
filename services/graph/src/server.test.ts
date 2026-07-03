@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newId } from '@rein/core';
+import { newId } from '@reinconsole/core';
 import { EvidenceLedger } from './evidence.js';
 import { ReputationGraph } from './graph.js';
 import { buildGraphServer } from './server.js';

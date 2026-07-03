@@ -6,7 +6,7 @@ import {
   createPublicKey,
   type KeyObject,
 } from 'node:crypto';
-import { canonicalDecision, newId, type Decision, type DecisionOutcome } from '@rein/core';
+import { canonicalDecision, newId, type Decision, type DecisionOutcome } from '@reinconsole/core';
 import type { MaybePromise } from './stores.js';
 
 export interface DecisionInput {
@@ -27,7 +27,7 @@ export interface DecisionLogKeyPair {
 }
 
 export interface DecisionLogOptions {
-  /** Signing key. Generated per instance when omitted (prod: KMS / @rein/store). */
+  /** Signing key. Generated per instance when omitted (prod: KMS / @reinconsole/store). */
   keyPair?: DecisionLogKeyPair;
   /**
    * A previously persisted chain to resume, verbatim (entries are already

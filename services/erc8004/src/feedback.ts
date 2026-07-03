@@ -1,6 +1,6 @@
 import type { Account, Address, Chain, PublicClient, Transport, WalletClient } from 'viem';
 import { keccak256, parseEventLogs, stringToBytes } from 'viem';
-import { parseErc8004Id, type ReputationScore } from '@rein/core';
+import { parseErc8004Id, type ReputationScore } from '@reinconsole/core';
 import { reputationRegistryAbi } from './abi.js';
 import { Erc8004Error } from './errors.js';
 import {

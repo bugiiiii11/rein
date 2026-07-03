@@ -1,4 +1,4 @@
-# @rein/sdk
+# @reinconsole/sdk
 
 The demand-side guard of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. Wrap your agent's `fetch` once and every [x402](https://www.x402.org) payment is policy-checked, receipted, and observable **before a cent moves**. Non-custodial: Rein governs the authority to spend, never the funds.
 
@@ -7,18 +7,18 @@ The demand-side guard of **[Rein](https://github.com/bugiiiii11/rein)** — the 
 ## Install
 
 ```bash
-npm install @rein/sdk
+npm install @reinconsole/sdk
 # and something to point it at:
-npx -p @rein/policy-engine rein-policy-engine   # the rule engine on :8787
+npx -p @reinconsole/policy-engine rein-policy-engine   # the rule engine on :8787
 ```
 
 ## Quickstart
 
 ```ts
-import { createGuard } from '@rein/sdk';
+import { createGuard } from '@reinconsole/sdk';
 
 const guard = createGuard({
-  engineUrl: 'http://localhost:8787', // @rein/policy-engine (or the durable variant)
+  engineUrl: 'http://localhost:8787', // @reinconsole/policy-engine (or the durable variant)
   agentId,                            // registered with the engine
 });
 
@@ -35,7 +35,7 @@ const res = await fetch('https://api.vendor.example/answer');
 ## How it behaves
 
 - **402 intercept.** The guard wraps the *base* fetch, underneath any x402 payment library. A blocked paywall never reaches the payment layer; an allowed one flows through, and the payment layer's `X-PAYMENT` retry is attached to the same receipt.
-- **Or let it pay.** Pass a `payer` (e.g. the EIP-3009 payer from [`@rein/x402-rails`](https://www.npmjs.com/package/@rein/x402-rails)) and the guard settles allowed payments itself — evaluate → pay → retry, one call.
+- **Or let it pay.** Pass a `payer` (e.g. the EIP-3009 payer from [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails)) and the guard settles allowed payments itself — evaluate → pay → retry, one call.
 - **Blocked, your way.** `onBlocked: 'throw'` (default) raises `PaymentBlockedError`; `'respond'` returns a synthetic 402 JSON response for agent loops that inspect instead of catch.
 - **Task context.** Attach `taskContext` (or scope it per call with `withTask()`) so every decision and receipt says *why* the agent was spending.
 - **Receipts either way.** Every paywall encounter — allowed, denied, settled — becomes a `Receipt`; stream them out with `onReceipt`.

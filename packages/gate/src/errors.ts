@@ -2,7 +2,7 @@
  * Why the gate turned a payment away. Stable strings — clients switch on these.
  *
  * Two classes carry no payer fault and MUST NOT feed reputation evidence
- * (@rein/graph skips them): the throttle codes (`rate_limited`,
+ * (@reinconsole/graph skips them): the throttle codes (`rate_limited`,
  * `velocity_exceeded` — the vendor's cap, not payer misbehavior) and the rails
  * codes (`rails_unavailable`, `settle_unknown` — the vendor's infrastructure
  * failing; a settle_unknown payment may even have gone through).

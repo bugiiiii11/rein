@@ -1,4 +1,4 @@
-import { isValidDecimal, type GateReceipt } from '@rein/core';
+import { isValidDecimal, type GateReceipt } from '@reinconsole/core';
 
 /**
  * Per-payer velocity limits, all sharing one rolling window. Two evidence

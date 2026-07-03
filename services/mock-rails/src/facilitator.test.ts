@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { PaymentIntent, newId, type Decision } from '@rein/core';
-import type { PaymentRequirement } from '@rein/sdk';
+import { PaymentIntent, newId, type Decision } from '@reinconsole/core';
+import type { PaymentRequirement } from '@reinconsole/sdk';
 import { MockLedger } from './ledger.js';
 import { MockFacilitator } from './facilitator.js';
 import { FacilitatorError } from './errors.js';

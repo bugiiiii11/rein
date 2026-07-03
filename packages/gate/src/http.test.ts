@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { newId } from '@rein/core';
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
-import { MockFacilitator, MockIndexer, MockLedger } from '@rein/mock-rails';
-import { createGuard, PaymentRequired } from '@rein/sdk';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { MockFacilitator, MockIndexer, MockLedger } from '@reinconsole/mock-rails';
+import { createGuard, PaymentRequired } from '@reinconsole/sdk';
 import { createGate, type Gate, type GateOptions } from './gate.js';
 import { gateMiddleware } from './node.js';
 import { mockFacilitatorRails } from './rails.js';

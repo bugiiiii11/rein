@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatErc8004Id } from '@rein/core';
+import { formatErc8004Id } from '@reinconsole/core';
 import { Erc8004Error } from './errors.js';
 import { MockIdentityRegistry } from './mock.js';
 

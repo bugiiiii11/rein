@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { GateReceipt, gt, newId, sumDecimal, type ReinEvent } from '@rein/core';
-import { atomicToDecimal, type PaymentRequired, type PaymentRequirement } from '@rein/sdk';
+import { GateReceipt, gt, newId, sumDecimal, type ReinEvent } from '@reinconsole/core';
+import { atomicToDecimal, type PaymentRequired, type PaymentRequirement } from '@reinconsole/sdk';
 import { GateError, type GateRefusalCode } from './errors.js';
 import { RailsUnreachableError, type GateRails, type GateSettlement } from './rails.js';
 import {
@@ -31,7 +31,7 @@ export interface GateScreen {
    * Dynamic screening hook, consulted after the static lists with the payer
    * address as presented. Return a refusal reason to turn the payer away
    * (403, code `payer_denied`); return undefined to let the payment proceed.
-   * Reputation-driven screening (@rein/graph's `payerCheck`) plugs in here.
+   * Reputation-driven screening (@reinconsole/graph's `payerCheck`) plugs in here.
    */
   check?: (payer: string) => string | undefined;
 }
@@ -74,7 +74,7 @@ export interface GateOptions {
   /** Injectable clock (tests). */
   now?: () => Date;
   /**
-   * Gate storage. Defaults in-memory; pass @rein/store's gate store and
+   * Gate storage. Defaults in-memory; pass @reinconsole/store's gate store and
    * receipts, revenue stats, and burned replay slots survive restarts.
    */
   store?: GateStorePort;

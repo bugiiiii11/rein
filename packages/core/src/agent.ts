@@ -5,7 +5,7 @@ import { Chain } from './chain.js';
 /**
  * Enforcement tier of a given agent wallet:
  * - `observed`    — Rein sees spend on-chain but has no control (no SDK either).
- * - `sdk`         — agent uses @rein/sdk; advisory + observability (bypassable).
+ * - `sdk`         — agent uses @reinconsole/sdk; advisory + observability (bypassable).
  * - `session-key` — signer-level scope; out-of-policy txs cannot be signed.
  */
 export const EnforcementMode = z.enum(['observed', 'sdk', 'session-key']);

@@ -1,5 +1,5 @@
 {
-  "name": "@rein/policy-engine",
+  "name": "@reinconsole/policy-engine",
   "version": "0.1.0",
   "description": "Rein policy evaluation service — sandboxed declarative rule engine with hash-chained, signed decisions.",
   "license": "MIT",
@@ -49,7 +49,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@rein/core": "workspace:^",
+    "@reinconsole/core": "workspace:^",
     "fastify": "^5.2.0",
     "zod": "^3.24.1"
   },

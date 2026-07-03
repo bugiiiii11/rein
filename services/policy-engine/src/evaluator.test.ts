@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Policy, PaymentIntent, newId } from '@rein/core';
+import { Policy, PaymentIntent, newId } from '@reinconsole/core';
 import { evaluate, policyApplies, type SpendContext } from './evaluator.js';
 
 /** The documented treasury policy (technical doc §3.3). */

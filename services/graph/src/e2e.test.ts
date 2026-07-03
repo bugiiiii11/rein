@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { newId } from '@rein/core';
-import { PolicyEngine } from '@rein/policy-engine';
-import { createGate, type GateRails } from '@rein/gate';
+import { newId } from '@reinconsole/core';
+import { PolicyEngine } from '@reinconsole/policy-engine';
+import { createGate, type GateRails } from '@reinconsole/gate';
 import { ReputationGraph, payerCheck } from './graph.js';
 
 const DAY = 86_400_000;

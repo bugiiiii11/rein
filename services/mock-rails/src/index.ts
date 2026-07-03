@@ -1,5 +1,5 @@
 /**
- * @rein/mock-rails — the simulated payment world for v0.1.
+ * @reinconsole/mock-rails — the simulated payment world for v0.1.
  *
  * Three pieces, mirroring the production architecture:
  * - MockLedger      — the chain: append-only transfers, open to anyone.

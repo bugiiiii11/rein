@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
 import { DecisionLog, verifyDecisionChain } from './decision-log.js';
-import { newId, type Decision } from '@rein/core';
+import { newId, type Decision } from '@reinconsole/core';
 
 function input(i: number) {
   return {

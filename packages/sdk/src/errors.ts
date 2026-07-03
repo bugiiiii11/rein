@@ -1,4 +1,4 @@
-import type { Decision, PaymentIntent, Receipt } from '@rein/core';
+import type { Decision, PaymentIntent, Receipt } from '@reinconsole/core';
 
 /** Base class for everything the SDK throws, so callers can catch broadly. */
 export class ReinError extends Error {

@@ -8,7 +8,7 @@ import type { DecisionOutcome } from './decision.js';
  * parsed object always canonicalizes to the same bytes — including after a
  * JSON round-trip over HTTP.
  *
- * These builders are pure (no node:crypto) so @rein/core stays loadable in a
+ * These builders are pure (no node:crypto) so @reinconsole/core stays loadable in a
  * browser; services hash the strings with whatever sha256 they have.
  */
 

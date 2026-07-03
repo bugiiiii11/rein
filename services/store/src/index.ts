@@ -1,6 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { Decision } from '@rein/core';
-import { DecisionLog } from '@rein/policy-engine';
+import { Decision } from '@reinconsole/core';
+import { DecisionLog } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
 import { PgAgentRegistry, PgPolicyStore, PgSpendStore } from './stores.js';
@@ -23,7 +23,7 @@ export interface ReinStoreOptions {
 /**
  * Structurally satisfies the engine's `EngineStores`, so composing a durable
  * engine is one line: `new PolicyEngine(await openReinStore({ dir }))`. The
- * `ledger` / `intents` fields back @rein/graph the same way — one PGlite
+ * `ledger` / `intents` fields back @reinconsole/graph the same way — one PGlite
  * database now persists engine state AND reputation evidence.
  */
 export interface ReinStore {

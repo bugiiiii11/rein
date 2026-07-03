@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { parseAbi, type Address, type Hex } from 'viem';
-import { ReinEvent, type Agent, type Chain, type PaymentIntent } from '@rein/core';
-import { atomicToDecimal } from '@rein/sdk';
+import { ReinEvent, type Agent, type Chain, type PaymentIntent } from '@reinconsole/core';
+import { atomicToDecimal } from '@reinconsole/sdk';
 import { intentNonce } from './nonce.js';
 import { BASE_SEPOLIA_USDC } from './wallet.js';
 

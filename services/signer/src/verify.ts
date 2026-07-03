@@ -4,7 +4,7 @@ import {
   canonicalIntent,
   type Decision,
   type PaymentIntent,
-} from '@rein/core';
+} from '@reinconsole/core';
 
 /** sha256 hex of an intent's canonical content — must equal `Decision.intentHash`. */
 export function intentHashOf(intent: PaymentIntent): string {

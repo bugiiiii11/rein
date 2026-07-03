@@ -8,7 +8,7 @@ import {
   type PaymentIntent,
   type ReceiptSettlement,
   type TaskContext,
-} from '@rein/core';
+} from '@reinconsole/core';
 import { EngineClient, type FetchLike } from './client.js';
 import { PaymentBlockedError, UnsupportedRequirementError } from './errors.js';
 import {

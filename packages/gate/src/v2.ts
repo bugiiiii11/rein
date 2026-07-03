@@ -1,4 +1,4 @@
-import type { PaymentRequirement } from '@rein/sdk';
+import type { PaymentRequirement } from '@reinconsole/sdk';
 
 /**
  * x402 v2 wire builders (vendor side). Verified against the published spec
@@ -11,7 +11,7 @@ import type { PaymentRequirement } from '@rein/sdk';
  *   (base64 PaymentRequired), clients pay with `PAYMENT-SIGNATURE` (base64
  *   PaymentPayload), settlements return in `PAYMENT-RESPONSE`.
  *
- * Rein's internal requirement shape stays v1 (the zod contract in @rein/sdk);
+ * Rein's internal requirement shape stays v1 (the zod contract in @reinconsole/sdk);
  * v2 is a WIRE dialect converted at the edges by the helpers here.
  */
 

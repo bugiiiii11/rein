@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * The persistent reputation-graph service: the exact HTTP API of @rein/graph's
+ * The persistent reputation-graph service: the exact HTTP API of @reinconsole/graph's
  * server, but the evidence ledger and intent correlation map live in a PGlite
  * data directory and survive restarts. Scores are still recomputed on demand —
  * only the evidence behind them is persisted.
  *
  * Run:
  *   $env:REIN_GRAPH_DATA_DIR = ".rein-graph-data"   # optional, this is the default
- *   pnpm --filter @rein/store start:graph
+ *   pnpm --filter @reinconsole/store start:graph
  *
  * Use a DIFFERENT data dir than the engine server (`.rein-data`): two processes
  * cannot share one PGlite directory. In a single process (e.g. the console
@@ -16,7 +16,7 @@
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { ReputationGraph, buildGraphServer } from '@rein/graph';
+import { ReputationGraph, buildGraphServer } from '@reinconsole/graph';
 import { openReinStore, type ReinStore } from './index.js';
 
 export interface PersistentGraph {

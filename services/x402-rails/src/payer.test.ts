@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { recoverTypedDataAddress, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { PaymentIntent, newId, type Decision } from '@rein/core';
-import { PaymentRequirement } from '@rein/sdk';
+import { PaymentIntent, newId, type Decision } from '@reinconsole/core';
+import { PaymentRequirement } from '@reinconsole/sdk';
 import { RailsError } from './errors.js';
 import { intentNonce } from './nonce.js';
 import { createX402Payer, transferWithAuthorizationTypes } from './payer.js';

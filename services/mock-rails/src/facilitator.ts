@@ -1,4 +1,4 @@
-import type { Asset } from '@rein/core';
+import type { Asset } from '@reinconsole/core';
 import {
   atomicToDecimal,
   networkToChain,
@@ -6,7 +6,7 @@ import {
   resolveAsset,
   type PaymentRequirement,
   type Payer,
-} from '@rein/sdk';
+} from '@reinconsole/sdk';
 import { FacilitatorError } from './errors.js';
 import { MockLedger, type LedgerEntry } from './ledger.js';
 import {

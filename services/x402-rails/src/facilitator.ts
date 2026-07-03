@@ -1,4 +1,4 @@
-import type { FetchLike, PaymentRequirement } from '@rein/sdk';
+import type { FetchLike, PaymentRequirement } from '@reinconsole/sdk';
 import { FacilitatorHttpError } from './errors.js';
 import { SettleResponse, VerifyResponse, type PaymentPayload } from './wire.js';
 
@@ -24,7 +24,7 @@ export type AnyPaymentRequirements = PaymentRequirement | Record<string, unknown
  * facilitator pays gas) and returns the tx hash. The POST's `x402Version` is
  * derived from the payload envelope itself, and the caller must pass
  * requirements in the SAME dialect (v2 payload → v2 `amount`/CAIP-2 shape;
- * @rein/gate's facilitatorClientRails does this conversion).
+ * @reinconsole/gate's facilitatorClientRails does this conversion).
  */
 export class FacilitatorClient {
   readonly url: string;

@@ -21,15 +21,15 @@
  *
  * Run (PowerShell — the CA var matters on machines with TLS interception):
  *   $env:NODE_EXTRA_CA_CERTS = "$HOME\.rein-dev-ca.pem"
- *   pnpm --filter @rein/demo demo:sepolia-8004
+ *   pnpm --filter @reinconsole/demo demo:sepolia-8004
  */
 
 import type { Hex } from 'viem';
 import { createWalletClient, formatEther, http, parseEther } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
-import { newId, parseErc8004Id, type Receipt, type ReinEvent } from '@rein/core';
-import { ReputationGraph } from '@rein/graph';
+import { newId, parseErc8004Id, type Receipt, type ReinEvent } from '@reinconsole/core';
+import { ReputationGraph } from '@reinconsole/graph';
 import {
   BASE_SEPOLIA_REGISTRY,
   REIN_SCORE_TAG,
@@ -41,8 +41,8 @@ import {
   readFeedbackEntry,
   readSummary,
   registerAgent,
-} from '@rein/erc8004';
-import { basescanTxUrl, createBaseSepoliaClient, generateWallet } from '@rein/x402-rails';
+} from '@reinconsole/erc8004';
+import { basescanTxUrl, createBaseSepoliaClient, generateWallet } from '@reinconsole/x402-rails';
 import { appendEnv, readEnv } from './env.js';
 
 const MIN_GAS_WEI = 100_000_000_000_000n; // 0.0001 ETH — register() costs a fraction of this

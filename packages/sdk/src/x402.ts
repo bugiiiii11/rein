@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Chain, Asset, type TaskContext, type Vendor } from '@rein/core';
+import { Chain, Asset, type TaskContext, type Vendor } from '@reinconsole/core';
 
 /**
  * x402 wire shapes (spec v1), mock-first: these schemas are what Rein's mock

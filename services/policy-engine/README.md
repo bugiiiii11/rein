@@ -1,4 +1,4 @@
-# @rein/policy-engine
+# @reinconsole/policy-engine
 
 The rule engine of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. A sandboxed, declarative policy engine that judges every payment intent (`deny > escalate > allow > default`), with every decision ed25519-signed and sha256 hash-chained into a tamper-evident audit log.
 
@@ -7,17 +7,17 @@ The rule engine of **[Rein](https://github.com/bugiiiii11/rein)** — the contro
 ## Install & run
 
 ```bash
-npm install @rein/policy-engine
+npm install @reinconsole/policy-engine
 # or just run it:
-npx -p @rein/policy-engine rein-policy-engine   # HTTP API on :8787 (PORT/HOST env)
+npx -p @reinconsole/policy-engine rein-policy-engine   # HTTP API on :8787 (PORT/HOST env)
 ```
 
-Point [`@rein/sdk`](https://www.npmjs.com/package/@rein/sdk)'s guard at it (`engineUrl`) and every x402 paywall your agent hits is evaluated here first.
+Point [`@reinconsole/sdk`](https://www.npmjs.com/package/@reinconsole/sdk)'s guard at it (`engineUrl`) and every x402 paywall your agent hits is evaluated here first.
 
 ## In-process
 
 ```ts
-import { PolicyEngine, buildServer } from '@rein/policy-engine';
+import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
 
 const engine = new PolicyEngine();      // in-memory stores by default
 const app = buildServer(engine);        // Fastify instance (not yet listening)
@@ -26,10 +26,10 @@ await app.listen({ port: 8787 });
 
 ## What it does
 
-- **Declarative policies** — budgets over rolling windows, per-tx caps, vendor allow/deny lists by glob, escalation, and reputation rules (`vendorReputationLt`, fed by [`@rein/graph`](https://www.npmjs.com/package/@rein/graph)). Precedence is `deny > escalate > allow > default`.
+- **Declarative policies** — budgets over rolling windows, per-tx caps, vendor allow/deny lists by glob, escalation, and reputation rules (`vendorReputationLt`, fed by [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph)). Precedence is `deny > escalate > allow > default`.
 - **Kill switch** — freeze an agent and there is no allow; the check happens before evaluation.
 - **Signed decisions** — each decision commits to the exact intent it judged (`intentHash`), is ed25519-signed, and links to the previous decision's hash. `verifyDecisionChain` validates the whole history offline; the `{intent, decision}` pair is a self-contained spend voucher downstream tiers verify without calling back.
-- **Store ports** — agents, policies, rolling spend, and the decision log sit behind injectable ports (`SpendStorePort`, `PolicyStorePort`, `AgentRegistryPort`). In-memory implementations ship here; the durable Postgres-backed variant lives in the [monorepo](https://github.com/bugiiiii11/rein) (`@rein/store`) and keeps the hash chain continuous across restarts.
+- **Store ports** — agents, policies, rolling spend, and the decision log sit behind injectable ports (`SpendStorePort`, `PolicyStorePort`, `AgentRegistryPort`). In-memory implementations ship here; the durable Postgres-backed variant lives in the [monorepo](https://github.com/bugiiiii11/rein) (`@reinconsole/store`) and keeps the hash chain continuous across restarts.
 - **HTTP API** — `POST /v1/evaluate`, agent + policy CRUD, decision reads. Zod-validated 400s, not 500s.
 
 MIT © Rein contributors · [Repository](https://github.com/bugiiiii11/rein) · [Issues](https://github.com/bugiiiii11/rein/issues)

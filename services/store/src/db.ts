@@ -11,16 +11,16 @@ import { PGlite } from '@electric-sql/pglite';
  *   registry has never seen persists too, mirroring InMemoryAgentRegistry.
  * - `policies.seq` is evaluation order: first-applicable-wins, and an upserted
  *   policy moves to the END, exactly like the in-memory store.
- * - `graph_*` hold @rein/graph's reputation evidence (one aggregated row per
+ * - `graph_*` hold @reinconsole/graph's reputation evidence (one aggregated row per
  *   subject + the settled-money edges + the in-flight intent correlation map).
  *   Scores are NEVER stored — they recompute from this evidence on demand. All
  *   `volume` columns are TEXT (decimal strings summed exactly); storing money
  *   as float would drift the scores. `refusals` is a small code->count JSONB.
- * - `signer_*` hold @rein/signer's custody accounting: session grants (doc
+ * - `signer_*` hold @reinconsole/signer's custody accounting: session grants (doc
  *   JSONB carries the Session — token HASH only, never a token; `spent` is a
  *   TEXT decimal beside it) and the burned-voucher set. Wallet private keys
  *   are deliberately NOT stored anywhere in this schema.
- * - `gate_*` hold @rein/gate's vendor-side state: receipts (JSONB docs),
+ * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
  */

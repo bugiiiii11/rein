@@ -1,4 +1,4 @@
-import { PaymentRequirement, type FetchLike } from '@rein/sdk';
+import { PaymentRequirement, type FetchLike } from '@reinconsole/sdk';
 import { RailsError } from './errors.js';
 import type { FacilitatorClient } from './facilitator.js';
 import { BASE_SEPOLIA_USDC } from './wallet.js';

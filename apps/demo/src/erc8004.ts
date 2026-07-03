@@ -4,7 +4,7 @@
  * The reputation graph sees two disjoint id spaces for the same real-world
  * party: the engine keys agents by ULID, gates key payers by wallet. ERC-8004
  * gives that party ONE on-chain identity (an ERC-721 in the Identity
- * Registry), and @rein/erc8004 turns registry facts — ownerOf, the verified
+ * Registry), and @reinconsole/erc8004 turns registry facts — ownerOf, the verified
  * agentWallet — into link facts: the identity becomes the canonical
  * reputation subject and everything else folds in as aliases.
  *
@@ -18,13 +18,13 @@
  *   6. The score goes on-chain — giveFeedback publishes the graph's judgment
  *      to the Reputation Registry with a keccak-anchored evidence document
  *
- * Run: pnpm --filter @rein/demo demo:erc8004
+ * Run: pnpm --filter @reinconsole/demo demo:erc8004
  */
 
 import { keccak256, stringToBytes } from 'viem';
-import { newId, type ReinEvent, type ReputationSubject } from '@rein/core';
-import { PolicyEngine } from '@rein/policy-engine';
-import { ReputationGraph } from '@rein/graph';
+import { newId, type ReinEvent, type ReputationSubject } from '@reinconsole/core';
+import { PolicyEngine } from '@reinconsole/policy-engine';
+import { ReputationGraph } from '@reinconsole/graph';
 import {
   MockIdentityRegistry,
   MockReputationRegistry,
@@ -33,7 +33,7 @@ import {
   linkAgentFromRegistry,
   linkVendorFromRegistry,
   scoreToFeedback,
-} from '@rein/erc8004';
+} from '@reinconsole/erc8004';
 
 // ─── config ───────────────────────────────────────────────────────────────────
 

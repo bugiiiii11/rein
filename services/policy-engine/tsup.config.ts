@@ -10,6 +10,6 @@ export default defineConfig({
   // Keep each entry self-contained: no shared chunks, so `import.meta.url` in
   // server.ts resolves to server.js (needed for run-as-main detection).
   splitting: false,
-  // @rein/core is bundled into the service output for a self-contained deploy.
-  noExternal: ['@rein/core'],
+  // @reinconsole/core is bundled into the service output for a self-contained deploy.
+  noExternal: ['@reinconsole/core'],
 });

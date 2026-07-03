@@ -5,7 +5,7 @@ import {
   type Agent,
   type PaymentIntent,
   type SettledPayment,
-} from '@rein/core';
+} from '@reinconsole/core';
 import type { LedgerEntry, MockLedger } from './ledger.js';
 
 /** The slice of the policy engine the indexer subscribes to (NATS in prod). */
