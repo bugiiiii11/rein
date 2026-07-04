@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rein — the control plane for AI agent payments</title>
+    <meta
+      name="description"
+      content="Set the rules, watch every payment, score every counterparty. Rein governs your agent's authority to spend — non-custodial, open source, live on testnet."
+    />
+    <meta property="og:title" content="Rein — the control plane for AI agent payments" />
+    <meta
+      property="og:description"
+      content="Set the rules, watch every payment, score every counterparty. Non-custodial, open source, live on testnet."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://reinconsole.com" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ── Nav ─────────────────────────────────────────────────────────── -->
+    <header class="nav">
+      <a class="brand" href="#top" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#planes">Guard · Gate · Graph</a>
+        <a href="#proof">Proof</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="https://reinconsole-production.up.railway.app/" target="_blank" rel="noopener">
+        See it live
+      </a>
+    </header>
+
+    <main id="top">
+      <!-- ── Hero ──────────────────────────────────────────────────────── -->
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="hero-pills reveal">
+            <span class="pill"><span class="dot live"></span>LIVE ON BASE SEPOLIA</span>
+            <span class="pill">v0.1 · OPEN SOURCE</span>
+          </div>
+          <h1 class="reveal d1">
+            The control plane for<br class="wide-only" /> AI&nbsp;agent payments.
+          </h1>
+          <p class="hero-sub reveal d2">
+            Set the rules. Watch every payment. Score every counterparty.
+            Rein governs your agent's <em>authority to spend</em> —
+            it never holds the funds.
+          </p>
+          <div class="install reveal d3">
+            <code class="install-cmd" id="installCmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
+            <button class="copy-btn" id="copyBtn" type="button" aria-label="Copy install command">copy</button>
+          </div>
+          <div class="hero-actions reveal d4">
+            <a class="btn btn-primary" href="https://reinconsole-production.up.railway.app/" target="_blank" rel="noopener">
+              See it live <span class="btn-arrow">→</span>
+            </a>
+            <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+          </div>
+          <p class="hero-fine reveal d5">MIT-licensed · 8 packages on npm · x402 + ERC-8004 stack</p>
+        </div>
+
+        <div class="hero-stage reveal d3">
+          <div class="panel feed-panel" id="feedPanel">
+            <div class="panel-head">
+              <span class="panel-tick"></span>
+              <span class="panel-title">Live feed</span>
+              <span class="panel-pill"><span class="dot live"></span>STREAMING</span>
+            </div>
+            <ul class="feed" id="feed">
+              <li class="feed-row" data-kind="allow">
+                <span class="feed-time">14:02:11</span>
+                <span class="feed-main"><span class="feed-verb allow">ALLOW</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
+                <span class="feed-right">within budget</span>
+              </li>
+              <li class="feed-row" data-kind="settled">
+                <span class="feed-time">14:02:12</span>
+                <span class="feed-main"><span class="feed-verb settled">SETTLED</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
+                <span class="feed-right">base-sepolia</span>
+              </li>
+              <li class="feed-row" data-kind="deny">
+                <span class="feed-time">14:02:19</span>
+                <span class="feed-main"><span class="feed-verb deny">DENY</span> <b class="feed-amt">$180.00</b> <span class="feed-arrow">→</span> <span class="feed-host">premium-intel.example</span></span>
+                <span class="feed-right">over per-tx cap</span>
+              </li>
+            </ul>
+            <div class="panel-foot">audit chain intact · every decision hash-linked</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Problem ───────────────────────────────────────────────────── -->
+      <section class="section" id="problem">
+        <div class="eyebrow reveal"><span class="tick"></span>THE FAILURE MODES</div>
+        <h2 class="reveal d1">An agent with a wallet is an unattended<br class="wide-only" /> terminal with a credit card.</h2>
+        <div class="incidents">
+          <article class="incident reveal d1">
+            <div class="incident-top"><span class="incident-glyph">▲</span><span class="incident-title">PROMPT-INJECTION DRAIN</span><span class="incident-time">03:12</span></div>
+            <p>A poisoned page tells your agent to pay <b>$180</b> for “priority access.” It complies. Nobody notices until the wallet is empty.</p>
+          </article>
+          <article class="incident reveal d2">
+            <div class="incident-top"><span class="incident-glyph">▲</span><span class="incident-title">RUNAWAY LOOP</span><span class="incident-time">04:00</span></div>
+            <p>A retry loop hits a paid endpoint <b>400 times</b> before sunrise. Every call cost $0.25. Every call was authorized — by nobody.</p>
+          </article>
+          <article class="incident reveal d3">
+            <div class="incident-top"><span class="incident-glyph">▲</span><span class="incident-title">SHADY COUNTERPARTY</span><span class="incident-time">—</span></div>
+            <p>The cheapest vendor in the marketplace has a <b>12% dispute rate</b> and three burned wallets behind it. Your agent only sees the price.</p>
+          </article>
+        </div>
+        <p class="section-close reveal d3">Rein exists because “the agent will behave” is not a security model.</p>
+      </section>
+
+      <!-- ── Pillars ───────────────────────────────────────────────────── -->
+      <section class="section" id="planes">
+        <div class="eyebrow reveal"><span class="tick"></span>THE CONTROL PLANE</div>
+        <h2 class="reveal d1">Three planes. One loop.</h2>
+        <p class="section-lede reveal d2">
+          Guard the demand side, gate the supply side, and let one reputation graph
+          feed evidence back into enforcement on both.
+        </p>
+
+        <div class="pillars">
+          <article class="pillar reveal d1">
+            <div class="pillar-head">
+              <span class="pillar-num">01</span>
+              <h3>GUARD</h3>
+              <span class="pillar-side">demand side</span>
+            </div>
+            <p class="pillar-lede">
+              Wrap your agent's <code>fetch</code> once. Every x402 paywall becomes a
+              policy decision <b>before a cent moves</b>.
+            </p>
+            <pre class="code"><code><span class="tk-kw">import</span> { createGuard } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/sdk'</span>;
+
+<span class="tk-kw">const</span> guard = <span class="tk-fn">createGuard</span>({ engineUrl, agentId });
+<span class="tk-kw">const</span> fetch = guard.<span class="tk-fn">wrap</span>();
+
+<span class="tk-cm">// vendor answers 402 → intent → policy check →</span>
+<span class="tk-cm">// signed decision. Deny blocks before payment exists.</span>
+<span class="tk-kw">const</span> res = <span class="tk-kw">await</span> <span class="tk-fn">fetch</span>(<span class="tk-str">'https://api.vendor.example'</span>);</code></pre>
+            <ul class="pillar-chips">
+              <li>budgets &amp; tx caps</li>
+              <li>allow / deny lists</li>
+              <li>kill switch</li>
+              <li>signed receipts</li>
+            </ul>
+            <a class="pillar-link" href="https://www.npmjs.com/package/@reinconsole/sdk" target="_blank" rel="noopener">@reinconsole/sdk →</a>
+          </article>
+
+          <article class="pillar reveal d2">
+            <div class="pillar-head">
+              <span class="pillar-num">02</span>
+              <h3>GATE</h3>
+              <span class="pillar-side">supply side</span>
+            </div>
+            <p class="pillar-lede">
+              Price your routes once. Every payment into your API is screened, settled,
+              and receipted <b>before your handler runs</b>.
+            </p>
+            <pre class="code"><code><span class="tk-kw">import</span> { createGate, gateMiddleware } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/gate'</span>;
+
+<span class="tk-kw">const</span> gate = <span class="tk-fn">createGate</span>({
+  routes: [{ path: <span class="tk-str">'/api/answer'</span>, price: <span class="tk-str">'0.05'</span> }],
+  rails, payTo: <span class="tk-str">'0xYourTreasury…'</span>,
+  screen: { check: <span class="tk-fn">payerCheck</span>(graph, { denyBelow: <span class="tk-num">40</span> }) },
+});
+
+app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gate));</code></pre>
+            <ul class="pillar-chips">
+              <li>quote consistency</li>
+              <li>replay protection</li>
+              <li>velocity caps</li>
+              <li>payer screening</li>
+            </ul>
+            <a class="pillar-link" href="https://www.npmjs.com/package/@reinconsole/gate" target="_blank" rel="noopener">@reinconsole/gate →</a>
+          </article>
+
+          <article class="pillar reveal d3">
+            <div class="pillar-head">
+              <span class="pillar-num">03</span>
+              <h3>GRAPH</h3>
+              <span class="pillar-side">reputation</span>
+            </div>
+            <p class="pillar-lede">
+              Evidence in, scores out. Both sides of the wire feed one graph — and the
+              graph <b>feeds back into enforcement</b>.
+            </p>
+            <pre class="code"><code><span class="tk-kw">import</span> { ReputationGraph, payerCheck } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/graph'</span>;
+
+<span class="tk-kw">const</span> graph = <span class="tk-kw">new</span> <span class="tk-fn">ReputationGraph</span>()
+  .<span class="tk-fn">observe</span>(engine).<span class="tk-fn">observe</span>(indexer).<span class="tk-fn">observe</span>(gate);
+
+<span class="tk-cm">// pushed scores make vendorReputationLt policies fire</span>
+<span class="tk-kw">await</span> graph.<span class="tk-fn">syncVendors</span>(engine.spend);</code></pre>
+            <ul class="pillar-chips">
+              <li>never stored, always explainable</li>
+              <li>unknown ≠ bad</li>
+              <li>survives key rotation</li>
+            </ul>
+            <a class="pillar-link" href="https://www.npmjs.com/package/@reinconsole/graph" target="_blank" rel="noopener">@reinconsole/graph →</a>
+          </article>
+        </div>
+      </section>
+
+      <!-- ── Proof ─────────────────────────────────────────────────────── -->
+      <section class="section" id="proof">
+        <div class="eyebrow reveal"><span class="tick"></span>RECEIPTS</div>
+        <h2 class="reveal d1">“Live on testnet” — with links,<br class="wide-only" /> not adjectives.</h2>
+        <div class="proof-grid">
+          <a class="proof reveal d1" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">
+            <span class="proof-label">OFFLINE TEST SUITE</span>
+            <span class="proof-value">371</span>
+            <span class="proof-sub">tests passing · MIT · monorepo →</span>
+          </a>
+          <a class="proof reveal d2" href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">
+            <span class="proof-label">PUBLIC PACKAGES</span>
+            <span class="proof-value">8</span>
+            <span class="proof-sub">@reinconsole/* on npm · 0.1.0 →</span>
+          </a>
+          <a class="proof reveal d3" href="https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/7393" target="_blank" rel="noopener">
+            <span class="proof-label">ERC-8004 AGENT #7393</span>
+            <span class="proof-value">82<span class="proof-denominator">/100</span></span>
+            <span class="proof-sub">rein-score published on-chain →</span>
+          </a>
+          <a class="proof reveal d1" href="https://sepolia.basescan.org/tx/0x73c2971ac85330d1b6d21889ffb356716babb4ba740468a8f9066be6ca310689" target="_blank" rel="noopener">
+            <span class="proof-label">GUARDED SETTLEMENT</span>
+            <span class="proof-value mono">0x73c2…0689</span>
+            <span class="proof-sub">real USDC on Base Sepolia →</span>
+          </a>
+          <a class="proof reveal d2" href="https://sepolia.basescan.org/tx/0x1352fae21246fefc4bc65f704a2075f121369d4d7f6fc16653f1f68c065b97f1" target="_blank" rel="noopener">
+            <span class="proof-label">SHADOW SPEND CAUGHT</span>
+            <span class="proof-value mono">0x1352…b97f1</span>
+            <span class="proof-sub">unguarded transfer, flagged →</span>
+          </a>
+          <a class="proof reveal d3" href="https://sepolia.basescan.org/tx/0x30eb018d1e6cacdb4e7479e0370a2ec43136c414808a2124712f0c46c975ab8e" target="_blank" rel="noopener">
+            <span class="proof-label">VENDOR GATE SETTLEMENT</span>
+            <span class="proof-value mono">0x30eb…5ab8e</span>
+            <span class="proof-sub">via the hosted x402 facilitator →</span>
+          </a>
+        </div>
+      </section>
+
+      <!-- ── Architecture ──────────────────────────────────────────────── -->
+      <section class="section" id="architecture">
+        <div class="eyebrow reveal"><span class="tick"></span>NON-CUSTODIAL BY ARCHITECTURE</div>
+        <h2 class="reveal d1">Authority moves through Rein.<br class="wide-only" /> Money doesn't.</h2>
+        <div class="arch reveal d2">
+          <div class="arch-node">
+            <span class="arch-name">YOUR AGENT</span>
+            <span class="arch-desc">holds no keys</span>
+          </div>
+          <div class="arch-wire"><span>intent</span></div>
+          <div class="arch-node is-rein">
+            <span class="arch-name">POLICY ENGINE</span>
+            <span class="arch-desc">rules → signed decision voucher</span>
+          </div>
+          <div class="arch-wire"><span>voucher</span></div>
+          <div class="arch-node is-rein">
+            <span class="arch-name">SESSION SIGNER</span>
+            <span class="arch-desc">verifies offline · caps · expiry · kill switch</span>
+          </div>
+          <div class="arch-wire"><span>x402 payment</span></div>
+          <div class="arch-node">
+            <span class="arch-name">VENDOR'S GATE</span>
+            <span class="arch-desc">screens · settles · receipts</span>
+          </div>
+        </div>
+        <div class="arch-facts">
+          <span class="arch-fact reveal d1">Funds never pass through Rein</span>
+          <span class="arch-fact reveal d2">Every decision is hash-chained &amp; auditable</span>
+          <span class="arch-fact reveal d3">The kill switch revokes authority instantly</span>
+        </div>
+      </section>
+
+      <!-- ── Footer CTA ────────────────────────────────────────────────── -->
+      <section class="section outro" id="get-started">
+        <h2 class="reveal">Put reins on it.</h2>
+        <div class="install install-lg reveal d1">
+          <code class="install-cmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
+          <button class="copy-btn" id="copyBtn2" type="button" aria-label="Copy install command">copy</button>
+        </div>
+        <div class="hero-actions center reveal d2">
+          <a class="btn btn-primary" href="https://reinconsole-production.up.railway.app/" target="_blank" rel="noopener">
+            See it live <span class="btn-arrow">→</span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
+        </div>
+        <p class="outro-fine reveal d3">
+          v0.1 — early open-source infrastructure, live on testnet. APIs may change before 1.0.<br />
+          No waitlist. No email capture. The code is public.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://reinconsole-production.up.railway.app/" target="_blank" rel="noopener">Console</a>
+        <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
+        <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>
