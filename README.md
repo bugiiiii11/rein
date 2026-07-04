@@ -30,14 +30,37 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@reinconsole/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening. `graph.link()` merges identities across id spaces (an agent's engine ULID and its paying wallet, a vendor's host and its payTo address — the ERC-8004 story) so one party carries one history: an agent's engine-side sins follow its wallet to every gate's door.
 - **`@reinconsole/erc8004`** — the on-chain identity source. Reads identity facts from the ratified [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) Identity Registry (an ERC-721; singleton deployments, Base Sepolia included) and turns them into link facts for the graph: a registered agent's reputation keys by its on-chain identity (`eip155:{chainId}:{registry}/{tokenId}`) with the local id and every wallet — `ownerOf`, the EIP-712-verified `agentWallet` — folded in as aliases; vendors stay host-keyed. Ships the write path too (**registers agents on the real Base Sepolia registry**) and an in-memory registry twin for offline work.
 
-**327 tests passing** (plus 4 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC — and the identity demo registers a real agent on the Base Sepolia ERC-8004 registry.
+**371 tests passing** (plus 5 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC — and the identity demo registers a real agent on the Base Sepolia ERC-8004 registry.
+
+## Install
+
+The eight library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.1.0`, MIT, Node ≥22):
+
+```bash
+npm install @reinconsole/sdk     # agent-side guard — wrap your fetch
+npm install @reinconsole/gate    # vendor-side x402 monetization middleware
+npm install @reinconsole/graph   # explainable reputation scoring
+```
+
+| Package | What it's for |
+| ------- | ------------- |
+| [`@reinconsole/core`](https://www.npmjs.com/package/@reinconsole/core) | Canonical zod schemas — the single source of truth |
+| [`@reinconsole/sdk`](https://www.npmjs.com/package/@reinconsole/sdk) | Agent-side guard; wraps the x402 client |
+| [`@reinconsole/policy-engine`](https://www.npmjs.com/package/@reinconsole/policy-engine) | Declarative rule engine + signed, hash-chained audit log |
+| [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate) | Vendor-side x402 monetization middleware |
+| [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph) | Reputation: evidence off every bus, explainable scores |
+| [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails) | Real rails: EIP-3009 payer + x402.org facilitator client + indexer |
+| [`@reinconsole/mock-rails`](https://www.npmjs.com/package/@reinconsole/mock-rails) | Offline x402 world: facilitator + ledger + indexer |
+| [`@reinconsole/erc8004`](https://www.npmjs.com/package/@reinconsole/erc8004) | On-chain identity: ERC-8004 registry reads/writes → link facts |
+
+The custody tier (`@reinconsole/signer`) and persistence layer (`@reinconsole/store`) are intentionally **not** published yet — session-key custody is the GA architecture. Build them from source (below).
 
 ## Quickstart
 
 ```bash
 pnpm install
 pnpm build
-pnpm test            # 327 tests, fully offline
+pnpm test            # 371 tests, fully offline
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
@@ -307,16 +330,17 @@ A policy is declarative — for example, a $0.50 per-transaction cap plus a roll
 
 ```
 packages/
-  core/          @reinconsole/core           — canonical zod schemas (single source of truth)   [published]
-  sdk/           @reinconsole/sdk            — agent-side guard; wraps the x402 client          [published]
-  gate/          @reinconsole/gate           — vendor-side x402 monetization middleware         [published]
+  core/          @reinconsole/core           — canonical zod schemas (single source of truth)                            [published]
+  sdk/           @reinconsole/sdk            — agent-side guard; wraps the x402 client                                   [published]
+  gate/          @reinconsole/gate           — vendor-side x402 monetization middleware                                  [published]
 services/
-  policy-engine/ @reinconsole/policy-engine  — Fastify policy evaluation service + audit log
-  mock-rails/    @reinconsole/mock-rails     — mock x402 facilitator + ledger + indexer
-  x402-rails/    @reinconsole/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer
-  signer/        @reinconsole/signer         — session-key custody: voucher-gated EIP-3009 signing, session caps, kill switch with teeth
-  store/         @reinconsole/store          — persistence: PGlite-backed engine + graph stores; key, chain, agents, policies, spend, reputation evidence survive restarts
-  graph/         @reinconsole/graph          — reputation: evidence off every bus, explainable scores, feedback into policy + gate screening
+  policy-engine/ @reinconsole/policy-engine  — Fastify policy evaluation service + audit log                             [published]
+  mock-rails/    @reinconsole/mock-rails     — mock x402 facilitator + ledger + indexer                                  [published]
+  x402-rails/    @reinconsole/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer  [published]
+  graph/         @reinconsole/graph          — reputation: evidence off every bus, explainable scores, policy+gate feed  [published]
+  erc8004/       @reinconsole/erc8004        — on-chain identity: ERC-8004 registry reads/writes → link facts            [published]
+  signer/        @reinconsole/signer         — session-key custody: voucher-gated EIP-3009 signing, caps, kill switch    [private]
+  store/         @reinconsole/store          — persistence: PGlite-backed engine + graph stores; state survives restarts [private]
 apps/
   demo/          @reinconsole/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate + graph
   console/       @reinconsole/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
