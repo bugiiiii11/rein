@@ -1134,6 +1134,58 @@ button {
     display: none;
   }
   .kpis {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Mobile: the fixed-viewport control room becomes a scrolling page.
+   Columns stack (feed first), each panel caps its own height and scrolls
+   internally, and the page scrolls vertically — never horizontally. */
+@media (max-width: 760px) {
+  body {
+    overflow-y: auto;
+    overflow-x: clip;
+  }
+  .app {
+    height: auto;
+    min-height: 100%;
+  }
+
+  .cmd-bar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 14px;
+    gap: 10px 12px;
+  }
+  .cmd-spacer {
+    display: none;
+  }
+  .cmd-meta {
+    margin-left: auto;
+  }
+  .run-btn {
+    flex: 1 0 100%;
+    justify-content: center;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+  }
+  .col.left {
+    order: 2;
+  }
+  .col.right {
+    display: flex; /* hidden ≤1180px for width — stacked, there's room again */
+    order: 3;
+  }
+  /* Stacked columns have no height budget, so panels bound themselves. */
+  .panel-body {
+    max-height: min(60vh, 420px);
   }
 }
