@@ -2,7 +2,7 @@
 
 The simulated payment world for **[Rein](https://github.com/bugiiiii11/rein)** — a fully offline twin of the real [x402](https://www.x402.org) rails. Try the whole guard loop — budgets, caps, kill switch, shadow-spend detection — with no accounts, no chain, no funds.
 
-> **Status: v0.1 — early open-source infrastructure.** APIs may change before 1.0. See it running (the live console world runs on these rails): [Rein console](https://reinconsole-production.up.railway.app/).
+> **Status: v0.1 — early open-source infrastructure.** APIs may change before 1.0. See it running (the live console world runs on these rails): [Rein console](https://app.reinconsole.com).
 
 ## Install
 

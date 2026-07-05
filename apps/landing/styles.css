@@ -47,6 +47,7 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip; /* contain any decorative bleed; no scroll container (sticky-safe) */
 }
 
 body {
@@ -57,7 +58,14 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* Keyboard focus — visible ring for a11y (mouse hover unaffected) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Atmosphere: accent glow + faint grid + grain overlay (console DNA) */
@@ -276,6 +284,7 @@ h1 {
   line-height: 1.06;
   letter-spacing: -0.015em;
   margin-bottom: 22px;
+  text-wrap: balance;
 }
 
 .hero-sub {
@@ -283,6 +292,7 @@ h1 {
   font-size: 14.5px;
   color: var(--ink-dim);
   margin-bottom: 32px;
+  text-wrap: pretty;
 }
 .hero-sub em {
   color: var(--ink);
@@ -527,7 +537,6 @@ h1 {
   max-width: var(--container);
   margin: 0 auto;
   padding: 104px 24px;
-  border-top: 1px solid var(--line);
 }
 
 .eyebrow {
@@ -555,12 +564,14 @@ h2 {
   line-height: 1.12;
   letter-spacing: -0.01em;
   margin-bottom: 20px;
+  text-wrap: balance;
 }
 
 .section-lede {
   max-width: 58ch;
   color: var(--ink-dim);
   margin-bottom: 48px;
+  text-wrap: pretty;
 }
 .section-close {
   margin-top: 40px;
@@ -575,7 +586,7 @@ h2 {
 /* ── Incidents (problem strip) ────────────────────────────────────────────── */
 .incidents {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   margin-top: 40px;
 }
@@ -620,13 +631,14 @@ h2 {
 /* ── Pillars ──────────────────────────────────────────────────────────────── */
 .pillars {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 .pillar {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0; /* let the pre-formatted code block scroll inside, not stretch the track */
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--bg-1), var(--bg));
@@ -675,6 +687,7 @@ h2 {
 }
 
 .code {
+  min-width: 0; /* scroll container: never contribute pre-width to the flex column */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -741,7 +754,7 @@ h2 {
 /* ── Proof grid ───────────────────────────────────────────────────────────── */
 .proof-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: var(--line);
   border: 1px solid var(--line);
@@ -923,8 +936,7 @@ h2 {
   gap: 20px;
   max-width: var(--container);
   margin: 0 auto;
-  padding: 26px 24px 34px;
-  border-top: 1px solid var(--line);
+  padding: 40px 24px 34px;
   font-size: 11px;
   color: var(--ink-faint);
 }
@@ -948,14 +960,15 @@ h2 {
 }
 
 /* ── Reveal on scroll ─────────────────────────────────────────────────────── */
+/* Enhancement only: content is visible by default. The inline <head> script
+   adds `.js` to <html>, which arms the hidden→revealed transition. No JS (or a
+   failed load) leaves everything visible instead of shipping a blank page. */
 .reveal {
-  opacity: 0;
-  transform: translateY(14px);
   transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.reveal.in {
-  opacity: 1;
-  transform: none;
+.js .reveal:not(.in) {
+  opacity: 0;
+  transform: translateY(14px);
 }
 .reveal.d1 {
   transition-delay: 0.08s;
@@ -977,9 +990,11 @@ h2 {
   html {
     scroll-behavior: auto;
   }
-  .reveal {
+  .js .reveal:not(.in) {
     opacity: 1;
     transform: none;
+  }
+  .reveal {
     transition: none;
   }
   .feed-panel {
@@ -1005,13 +1020,13 @@ h2 {
     transform: none;
   }
   .pillars {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .incidents {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .proof-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .arch {
     flex-direction: column;
@@ -1062,7 +1077,7 @@ h2 {
     padding: 72px 20px;
   }
   .proof-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .install {
     max-width: 100%;

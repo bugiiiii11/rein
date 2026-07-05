@@ -2,7 +2,7 @@
 
 Canonical [zod](https://zod.dev) schemas and shared types for **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. This package is the single source of truth for DB rows, API payloads, and SDK types across the whole stack.
 
-> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the stack running live: [Rein console](https://reinconsole-production.up.railway.app/).
+> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the stack running live: [Rein console](https://app.reinconsole.com).
 
 ## Install
 

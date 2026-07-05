@@ -2,7 +2,7 @@
 
 The rule engine of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. A sandboxed, declarative policy engine that judges every payment intent (`deny > escalate > allow > default`), with every decision ed25519-signed and sha256 hash-chained into a tamper-evident audit log.
 
-> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://reinconsole-production.up.railway.app/).
+> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
 
 ## Install & run
 

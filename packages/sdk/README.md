@@ -2,7 +2,7 @@
 
 The demand-side guard of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. Wrap your agent's `fetch` once and every [x402](https://www.x402.org) payment is policy-checked, receipted, and observable **before a cent moves**. Non-custodial: Rein governs the authority to spend, never the funds.
 
-> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://reinconsole-production.up.railway.app/).
+> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
 
 ## Install
 
