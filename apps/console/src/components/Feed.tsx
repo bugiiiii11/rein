@@ -98,7 +98,8 @@ function Row({ f }: { f: FeedItem }) {
       <div className="feed-main">
         <div className="feed-title">
           <span className={`feed-verb ${verb.cls}`}>{verb.text}</span>
-          <span className="feed-amt">{usd(f.amount)}</span>
+          {/* no amount, no span — usd(undefined) would render a lying "$0.00" */}
+          {f.amount !== undefined && <span className="feed-amt">{usd(f.amount)}</span>}
           {f.host && (
             <>
               <span className="feed-arrow">→</span>

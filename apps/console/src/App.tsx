@@ -5,6 +5,7 @@ import { Agents } from './components/Agents';
 import { Policies } from './components/Policies';
 import { Feed } from './components/Feed';
 import { GatePanel } from './components/GatePanel';
+import { SignerPanel } from './components/SignerPanel';
 import { ReputationPanel } from './components/ReputationPanel';
 import { Shadow } from './components/Shadow';
 import { AuditChain } from './components/AuditChain';
@@ -35,6 +36,7 @@ export function App() {
         </div>
         <div className="col right">
           <GatePanel gate={d.gate} />
+          <SignerPanel signer={d.signer} />
           <Shadow feed={d.feed} />
           <AuditChain feed={d.feed} publicKey={d.publicKey} chainLinks={d.stats?.chainLinks ?? 0} />
         </div>

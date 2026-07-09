@@ -13,11 +13,14 @@ export {
   ExactEvmAuthorization,
   ExactEvmPayload,
   PaymentPayload,
+  PaymentPayloadV2,
   VerifyResponse,
   SettleResponse,
   encodePaymentHeader,
   decodePaymentHeader,
+  decodeAnyPaymentHeader,
   encodeSettlementHeader,
+  type DecodedPayment,
 } from './wire.js';
 export { intentNonce } from './nonce.js';
 export { chainIdForNetwork } from './networks.js';

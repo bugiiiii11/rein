@@ -127,6 +127,30 @@ export interface GateView {
   payers: GatePayerStat[];
 }
 
+/** One session grant in the signer's custody ledger. */
+export interface SignerSessionView {
+  id: string;
+  agentId: string;
+  agentName?: string;
+  /** The signer's CURRENT custody address for the agent — session records
+   * don't carry wallets, and rotated-out keys are gone by design. */
+  wallet: string;
+  cap?: string; // decimal cumulative ceiling ('' = uncapped never happens here)
+  spent: string; // decimal signed-for total
+  status: 'active' | 'expired' | 'revoked';
+  /** signature.released count — this process's telemetry, like the feed. */
+  burns: number;
+  createdAt: string; // ISO
+  expiresAt: string; // ISO
+}
+
+/** The custody tier: session-key grants and what they've signed for. */
+export interface SignerView {
+  /** Newest first, so the live grant outranks its revoked ancestors. */
+  sessions: SignerSessionView[];
+  active: number;
+}
+
 /** The five 0–100 reputation components (higher = healthier). `disputeRate`
  * keeps the core field name but stores the INVERTED hygiene value: 100 = clean. */
 export interface ReputationComponentsView {
@@ -189,6 +213,7 @@ export interface ConsoleState {
   policies: PolicyView[];
   stats: Stats;
   gate: GateView;
+  signer: SignerView;
   graph: GraphView;
   demo: DemoStatus;
   publicKey: string;
@@ -202,5 +227,6 @@ export type ServerEvent =
   | { type: 'policies'; policies: PolicyView[] }
   | { type: 'stats'; stats: Stats }
   | { type: 'gate'; gate: GateView }
+  | { type: 'signer'; signer: SignerView }
   | { type: 'graph'; graph: GraphView }
   | { type: 'demo'; demo: DemoStatus };

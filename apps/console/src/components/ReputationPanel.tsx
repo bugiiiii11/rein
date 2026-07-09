@@ -3,6 +3,7 @@ import type { GraphView, ReputationRow } from '../../server/wire';
 import { midHash, usd } from '../format';
 
 const DAY_MS = 86_400_000;
+const MAX_AGENT_ROWS = 6;
 
 /** Chip tone mirrors the enforcement rules: dim when the graph would not act
  * on the score (confidence below the floor), rose when enforcement bites. */
@@ -89,6 +90,12 @@ export function ReputationPanel({ graph }: { graph: GraphView | null }) {
       return <Row key={key} r={r} g={g!} open={open === key} onToggle={() => setOpen(open === key ? null : key)} />;
     });
 
+  // The agents scoreboard grows with every scenario run — cap it. Barred rows
+  // stay visible past the cap: enforcement is the point of this panel.
+  const agents = g?.agents ?? [];
+  const shownAgents = agents.filter((r, i) => i < MAX_AGENT_ROWS || r.barred);
+  const moreAgents = agents.length - shownAgents.length;
+
   return (
     <section className="panel" style={{ flex: '0 0 auto' }}>
       <div className="panel-head">
@@ -105,10 +112,11 @@ export function ReputationPanel({ graph }: { graph: GraphView | null }) {
             {rows(g.vendors)}
           </div>
         )}
-        {g && g.agents.length > 0 && (
+        {g && shownAgents.length > 0 && (
           <div className="gate-section">
             <div className="gate-section-title">Payers &amp; agents</div>
-            {rows(g.agents)}
+            {rows(shownAgents)}
+            {moreAgents > 0 && <div className="gate-more">+{moreAgents} more</div>}
           </div>
         )}
         {(!g || g.subjects === 0) && <div className="empty">No reputation evidence yet.</div>}

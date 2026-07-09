@@ -51,6 +51,7 @@ import {
   networkToChain,
   requirementDecimals,
   resolveAsset,
+  PaymentRequirementsV2,
   type FetchLike,
   type Payer,
   type PaymentRequirement,
@@ -65,7 +66,13 @@ import {
 } from '@reinconsole/gate';
 import { ReputationGraph, payerCheck } from '@reinconsole/graph';
 import { openReinStore } from '@reinconsole/store';
-import { SessionSigner, sessionPayerFor, SignerError, type SignRequest } from '@reinconsole/signer';
+import {
+  SessionSigner,
+  sessionPayerFor,
+  sessionState,
+  SignerError,
+  type SignRequest,
+} from '@reinconsole/signer';
 import {
   chainIdForNetwork,
   createBaseSepoliaClient,
@@ -85,6 +92,8 @@ import type {
   PolicyRuleView,
   ReputationRow,
   ServerEvent,
+  SignerSessionView,
+  SignerView,
   Stats,
 } from './wire';
 
@@ -94,15 +103,22 @@ const PREMIUM_URL = `https://${VENDOR_HOST}/v1/premium`;
 const PRICE = '0.01';
 const PREMIUM_PRICE = '5.00';
 const PRICE_ATOMIC = '10000'; // $0.01 USDC (6 decimals)
+const PREMIUM_PRICE_ATOMIC = '5000000'; // $5.00 USDC (6 decimals)
 /** USDC on Base — built into the SDK's asset resolution, and a real EIP-712
  * verifying contract for the session-key lane (lowercased: no checksum trips). */
 const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 /** Real-hex addresses: the EIP-3009 lane signs typed data over them. */
 const TREASURY = '0x7e57000000000000000000000000000000000001';
 const MULE_WALLET = '0xbad0000000000000000000000000000000000666';
+const BURST_WALLET = '0xb00570000000000000000000000000000000feed';
 const TX_CAP = '0.50';
 const HOUR_BUDGET = '0.04';
 const SESSION_CAP = '0.02';
+/** Per-payer settled-spend velocity cap at the gate (rolling hour). Sits just
+ * ABOVE the engine's HOUR_BUDGET on purpose: guarded agents are budget-denied
+ * at $0.04/h before any payment exists, so only an unguarded payer — the
+ * scenario's burst buyer — can ever trip this. */
+const VELOCITY_CAP = '0.05';
 const FEED_CAP = 300;
 
 /** The reputation cast, seeded with BACKDATED history at boot (same-day
@@ -142,6 +158,34 @@ function craftPayment(from: string, value: string): string {
 function extraString(requirement: PaymentRequirement, key: string): string | undefined {
   const value = requirement.extra?.[key];
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Decode an EIP-3009 payment header in EITHER x402 dialect, or undefined for
+ * anything else (flat mock payloads fall through to the mock decoder, which
+ * speaks both dialects itself). A v2 envelope (PAYMENT-SIGNATURE) wraps the
+ * SAME signed scheme payload as v1, so it unwraps to the inner shape here —
+ * mirrors mock-rails' decodePaymentHeader normalization.
+ */
+export function decodeEvmPayment(header: string): PaymentPayload | undefined {
+  try {
+    let json: unknown = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
+    const v2 = json as { x402Version?: unknown; accepted?: unknown; payload?: unknown } | null;
+    if (v2?.x402Version === 2) {
+      const accepted = PaymentRequirementsV2.safeParse(v2.accepted);
+      if (!accepted.success) return undefined;
+      json = {
+        x402Version: 1,
+        scheme: accepted.data.scheme,
+        network: accepted.data.network,
+        payload: v2.payload,
+      };
+    }
+    const parsed = PaymentPayload.safeParse(json);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 interface AgentRuntime {
@@ -228,18 +272,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
    */
   function worldRails(): GateRails {
     const mock = mockFacilitatorRails(facilitator);
-    const decodeEvm = (header: string) => {
-      try {
-        const json: unknown = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
-        const parsed = PaymentPayload.safeParse(json);
-        return parsed.success ? parsed.data : undefined;
-      } catch {
-        return undefined;
-      }
-    };
     return {
       async verify(header, requirement) {
-        const evm = decodeEvm(header);
+        const evm = decodeEvmPayment(header);
         if (!evm) return mock.verify(header, requirement);
         const auth = evm.payload.authorization;
         const chainId = chainIdForNetwork(evm.network);
@@ -285,7 +320,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         }
       },
       async settle(header, requirement) {
-        const evm = decodeEvm(header);
+        const evm = decodeEvmPayment(header);
         if (!evm) return mock.settle(header, requirement);
         const auth = evm.payload.authorization;
         const chain = networkToChain(evm.network);
@@ -337,6 +372,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       // door before any settle leg; unknowns and thin histories always pass.
       check: payerCheck(graph, { denyBelow: REP_FLOOR, minConfidence: REP_MIN_CONFIDENCE }),
     },
+    // Gate-wide per-payer velocity (S19). Refusals fire BEFORE the replay burn
+    // and, by the graph's fairness skip-set, leave no reputation evidence.
+    velocity: { windowMs: HOUR_MS, maxAmount: VELOCITY_CAP },
     // Persistent world: receipts/revenue resume, and a payment settled before
     // a kill is refused as a replay after the restart.
     ...(store ? { store: store.gate } : {}),
@@ -469,6 +507,41 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         ...line,
       })),
     };
+  }
+
+  /** signature.released counts per session — process-local telemetry, like the feed. */
+  const sessionBurns = new Map<string, number>();
+
+  function viewSigner(): SignerView {
+    const nowMs = Date.now();
+    const sessions = signer
+      .sessions()
+      .map(
+        (s): SignerSessionView => ({
+          id: s.id,
+          agentId: s.agentId,
+          agentName: agentName(s.agentId),
+          wallet: signer.walletAddress(s.agentId) ?? '',
+          cap: s.capAmount,
+          spent: signer.sessionSpent(s.id),
+          status: sessionState(s, nowMs),
+          burns: sessionBurns.get(s.id) ?? 0,
+          createdAt: s.createdAt.toISOString(),
+          expiresAt: s.expiresAt.toISOString(),
+        }),
+      )
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+    return { sessions, active: sessions.filter((s) => s.status === 'active').length };
+  }
+
+  /** gate.refused events carry no amount, but the route table still knows what
+   * the refused caller was buying — quote it so TURNED AWAY rows show a price. */
+  function quotedAmount(resource: string | undefined): string | undefined {
+    if (!resource) return undefined;
+    const requirement = gate.quoteFor('GET', `https://${VENDOR_HOST}${resource}`);
+    return (
+      requirement && atomicToDecimal(requirement.maxAmountRequired, requirementDecimals(requirement))
+    );
   }
 
   function reputationRow(subject: ReputationSubject): ReputationRow | undefined {
@@ -667,6 +740,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         kind: 'gate-refused',
         agentId: payerAgent?.id,
         agentName: payerAgent?.name,
+        amount: quotedAmount(ev.resource),
         host: VENDOR_HOST,
         resource: ev.resource,
         payer: ev.payer,
@@ -679,6 +753,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
 
   signer.onEvent((ev) => {
     if (ev.type === 'signature.released') {
+      sessionBurns.set(ev.sessionId, (sessionBurns.get(ev.sessionId) ?? 0) + 1);
       pushFeed({
         seq: ++seq,
         at: ev.at.toISOString(),
@@ -703,6 +778,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         reason: ev.reason,
       });
     }
+    emit({ type: 'signer', signer: viewSigner() });
   });
 
   // ── reputation wiring ──────────────────────────────────────────────────────
@@ -1002,6 +1078,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       capAmount: SESSION_CAP,
       ttlSeconds: 24 * 3600,
     });
+    emit({ type: 'signer', signer: viewSigner() });
     // Capture the voucher the guard hands the signer — the stolen-voucher
     // scenario replays it. Captured BEFORE signing: the decision burns on use.
     let captured: SignRequest | undefined;
@@ -1168,6 +1245,16 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     });
     await sleep(gap);
 
+    // 15 — a burst buyer offers a valid $5.00 payment for the premium report;
+    //      the gate's per-payer spend velocity cap refuses at the door —
+    //      before the replay burn, and (fairness skip-set) with NO reputation
+    //      evidence: one vendor's throttle must not follow the wallet around
+    setPhase('velocity cap at the door');
+    await gatedFetch(PREMIUM_URL, {
+      headers: { 'X-PAYMENT': craftPayment(BURST_WALLET, PREMIUM_PRICE_ATOMIC) },
+    });
+    await sleep(gap);
+
     demo = { running: false, phase: 'idle' };
     emit({ type: 'demo', demo });
   }
@@ -1215,6 +1302,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       policies: viewPolicies(),
       stats: computeStats(),
       gate: viewGate(),
+      signer: viewSigner(),
       graph: viewGraph(),
       demo,
       publicKey: engine.publicKeyPem,

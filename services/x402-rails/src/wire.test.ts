@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { RailsError } from './errors.js';
 import {
+  decodeAnyPaymentHeader,
   decodePaymentHeader,
   encodePaymentHeader,
   encodeSettlementHeader,
   type PaymentPayload,
+  type PaymentPayloadV2,
   type SettleResponse,
 } from './wire.js';
 
@@ -49,6 +51,52 @@ describe('X-PAYMENT codec', () => {
     expect(() =>
       decodePaymentHeader(bad((p) => (p.payload.authorization.from = 'not-an-address'))),
     ).toThrowError(RailsError);
+  });
+});
+
+describe('dual-dialect payment decode', () => {
+  const v2: PaymentPayloadV2 = {
+    x402Version: 2,
+    accepted: {
+      scheme: 'exact',
+      network: 'eip155:84532',
+      amount: '10000',
+      asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+      payTo: payload.payload.authorization.to,
+    },
+    payload: payload.payload,
+  };
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64');
+
+  it('normalizes a v1 header, keeping the envelope verbatim', () => {
+    const decoded = decodeAnyPaymentHeader(encodePaymentHeader(payload));
+    expect(decoded.version).toBe(1);
+    expect(decoded.network).toBe('base-sepolia');
+    expect(decoded.payload).toEqual(payload.payload);
+    expect(decoded.envelope).toEqual(payload);
+  });
+
+  it('unwraps a v2 envelope to the same inner scheme payload', () => {
+    const decoded = decodeAnyPaymentHeader(encode(v2));
+    expect(decoded.version).toBe(2);
+    expect(decoded.scheme).toBe('exact');
+    expect(decoded.network).toBe('eip155:84532');
+    expect(decoded.payload).toEqual(payload.payload);
+    expect(decoded.envelope).toEqual(v2);
+  });
+
+  it('rejects a self-contradictory v2 envelope (accepted vs signed amount)', () => {
+    const contradicted = structuredClone(v2);
+    contradicted.accepted.amount = '999999';
+    expect(() => decodeAnyPaymentHeader(encode(contradicted))).toThrowError(RailsError);
+  });
+
+  it('rejects a v2-versioned envelope missing the scheme payload', () => {
+    expect(() => decodeAnyPaymentHeader(encode({ x402Version: 2 }))).toThrowError(RailsError);
+  });
+
+  it('rejects non-base64 garbage with malformed_payment', () => {
+    expect(() => decodeAnyPaymentHeader('%%not-base64%%')).toThrowError(RailsError);
   });
 });
 

@@ -42,6 +42,40 @@ export const PaymentPayload = z.object({
 });
 export type PaymentPayload = z.infer<typeof PaymentPayload>;
 
+/**
+ * The v2 envelope (PAYMENT-SIGNATURE header): scheme/network live inside
+ * `accepted` — the requirement the payer chose — around the SAME signed
+ * scheme payload as v1. `.passthrough()` keeps resource/extensions intact
+ * because the facilitator re-verifies the envelope verbatim.
+ */
+export const PaymentPayloadV2 = z
+  .object({
+    x402Version: z.literal(2),
+    accepted: z
+      .object({
+        scheme: z.string(),
+        /** CAIP-2, e.g. "eip155:84532". */
+        network: z.string(),
+        amount: UintString,
+        asset: z.string().min(1),
+        payTo: z.string().min(1),
+      })
+      .passthrough(),
+    payload: ExactEvmPayload,
+  })
+  .passthrough();
+export type PaymentPayloadV2 = z.infer<typeof PaymentPayloadV2>;
+
+/** A payment as the vendor sees it, whichever dialect it arrived in. */
+export interface DecodedPayment {
+  version: 1 | 2;
+  scheme: string;
+  network: string;
+  payload: ExactEvmPayload;
+  /** The decoded envelope exactly as sent — what travels to the facilitator. */
+  envelope: PaymentPayload | PaymentPayloadV2;
+}
+
 /** Facilitator POST /verify response. Reason strings stay lenient on purpose. */
 export const VerifyResponse = z.object({
   isValid: z.boolean(),
@@ -77,6 +111,58 @@ export function decodePaymentHeader(raw: string): PaymentPayload {
     throw new RailsError('malformed_payment', `invalid X-PAYMENT body: ${parsed.error.message}`);
   }
   return parsed.data;
+}
+
+/**
+ * Decode a payment header in EITHER dialect to one normalized view. The v2
+ * envelope wraps the SAME signed scheme payload as v1, so both unwrap to a
+ * single ExactEvmPayload; the envelope is kept verbatim for the facilitator,
+ * which wants the payment in the dialect it was presented in.
+ */
+export function decodeAnyPaymentHeader(raw: string): DecodedPayment {
+  let json: unknown;
+  try {
+    json = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+  } catch {
+    throw new RailsError('malformed_payment', 'the payment header is not base64-encoded JSON');
+  }
+
+  if ((json as { x402Version?: unknown } | null)?.x402Version === 2) {
+    const parsed = PaymentPayloadV2.safeParse(json);
+    if (!parsed.success) {
+      throw new RailsError(
+        'malformed_payment',
+        `invalid v2 payment envelope: ${parsed.error.message}`,
+      );
+    }
+    // A self-contradictory envelope (accepted terms vs signed authorization)
+    // is malformed on its face — mirroring the gate's inspection.
+    if (parsed.data.payload.authorization.value !== parsed.data.accepted.amount) {
+      throw new RailsError(
+        'malformed_payment',
+        `v2 envelope contradicts itself: accepted.amount ${parsed.data.accepted.amount} vs signed value ${parsed.data.payload.authorization.value}`,
+      );
+    }
+    return {
+      version: 2,
+      scheme: parsed.data.accepted.scheme,
+      network: parsed.data.accepted.network,
+      payload: parsed.data.payload,
+      envelope: parsed.data,
+    };
+  }
+
+  const parsed = PaymentPayload.safeParse(json);
+  if (!parsed.success) {
+    throw new RailsError('malformed_payment', `invalid X-PAYMENT body: ${parsed.error.message}`);
+  }
+  return {
+    version: 1,
+    scheme: parsed.data.scheme,
+    network: parsed.data.network,
+    payload: parsed.data.payload,
+    envelope: parsed.data,
+  };
 }
 
 export function encodeSettlementHeader(response: SettleResponse): string {

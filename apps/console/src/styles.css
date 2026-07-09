@@ -816,6 +816,13 @@ a.pill:hover {
   min-width: 52px;
   text-align: right;
 }
+/* the muted "+N more" row a truncated list ends on */
+.gate-more {
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  padding-top: 2px;
+}
 
 /* ── Reputation graph ─────────────────────────────────────────────────────── */
 .rep-row {
