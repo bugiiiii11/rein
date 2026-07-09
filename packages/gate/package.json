@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/gate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Rein Gate — vendor-side x402 monetization middleware. Price your routes, verify and settle agent payments, screen payers, and get receipts and revenue observability from one middleware.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",
