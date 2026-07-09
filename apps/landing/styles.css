@@ -1008,6 +1008,245 @@ h2 {
   }
 }
 
+/* ── Get-started runbook page ─────────────────────────────────────────────── */
+.guide-hero {
+  padding-top: 88px;
+  padding-bottom: 24px;
+}
+.hero-sub b {
+  color: var(--ink);
+}
+
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.inline-link {
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent-line);
+  transition: filter 0.15s ease;
+}
+.inline-link:hover {
+  filter: brightness(1.25);
+}
+
+/* Numbered runbook steps */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  margin-top: 40px;
+}
+.step {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 16px;
+}
+.step-num {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent-line);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.step-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 6px;
+}
+.step-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15.5px;
+  letter-spacing: 0.02em;
+}
+.step-body > p {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+.step-body p b {
+  color: var(--ink);
+}
+
+/* Code cards: header bar + copy button around the existing .code block */
+.code-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.code-card .code {
+  border: none;
+  border-radius: 0;
+}
+.section > .code-card {
+  margin-top: 36px;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 13px;
+  border-bottom: 1px dashed var(--line);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.code-head .copy-btn {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+}
+.ok-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.7);
+}
+.code.output {
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.04), var(--bg));
+  color: var(--ink-dim);
+}
+.out-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+.out-bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* Guide card rows */
+.guide-whys,
+.guide-paths {
+  margin-top: 40px;
+}
+.path-card .pillar-link {
+  margin-top: auto;
+}
+
+/* Is / isn't */
+.is-isnt {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 40px;
+}
+.fact-col {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-1), var(--bg));
+  box-shadow: var(--shadow);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fact-col-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+.fact-col-title.is {
+  color: var(--ok);
+}
+.fact-col-title.isnt {
+  color: var(--warn);
+}
+.fact-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.fact-list li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+.fact-list li b {
+  color: var(--ink);
+}
+.fact-list.is li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--ok);
+}
+.fact-list.isnt li::before {
+  content: '✕';
+  position: absolute;
+  left: 0;
+  color: var(--warn);
+}
+
+/* Callout aside (gotchas) */
+.callout {
+  margin-top: 36px;
+  border: 1px solid rgba(245, 196, 81, 0.3);
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  max-width: 76ch;
+}
+.callout b {
+  color: var(--warn);
+}
+
+/* Demo scenario panel: reuse the hero feed's console DNA, but let it size itself */
+.demo-panel {
+  margin-top: 36px;
+}
+.demo-panel .feed {
+  height: auto;
+  overflow: visible;
+}
+.demo-panel .feed-row:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 720px) {
+  .guide-hero {
+    padding-top: 64px;
+  }
+  .step {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .step-num {
+    width: 28px;
+    height: 28px;
+    font-size: 10.5px;
+    border-radius: 7px;
+  }
+  .is-isnt {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 1020px) {
   .hero {

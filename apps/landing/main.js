@@ -31,12 +31,20 @@
     });
   }
 
-  /* ── Copy install command ──────────────────────────────────────────────── */
-  var INSTALL = 'npm install @reinconsole/sdk';
-  function wireCopy(id) {
-    var btn = document.getElementById(id);
-    if (!btn) return;
+  /* ── Copy buttons ──────────────────────────────────────────────────────────
+     data-copy="text"  copies the attribute value (commands, install lines);
+     data-copy-code    copies the text of the nearest .code-card's code block. */
+  var copyBtns = document.querySelectorAll('[data-copy], [data-copy-code]');
+  copyBtns.forEach(function (btn) {
     btn.addEventListener('click', function () {
+      var text;
+      if (btn.hasAttribute('data-copy-code')) {
+        var card = btn.closest('.code-card');
+        var code = card && card.querySelector('code');
+        text = code ? code.textContent : '';
+      } else {
+        text = btn.getAttribute('data-copy') || '';
+      }
       function done() {
         btn.classList.add('copied');
         btn.textContent = 'copied';
@@ -46,17 +54,17 @@
         }, 1600);
       }
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(INSTALL).then(done, function () {
-          fallbackCopy(done);
+        navigator.clipboard.writeText(text).then(done, function () {
+          fallbackCopy(text, done);
         });
       } else {
-        fallbackCopy(done);
+        fallbackCopy(text, done);
       }
     });
-  }
-  function fallbackCopy(done) {
+  });
+  function fallbackCopy(text, done) {
     var ta = document.createElement('textarea');
-    ta.value = INSTALL;
+    ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
@@ -69,8 +77,6 @@
     }
     document.body.removeChild(ta);
   }
-  wireCopy('copyBtn');
-  wireCopy('copyBtn2');
 
   /* ── Live feed loop ────────────────────────────────────────────────────── */
   var feed = document.getElementById('feed');

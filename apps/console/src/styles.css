@@ -180,6 +180,14 @@ button {
   border-color: var(--bad-soft);
   color: var(--bad);
 }
+a.pill {
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+a.pill:hover {
+  color: var(--ink);
+  border-color: var(--accent-line);
+}
 
 .dot {
   width: 8px;

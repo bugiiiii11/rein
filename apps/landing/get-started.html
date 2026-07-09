@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Arm scroll-reveal only when JS is present; no-JS keeps content visible. -->
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>Get started — Rein, the control plane for AI agent payments</title>
+    <meta
+      name="description"
+      content="From npm install to a governed agent payment — a step-by-step runbook. Runs 100% offline: no accounts, no chain, no funds. Every command on this page was run before it shipped."
+    />
+    <meta property="og:title" content="Get started with Rein" />
+    <meta
+      property="og:description"
+      content="From npm install to a governed agent payment, step by step. 100% offline quickstart; live Base Sepolia track included."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://reinconsole.com/get-started.html" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- ── Nav ─────────────────────────────────────────────────────────── -->
+    <header class="nav">
+      <a class="brand" href="index.html" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html">Overview</a>
+        <a href="#paths">Quickstarts</a>
+        <a href="#live">Go live</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="https://app.reinconsole.com" target="_blank" rel="noopener">
+        See it live
+      </a>
+    </header>
+
+    <main id="top">
+      <!-- ── Hero ──────────────────────────────────────────────────────── -->
+      <section class="section guide-hero">
+        <div class="hero-pills reveal">
+          <span class="pill"><span class="dot live"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
+          <span class="pill">NODE ≥22 · v0.1 · MIT</span>
+        </div>
+        <h1 class="reveal d1">From npm install to a<br class="wide-only" /> governed agent payment.</h1>
+        <p class="hero-sub reveal d2">
+          Rein governs your agent's <em>authority to spend</em> — it never holds the funds.
+          This runbook takes you from an empty folder to watching a policy engine allow four
+          payments and refuse the fifth <b>before any payment exists</b>. Everything below was
+          run, verbatim, against the published packages before this page shipped.
+        </p>
+        <div class="hero-actions reveal d3">
+          <a class="btn btn-primary" href="#paths">Start the quickstart <span class="btn-arrow">↓</span></a>
+          <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
+        </div>
+        <p class="hero-fine reveal d4">
+          The quickstart runs 100% offline — no accounts, no chain, no funds. The live track at the end settles real testnet USDC.
+        </p>
+      </section>
+
+      <!-- ── Why ───────────────────────────────────────────────────────── -->
+      <section class="section" id="why">
+        <div class="eyebrow reveal"><span class="tick"></span>WHY THIS EXISTS</div>
+        <h2 class="reveal d1">Agents can spend money now.<br class="wide-only" /> Someone has to hold the reins.</h2>
+        <div class="pillars guide-whys">
+          <article class="pillar reveal d1">
+            <div class="pillar-head"><span class="pillar-num">WHY WE BUILT IT</span></div>
+            <p class="pillar-lede">
+              x402 turned HTTP 402 into a payment rail: agents pay per call, no cards, no invoices.
+              But an agent transacts at machine speed — and a poisoned prompt or a runaway retry loop
+              spends at machine speed too. <b>“The agent will behave” is not a security model.</b>
+            </p>
+          </article>
+          <article class="pillar reveal d2">
+            <div class="pillar-head"><span class="pillar-num">WHAT YOU CAN DO WITH IT</span></div>
+            <ul class="pillar-chips">
+              <li>budgets &amp; per-tx caps</li>
+              <li>instant kill switch</li>
+              <li>signed, hash-chained audit log</li>
+              <li>price your API per call (x402)</li>
+              <li>screen counterparties by reputation</li>
+              <li>catch guard-bypassing spend</li>
+            </ul>
+            <p class="pillar-lede">
+              Guard the agent that spends, gate the API that earns, and let one reputation graph
+              feed evidence back into enforcement on both sides.
+            </p>
+          </article>
+          <article class="pillar reveal d3">
+            <div class="pillar-head"><span class="pillar-num">WHY USE IT</span></div>
+            <ul class="fact-list is">
+              <li>Non-custodial: authority moves through Rein, money doesn't</li>
+              <li>Fail-closed: engine unreachable → payments deny, not allow</li>
+              <li>Denies happen <b>before</b> a payment is constructed</li>
+              <li>Offline dev loop: the whole stack runs with zero setup</li>
+              <li>MIT, 8 packages on npm, live on Base Sepolia — <a class="inline-link" href="index.html#proof">with links, not adjectives</a></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- ── Paths ─────────────────────────────────────────────────────── -->
+      <section class="section" id="paths">
+        <div class="eyebrow reveal"><span class="tick"></span>CHOOSE YOUR PATH</div>
+        <h2 class="reveal d1">Two quickstarts. One prep.</h2>
+        <p class="section-lede reveal d2">
+          Both quickstarts share the three prep commands below and run entirely offline against
+          simulated rails — the same code paths, no real money.
+        </p>
+        <div class="pillars guide-paths">
+          <a class="pillar path-card reveal d1" href="#guard">
+            <div class="pillar-head"><span class="pillar-num">01</span><h3>GUARD</h3><span class="pillar-side">I'm building an agent</span></div>
+            <p class="pillar-lede">Cap what your agent can spend. Watch a budget deny fire before a cent moves.</p>
+            <span class="pillar-link">guard quickstart →</span>
+          </a>
+          <a class="pillar path-card reveal d2" href="#gate">
+            <div class="pillar-head"><span class="pillar-num">02</span><h3>GATE</h3><span class="pillar-side">I'm selling an API</span></div>
+            <p class="pillar-lede">Price your routes. An unpaid caller gets a quote; a paying one gets through — receipted.</p>
+            <span class="pillar-link">gate quickstart →</span>
+          </a>
+          <a class="pillar path-card reveal d3" href="https://app.reinconsole.com" target="_blank" rel="noopener">
+            <div class="pillar-head"><span class="pillar-num">03</span><h3>WATCH</h3><span class="pillar-side">I'm just looking</span></div>
+            <p class="pillar-lede">The live console runs the whole two-sided story. Click <b>Run scenario</b> and watch.</p>
+            <span class="pillar-link">app.reinconsole.com →</span>
+          </a>
+        </div>
+
+        <div class="steps">
+          <div class="step reveal">
+            <span class="step-num">01</span>
+            <div class="step-body">
+              <span class="step-title">Check Node</span>
+              <p>Rein targets Node 22+. Any recent LTS works.</p>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="node -v" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> node -v
+<span class="tk-cm">v22.14.0   # anything ≥22</span></code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">02</span>
+            <div class="step-body">
+              <span class="step-title">Make a folder, install the packages</span>
+              <p>
+                Four packages: the agent-side guard, the vendor-side gate, the offline rails
+                they'll run on, and the core schemas (for <code class="inline-code">newId</code>).
+              </p>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="mkdir rein-quickstart && cd rein-quickstart && npm init -y && npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> mkdir rein-quickstart &amp;&amp; cd rein-quickstart
+<span class="install-prompt">$</span> npm init -y
+<span class="install-prompt">$</span> npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">03</span>
+            <div class="step-body">
+              <span class="step-title">Boot the policy engine — in a second terminal</span>
+              <p>
+                The engine is the referee: it holds your agents, policies, and the signed decision
+                log. It stays running while the quickstarts talk to it on port 8787.
+              </p>
+              <div class="code-card">
+                <div class="code-head"><span>terminal 2 — leave this running</span><button class="copy-btn" type="button" data-copy="npx -p @reinconsole/policy-engine rein-policy-engine" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> npx -p @reinconsole/policy-engine rein-policy-engine
+<span class="tk-cm">[rein] policy-engine listening on http://0.0.0.0:8787</span></code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Track A: Guard ────────────────────────────────────────────── -->
+      <section class="section" id="guard">
+        <div class="eyebrow reveal"><span class="tick"></span>QUICKSTART · DEMAND SIDE</div>
+        <h2 class="reveal d1">Put reins on an agent.</h2>
+        <p class="section-lede reveal d2">
+          One file: register an agent, wrap its <code class="inline-code">fetch</code>, set a
+          $0.50 per-tx cap and a $0.04 rolling hourly budget — then watch call five get refused.
+        </p>
+
+        <div class="steps">
+          <div class="step reveal">
+            <span class="step-num">04</span>
+            <div class="step-body">
+              <span class="step-title">Save guard-quickstart.mjs</span>
+              <div class="code-card">
+                <div class="code-head"><span>guard-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
+                <pre class="code"><code><span class="tk-cm">// guard-quickstart.mjs — cap an agent's spend, offline, in one file.</span>
+<span class="tk-cm">// Prereq: the policy engine is running:  npx -p @reinconsole/policy-engine rein-policy-engine</span>
+<span class="tk-kw">import</span> { newId } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/core'</span>;
+<span class="tk-kw">import</span> { createGuard, EngineClient, PaymentBlockedError } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/sdk'</span>;
+<span class="tk-kw">import</span> { MockLedger, MockFacilitator, createMockVendor } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/mock-rails'</span>;
+
+<span class="tk-kw">const</span> engineUrl = <span class="tk-str">'http://127.0.0.1:8787'</span>;
+<span class="tk-kw">const</span> wallet = <span class="tk-str">'0xResearch01'</span>;
+
+<span class="tk-cm">// A simulated x402 world: a ledger, a settlement facilitator, and a</span>
+<span class="tk-cm">// paywalled vendor charging $0.01 per call. No accounts, no chain, no funds.</span>
+<span class="tk-kw">const</span> ledger = <span class="tk-kw">new</span> <span class="tk-fn">MockLedger</span>();
+<span class="tk-kw">const</span> facilitator = <span class="tk-kw">new</span> <span class="tk-fn">MockFacilitator</span>({ ledger, name: <span class="tk-str">'mock-facilitator'</span> });
+<span class="tk-kw">const</span> vendor = <span class="tk-fn">createMockVendor</span>({ facilitator, atomicPrice: <span class="tk-str">'10000'</span>, payTo: <span class="tk-str">'0xVendorTreasury'</span> });
+
+<span class="tk-cm">// 1. Register the agent with the policy engine</span>
+<span class="tk-kw">const</span> client = <span class="tk-kw">new</span> <span class="tk-fn">EngineClient</span>({ baseUrl: engineUrl });
+<span class="tk-kw">const</span> agent = <span class="tk-kw">await</span> client.<span class="tk-fn">registerAgent</span>({
+  orgId: <span class="tk-fn">newId</span>(<span class="tk-str">'org'</span>),
+  name: <span class="tk-str">'research-agent'</span>,
+  wallets: [{ chain: <span class="tk-str">'base'</span>, address: wallet, mode: <span class="tk-str">'sdk'</span> }],
+});
+
+<span class="tk-cm">// 2. Wrap fetch with the guard</span>
+<span class="tk-kw">const</span> guard = <span class="tk-fn">createGuard</span>({
+  engineUrl,
+  agentId: agent.id,
+  fetch: vendor.fetch,                    <span class="tk-cm">// swap for globalThis.fetch against real vendors</span>
+  payer: facilitator.<span class="tk-fn">payerFor</span>(wallet),
+});
+
+<span class="tk-cm">// 3. Set the rules: max $0.50 per tx, max $0.04 per rolling hour</span>
+<span class="tk-kw">await</span> guard.client.<span class="tk-fn">addPolicy</span>({
+  policyId: <span class="tk-str">'starter-policy'</span>,
+  appliesTo: { agents: [agent.id] },
+  rules: [
+    { id: <span class="tk-str">'tx-cap'</span>, deny: { amountGt: <span class="tk-str">'0.50'</span> } },
+    { id: <span class="tk-str">'hour-budget'</span>, deny: { rollingSum: { window: <span class="tk-str">'1h'</span>, gt: <span class="tk-str">'0.04'</span> } } },
+  ],
+  default: <span class="tk-str">'allow'</span>,
+});
+
+<span class="tk-cm">// 4. Spend within budget — four $0.01 calls sail through</span>
+<span class="tk-kw">const</span> guarded = guard.<span class="tk-fn">wrap</span>();
+<span class="tk-kw">for</span> (<span class="tk-kw">let</span> i = <span class="tk-num">1</span>; i &lt;= <span class="tk-num">4</span>; i++) {
+  <span class="tk-kw">await</span> <span class="tk-fn">guarded</span>(<span class="tk-str">'https://api.data.test/v1/query'</span>);
+  <span class="tk-kw">const</span> r = guard.<span class="tk-fn">receipts</span>().<span class="tk-fn">at</span>(-<span class="tk-num">1</span>);
+  console.<span class="tk-fn">log</span>(`call ${i}  ALLOW  $0.0${i}/$0.04 spent · tx ${r.settlement?.txHash?.<span class="tk-fn">slice</span>(<span class="tk-num">0</span>, <span class="tk-num">12</span>)}…`);
+}
+
+<span class="tk-cm">// 5. The fifth call would breach the budget — denied BEFORE any payment exists</span>
+<span class="tk-kw">try</span> {
+  <span class="tk-kw">await</span> <span class="tk-fn">guarded</span>(<span class="tk-str">'https://api.data.test/v1/query'</span>);
+} <span class="tk-kw">catch</span> (e) {
+  <span class="tk-kw">if</span> (!(e instanceof PaymentBlockedError)) <span class="tk-kw">throw</span> e;
+  console.<span class="tk-fn">log</span>(`call 5  DENY   ${e.decision.reason}`);
+  console.<span class="tk-fn">log</span>(`ledger has ${ledger.<span class="tk-fn">entries</span>().length} entries — the denied payment was never constructed`);
+}</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">05</span>
+            <div class="step-body">
+              <span class="step-title">Run it</span>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="node guard-quickstart.mjs" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> node guard-quickstart.mjs</code></pre>
+              </div>
+              <div class="code-card">
+                <div class="code-head"><span class="ok-dot"></span><span>what you'll see — verbatim from our run</span></div>
+                <pre class="code output"><code>call 1  <span class="out-ok">ALLOW</span>  $0.01/$0.04 spent · tx 0x5ab6460ff8…
+call 2  <span class="out-ok">ALLOW</span>  $0.02/$0.04 spent · tx 0xa8725d31cb…
+call 3  <span class="out-ok">ALLOW</span>  $0.03/$0.04 spent · tx 0x5de05ac3a4…
+call 4  <span class="out-ok">ALLOW</span>  $0.04/$0.04 spent · tx 0x565141762f…
+call 5  <span class="out-bad">DENY</span>   denied by: hour-budget
+ledger has 4 entries — the denied payment was never constructed</code></pre>
+              </div>
+              <p>
+                That last line is the whole product: the deny happened at <b>intent time</b> — no
+                payment was signed, sent, or settled. The engine also recorded every decision in an
+                ed25519-signed, sha256-chained audit log. Point
+                <code class="inline-code">fetch: globalThis.fetch</code> at a real x402 vendor and the
+                same policy loop governs real payments.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Track B: Gate ─────────────────────────────────────────────── -->
+      <section class="section" id="gate">
+        <div class="eyebrow reveal"><span class="tick"></span>QUICKSTART · SUPPLY SIDE</div>
+        <h2 class="reveal d1">Put a paywall on an API.</h2>
+        <p class="section-lede reveal d2">
+          The vendor side is two calls: <code class="inline-code">createGate</code> to price your
+          routes, <code class="inline-code">gateMiddleware</code> in front of your handler. This file
+          does both — then buys through its own paywall with a guarded agent, so you see both sides
+          of one payment. Keep the engine from step 03 running.
+        </p>
+
+        <div class="steps">
+          <div class="step reveal">
+            <span class="step-num">06</span>
+            <div class="step-body">
+              <span class="step-title">Save gate-quickstart.mjs</span>
+              <div class="code-card">
+                <div class="code-head"><span>gate-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
+                <pre class="code"><code><span class="tk-cm">// gate-quickstart.mjs — put a paywall on any Node API, offline, in one file.</span>
+<span class="tk-cm">// Prereq: the policy engine is running:  npx -p @reinconsole/policy-engine rein-policy-engine</span>
+<span class="tk-kw">import</span> { createServer } <span class="tk-kw">from</span> <span class="tk-str">'node:http'</span>;
+<span class="tk-kw">import</span> { newId } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/core'</span>;
+<span class="tk-kw">import</span> { createGuard, EngineClient } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/sdk'</span>;
+<span class="tk-kw">import</span> { createGate, gateMiddleware, mockFacilitatorRails } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/gate'</span>;
+<span class="tk-kw">import</span> { MockLedger, MockFacilitator } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/mock-rails'</span>;
+
+<span class="tk-cm">// A simulated settlement network (swap for facilitatorClientRails(...) on real rails)</span>
+<span class="tk-kw">const</span> ledger = <span class="tk-kw">new</span> <span class="tk-fn">MockLedger</span>();
+<span class="tk-kw">const</span> facilitator = <span class="tk-kw">new</span> <span class="tk-fn">MockFacilitator</span>({ ledger, name: <span class="tk-str">'mock-facilitator'</span> });
+
+<span class="tk-cm">// 1. Price your routes</span>
+<span class="tk-kw">const</span> gate = <span class="tk-fn">createGate</span>({
+  routes: [
+    { path: <span class="tk-str">'/api/answer'</span>, price: <span class="tk-str">'0.05'</span>, description: <span class="tk-str">'one research answer'</span> },
+    { path: <span class="tk-str">'/api/premium/*'</span>, method: <span class="tk-str">'POST'</span>, price: <span class="tk-str">'0.25'</span> },
+  ],
+  rails: <span class="tk-fn">mockFacilitatorRails</span>(facilitator),
+  payTo: <span class="tk-str">'0xVendorTreasury'</span>,
+  network: <span class="tk-str">'base'</span>,
+  asset: <span class="tk-str">'USDC'</span>,
+});
+
+<span class="tk-cm">// 2. Put the middleware in front of your handler (Express: app.use(gateMiddleware(gate)))</span>
+<span class="tk-kw">const</span> paywall = <span class="tk-fn">gateMiddleware</span>(gate);
+<span class="tk-kw">const</span> server = <span class="tk-fn">createServer</span>((req, res) =&gt; {
+  <span class="tk-fn">paywall</span>(req, res, () =&gt; {
+    res.<span class="tk-fn">writeHead</span>(<span class="tk-num">200</span>, { <span class="tk-str">'content-type'</span>: <span class="tk-str">'application/json'</span> });
+    res.<span class="tk-fn">end</span>(JSON.<span class="tk-fn">stringify</span>({ answer: <span class="tk-num">42</span> }));
+  });
+});
+<span class="tk-kw">await</span> <span class="tk-kw">new</span> <span class="tk-fn">Promise</span>((r) =&gt; server.<span class="tk-fn">listen</span>(<span class="tk-num">8402</span>, <span class="tk-str">'127.0.0.1'</span>, r));
+
+<span class="tk-cm">// 3. An unpaid caller gets a machine-readable 402 quote, not a dead end</span>
+<span class="tk-kw">const</span> unpaid = <span class="tk-kw">await</span> <span class="tk-fn">fetch</span>(<span class="tk-str">'http://127.0.0.1:8402/api/answer'</span>);
+<span class="tk-kw">const</span> quote = <span class="tk-kw">await</span> unpaid.<span class="tk-fn">json</span>();
+console.<span class="tk-fn">log</span>(`unpaid  HTTP ${unpaid.status} — quote: ${quote.accepts[<span class="tk-num">0</span>].maxAmountRequired} atomic USDC to ${quote.accepts[<span class="tk-num">0</span>].payTo}`);
+
+<span class="tk-cm">// 4. A guarded agent buys through the paywall — Rein on both sides of the wire</span>
+<span class="tk-kw">const</span> engineUrl = <span class="tk-str">'http://127.0.0.1:8787'</span>;
+<span class="tk-kw">const</span> wallet = <span class="tk-str">'0xBuyerWallet01'</span>;
+<span class="tk-kw">const</span> client = <span class="tk-kw">new</span> <span class="tk-fn">EngineClient</span>({ baseUrl: engineUrl });
+<span class="tk-kw">const</span> agent = <span class="tk-kw">await</span> client.<span class="tk-fn">registerAgent</span>({
+  orgId: <span class="tk-fn">newId</span>(<span class="tk-str">'org'</span>),
+  name: <span class="tk-str">'buyer-agent'</span>,
+  wallets: [{ chain: <span class="tk-str">'base'</span>, address: wallet, mode: <span class="tk-str">'sdk'</span> }],
+});
+<span class="tk-kw">const</span> guard = <span class="tk-fn">createGuard</span>({
+  engineUrl,
+  agentId: agent.id,
+  payer: facilitator.<span class="tk-fn">payerFor</span>(wallet),
+  fetch: (input, init) =&gt; globalThis.<span class="tk-fn">fetch</span>(input, init),
+});
+<span class="tk-kw">await</span> guard.client.<span class="tk-fn">addPolicy</span>({
+  policyId: <span class="tk-str">'buyer-policy'</span>,
+  appliesTo: { agents: [agent.id] },
+  rules: [{ id: <span class="tk-str">'tx-cap'</span>, deny: { amountGt: <span class="tk-str">'1.00'</span> } }],
+  default: <span class="tk-str">'allow'</span>,
+});
+
+<span class="tk-kw">const</span> paid = <span class="tk-kw">await</span> guard.<span class="tk-fn">wrap</span>()(<span class="tk-str">'http://127.0.0.1:8402/api/answer'</span>);
+console.<span class="tk-fn">log</span>(`paid    HTTP ${paid.status} · ${JSON.<span class="tk-fn">stringify</span>(<span class="tk-kw">await</span> paid.<span class="tk-fn">json</span>())}`);
+
+<span class="tk-cm">// One payment, receipts on BOTH sides that agree</span>
+<span class="tk-kw">const</span> buyerReceipt = guard.<span class="tk-fn">receipts</span>().<span class="tk-fn">at</span>(-<span class="tk-num">1</span>);
+<span class="tk-kw">const</span> gateReceipt = gate.receipts.<span class="tk-fn">at</span>(-<span class="tk-num">1</span>);
+console.<span class="tk-fn">log</span>(`buyer receipt  ${buyerReceipt.id.<span class="tk-fn">slice</span>(<span class="tk-num">0</span>, <span class="tk-num">16</span>)}… · $${buyerReceipt.amount} · tx ${buyerReceipt.settlement?.txHash?.<span class="tk-fn">slice</span>(<span class="tk-num">0</span>, <span class="tk-num">12</span>)}…`);
+console.<span class="tk-fn">log</span>(`gate receipt   ${gateReceipt.id.<span class="tk-fn">slice</span>(<span class="tk-num">0</span>, <span class="tk-num">16</span>)}… · $${gateReceipt.amount} · tx ${gateReceipt.transaction?.<span class="tk-fn">slice</span>(<span class="tk-num">0</span>, <span class="tk-num">12</span>)}…`);
+
+server.<span class="tk-fn">close</span>();</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">07</span>
+            <div class="step-body">
+              <span class="step-title">Run it</span>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="node gate-quickstart.mjs" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> node gate-quickstart.mjs</code></pre>
+              </div>
+              <div class="code-card">
+                <div class="code-head"><span class="ok-dot"></span><span>what you'll see — verbatim from our run</span></div>
+                <pre class="code output"><code>unpaid  HTTP <span class="out-bad">402</span> — quote: 50000 atomic USDC to 0xVendorTreasury
+paid    HTTP <span class="out-ok">200</span> · {"answer":42}
+buyer receipt  rcp_01KX3SM05MS3… · $0.05 · tx 0xa650338ff1…
+gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
+              </div>
+              <p>
+                Same transaction hash on both receipts: the buyer's guard and the vendor's gate each
+                produced an independent record of one payment — and they agree. In production the
+                gate also screens payers, rate-limits, burns replayed payments at the door, and
+                enforces per-payer velocity caps; swap
+                <code class="inline-code">mockFacilitatorRails</code> for
+                <code class="inline-code">facilitatorClientRails</code> to settle through the hosted
+                x402.org facilitator (free, no API key).
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── The whole loop ────────────────────────────────────────────── -->
+      <section class="section" id="demos">
+        <div class="eyebrow reveal"><span class="tick"></span>THE WHOLE LOOP</div>
+        <h2 class="reveal d1">Five failure modes, one run,<br class="wide-only" /> under a second.</h2>
+        <p class="section-lede reveal d2">
+          The repo ships demos that exercise everything the quickstarts didn't — offline, with a
+          371-test suite behind them.
+        </p>
+        <div class="code-card reveal d2">
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="git clone https://github.com/bugiiiii11/rein && cd rein && corepack enable && pnpm install && pnpm build && node apps/demo/dist/index.js" aria-label="Copy commands">copy</button></div>
+          <pre class="code"><code><span class="install-prompt">$</span> git clone https://github.com/bugiiiii11/rein &amp;&amp; cd rein
+<span class="install-prompt">$</span> corepack enable          <span class="tk-cm"># ships pnpm with Node</span>
+<span class="install-prompt">$</span> pnpm install &amp;&amp; pnpm build
+<span class="install-prompt">$</span> node apps/demo/dist/index.js</code></pre>
+        </div>
+
+        <div class="panel demo-panel reveal d3">
+          <div class="panel-head">
+            <span class="panel-tick"></span>
+            <span class="panel-title">What the demo plays out</span>
+            <span class="panel-pill">&lt; 1s · offline</span>
+          </div>
+          <ul class="feed">
+            <li class="feed-row" data-kind="allow">
+              <span class="feed-time">no. 1</span>
+              <span class="feed-main"><span class="feed-verb allow">ALLOW</span> <b class="feed-amt">$0.01</b> <span class="feed-arrow">×4</span> <span class="feed-host">normal calls, within budget</span></span>
+              <span class="feed-right">settled + receipted</span>
+            </li>
+            <li class="feed-row" data-kind="deny">
+              <span class="feed-time">no. 2</span>
+              <span class="feed-main"><span class="feed-verb deny">DENY</span> <b class="feed-amt">$0.01</b> <span class="feed-arrow">→</span> <span class="feed-host">rolling budget would break</span></span>
+              <span class="feed-right">before payment exists</span>
+            </li>
+            <li class="feed-row" data-kind="deny">
+              <span class="feed-time">no. 3</span>
+              <span class="feed-main"><span class="feed-verb deny">DENY</span> <b class="feed-amt">$5.00</b> <span class="feed-arrow">→</span> <span class="feed-host">over the per-tx cap</span></span>
+              <span class="feed-right">before payment exists</span>
+            </li>
+            <li class="feed-row" data-kind="frozen">
+              <span class="feed-time">no. 4</span>
+              <span class="feed-main"><span class="feed-verb frozen">FROZEN</span> <b class="feed-amt">$0.01</b> <span class="feed-arrow">→</span> <span class="feed-host">kill switch engaged, then released</span></span>
+              <span class="feed-right">deny → allow</span>
+            </li>
+            <li class="feed-row" data-kind="shadow">
+              <span class="feed-time">no. 5</span>
+              <span class="feed-main"><span class="feed-verb shadow">SHADOW</span> <b class="feed-amt">$2.50</b> <span class="feed-arrow">→</span> <span class="feed-host">guard bypassed — indexer catches it</span></span>
+              <span class="feed-right">flagged, unreconciled</span>
+            </li>
+          </ul>
+        </div>
+
+        <p class="section-close reveal d3">
+          Then keep going: signer.js — six rogue paths, every one refused · gate.js — the vendor side over real local HTTP · graph.js — reputation closing the loop on both sides · pnpm test — the full 371.
+        </p>
+      </section>
+
+      <!-- ── Go live ───────────────────────────────────────────────────── -->
+      <section class="section" id="live">
+        <div class="eyebrow reveal"><span class="tick"></span>GO LIVE · BASE SEPOLIA</div>
+        <h2 class="reveal d1">The same loop, real chain,<br class="wide-only" /> free testnet money.</h2>
+        <p class="section-lede reveal d2">
+          Everything above, but the settlement is a real USDC transfer on Base Sepolia through the
+          hosted x402.org facilitator. Costs nothing: the USDC is from a faucet and the facilitator
+          pays the gas. You'll need the repo clone from the section above.
+        </p>
+
+        <div class="steps">
+          <div class="step reveal">
+            <span class="step-num">08</span>
+            <div class="step-body">
+              <span class="step-title">First run — it sets itself up</span>
+              <p>
+                The first run generates an agent wallet into <code class="inline-code">.env</code>
+                and prints faucet instructions.
+              </p>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="pnpm --filter @reinconsole/demo demo:sepolia" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> pnpm --filter @reinconsole/demo demo:sepolia</code></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">09</span>
+            <div class="step-body">
+              <span class="step-title">Fund the wallet — free</span>
+              <p>
+                Grab testnet USDC for the printed address at
+                <a class="inline-link" href="https://faucet.circle.com" target="_blank" rel="noopener">faucet.circle.com</a>
+                (pick Base Sepolia). No ETH needed — the facilitator pays gas on this path.
+              </p>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">10</span>
+            <div class="step-body">
+              <span class="step-title">Run it again — and read the chain</span>
+              <p>
+                A full run spends $0.02 of testnet USDC: one guarded payment the policy engine
+                allowed (settled on-chain, reconciled to the exact intent via a
+                <code class="inline-code">keccak256(intent.id)</code> nonce memo), and one rogue
+                payment that bypasses the guard — settled anyway, then flagged as a shadow spend.
+                It ends with two BaseScan links like these, from our runs:
+              </p>
+              <ul class="fact-list is">
+                <li><a class="inline-link" href="https://sepolia.basescan.org/tx/0x73c2971ac85330d1b6d21889ffb356716babb4ba740468a8f9066be6ca310689" target="_blank" rel="noopener">the settled guarded payment</a> — real USDC, policy-approved</li>
+                <li><a class="inline-link" href="https://sepolia.basescan.org/tx/0x1352fae21246fefc4bc65f704a2075f121369d4d7f6fc16653f1f68c065b97f1" target="_blank" rel="noopener">the shadow spend, caught</a> — unguarded transfer, flagged</li>
+              </ul>
+              <p>
+                Then the vendor side on the same rails —
+                <code class="inline-code">pnpm --filter @reinconsole/demo demo:sepolia-gate</code>
+                settles a gate-priced payment through the hosted facilitator
+                (<a class="inline-link" href="https://sepolia.basescan.org/tx/0x30eb018d1e6cacdb4e7479e0370a2ec43136c414808a2124712f0c46c975ab8e" target="_blank" rel="noopener">a real one</a>)
+                and burns a replayed copy at the door.
+              </p>
+            </div>
+          </div>
+
+          <div class="step reveal">
+            <span class="step-num">11</span>
+            <div class="step-body">
+              <span class="step-title">Give the agent an on-chain identity and reputation</span>
+              <p>
+                ERC-8004 registers your agent as an NFT on a singleton registry; Rein then publishes
+                the reputation graph's score to the on-chain Reputation Registry. Try it offline
+                first (<code class="inline-code">demo:erc8004</code>), then for real — this one needs
+                a little Base Sepolia ETH for gas; re-runs are read-only.
+              </p>
+              <div class="code-card">
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="pnpm --filter @reinconsole/demo demo:sepolia-8004" aria-label="Copy command">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> pnpm --filter @reinconsole/demo demo:sepolia-8004</code></pre>
+              </div>
+              <p>
+                Ours is <a class="inline-link" href="https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/7393" target="_blank" rel="noopener">agent #7393</a>,
+                carrying a <b>82/100</b> rein-score published on-chain.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout reveal">
+          <b>Behind a corporate proxy or TLS-intercepting antivirus?</b> Point Node at your local
+          root CA before any live run: set <code class="inline-code">NODE_EXTRA_CA_CERTS</code> to
+          your CA bundle — details in <code class="inline-code">env.example</code>. Offline
+          quickstarts and demos are unaffected.
+        </div>
+      </section>
+
+      <!-- ── Honesty ───────────────────────────────────────────────────── -->
+      <section class="section" id="honest">
+        <div class="eyebrow reveal"><span class="tick"></span>READ BEFORE DEPENDING ON IT</div>
+        <h2 class="reveal d1">What Rein is — and isn't. Yet.</h2>
+        <div class="is-isnt">
+          <div class="fact-col reveal d1">
+            <span class="fact-col-title is">IT IS</span>
+            <ul class="fact-list is">
+              <li>Non-custodial by architecture — funds never pass through Rein</li>
+              <li>Fail-closed — an unreachable engine denies, it doesn't shrug</li>
+              <li>Open source, MIT, 371 offline tests, live on Base Sepolia</li>
+              <li>Two-sided: the same stack guards buyers and gates sellers</li>
+              <li>Auditable — every decision ed25519-signed and hash-chained</li>
+            </ul>
+          </div>
+          <div class="fact-col reveal d2">
+            <span class="fact-col-title isnt">IT ISN'T</span>
+            <ul class="fact-list isnt">
+              <li>A wallet or custodian — it never holds keys to your funds</li>
+              <li>Hard enforcement in SDK mode — an agent holding its own key can bypass the guard; Rein <b>catches</b> that (shadow spend). Key-less enforcement is the session-signer tier, in the repo today, published at GA</li>
+              <li>1.0 — this is v0.1; APIs may change</li>
+              <li>Mainnet-proven — everything on-chain so far is Base Sepolia testnet</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Outro ─────────────────────────────────────────────────────── -->
+      <section class="section outro" id="cta">
+        <h2 class="reveal">Now put reins on yours.</h2>
+        <div class="install install-lg reveal d1">
+          <code class="install-cmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
+          <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
+        </div>
+        <div class="hero-actions center reveal d2">
+          <a class="btn btn-primary" href="https://app.reinconsole.com" target="_blank" rel="noopener">
+            See it live <span class="btn-arrow">→</span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
+          <a class="btn btn-ghost" href="index.html">Overview</a>
+        </div>
+        <p class="outro-fine reveal d3">
+          v0.1 — early open-source infrastructure, live on testnet. APIs may change before 1.0.<br />
+          No waitlist. No email capture. The code is public.
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="index.html">Overview</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+        <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
+        <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

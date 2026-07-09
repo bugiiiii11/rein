@@ -28,6 +28,9 @@ export function TopBar({ connected, demo, stats }: Props) {
         <span className="pill">
           Audit chain <b>✓&nbsp;{stats?.chainLinks ?? 0}</b>
         </span>
+        <a className="pill" href="https://reinconsole.com/get-started.html" target="_blank" rel="noopener">
+          Guide ↗
+        </a>
       </div>
 
       <button className="run-btn" disabled={running} onClick={() => void api.runDemo()}>
