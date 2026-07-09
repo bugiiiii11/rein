@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatErc8004Id } from '@reinconsole/core';
 import { Erc8004Error } from './errors.js';
-import { MockIdentityRegistry } from './mock.js';
+import { MockIdentityRegistry, MockReputationRegistry } from './mock.js';
 
 const OWNER = '0xOwnerWallet0000000000000000000000000001';
 
@@ -66,5 +66,91 @@ describe('MockIdentityRegistry — the offline twin', () => {
     const withUri = registry.register({ owner: OWNER, agentURI: 'data:application/json,{}' });
     expect(await registry.agentURI(bare.tokenId)).toBe('');
     expect(await registry.agentURI(withUri.tokenId)).toBe('data:application/json,{}');
+  });
+
+  it('setAgentURI replaces the registration file (the post-mint self-reference path)', async () => {
+    const registry = new MockIdentityRegistry();
+    const { tokenId } = registry.register({ owner: OWNER, agentURI: 'data:application/json,{}' });
+    registry.setAgentURI(tokenId, 'data:application/json,{"registrations":[]}');
+    expect(await registry.agentURI(tokenId)).toBe('data:application/json,{"registrations":[]}');
+    expect(() => registry.setAgentURI(99n, 'u')).toThrow(Erc8004Error);
+  });
+});
+
+// ── MockReputationRegistry — revoke + respond (verified contract semantics) ──
+
+const CLIENT = '0xClientWallet000000000000000000000000002';
+
+async function seeded() {
+  const identity = new MockIdentityRegistry();
+  const { tokenId } = identity.register({ owner: OWNER });
+  const reputation = new MockReputationRegistry(identity);
+  await reputation.giveFeedback(CLIENT, { agentId: tokenId, value: 82n });
+  return { reputation, tokenId };
+}
+
+describe('MockReputationRegistry — revokeFeedback', () => {
+  it('revokes the caller\'s entry: readFeedback flags it, getSummary drops it', async () => {
+    const { reputation, tokenId } = await seeded();
+    await reputation.giveFeedback(CLIENT, { agentId: tokenId, value: 40n });
+    await reputation.revokeFeedback(CLIENT, tokenId, 2n);
+    expect((await reputation.readFeedback(tokenId, CLIENT, 2n)).revoked).toBe(true);
+    const summary = await reputation.getSummary(tokenId);
+    expect(summary).toMatchObject({ count: 1n, value: 82n }); // only the live entry
+  });
+
+  it('a second revoke reverts "Already revoked", like the contract', async () => {
+    const { reputation, tokenId } = await seeded();
+    await reputation.revokeFeedback(CLIENT, tokenId, 1n);
+    await expect(reputation.revokeFeedback(CLIENT, tokenId, 1n)).rejects.toThrow(/Already revoked/);
+  });
+
+  it('self-only by construction: another caller\'s index space is out of bounds', async () => {
+    const { reputation, tokenId } = await seeded();
+    await expect(
+      reputation.revokeFeedback('0xSomeoneElse', tokenId, 1n),
+    ).rejects.toThrow(/out of bounds/);
+    await expect(reputation.revokeFeedback(CLIENT, tokenId, 0n)).rejects.toThrow(/out of bounds/);
+    await expect(reputation.revokeFeedback(CLIENT, tokenId, 9n)).rejects.toThrow(/out of bounds/);
+  });
+});
+
+describe('MockReputationRegistry — appendResponse', () => {
+  it('anyone responds to an existing entry; responses accumulate', async () => {
+    const { reputation, tokenId } = await seeded();
+    await reputation.appendResponse(OWNER, {
+      agentId: tokenId,
+      clientAddress: CLIENT,
+      feedbackIndex: 1n,
+      responseURI: 'data:application/json,{"rebuttal":true}',
+    });
+    await reputation.appendResponse('0xAggregator', {
+      agentId: tokenId,
+      clientAddress: CLIENT,
+      feedbackIndex: 1n,
+      responseURI: 'data:application/json,{"note":"seen"}',
+    });
+    const responses = await reputation.readResponses(tokenId, CLIENT, 1n);
+    expect(responses.map((r) => r.responder)).toEqual([OWNER, '0xAggregator']);
+  });
+
+  it('requires an existing entry and a non-empty URI, like the contract', async () => {
+    const { reputation, tokenId } = await seeded();
+    await expect(
+      reputation.appendResponse(OWNER, {
+        agentId: tokenId,
+        clientAddress: CLIENT,
+        feedbackIndex: 5n,
+        responseURI: 'u',
+      }),
+    ).rejects.toThrow(/out of bounds/);
+    await expect(
+      reputation.appendResponse(OWNER, {
+        agentId: tokenId,
+        clientAddress: CLIENT,
+        feedbackIndex: 1n,
+        responseURI: '',
+      }),
+    ).rejects.toThrow(/Empty URI/);
   });
 });

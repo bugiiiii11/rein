@@ -58,6 +58,17 @@ export class MockIdentityRegistry implements IdentityRegistryReader {
   }
 
   /**
+   * Update the registration file URI (how registrationRef's self-reference
+   * lands post-mint). DIVERGENCE like setAgentWallet: the real contract
+   * restricts this to the owner/operators; the mock trusts the caller.
+   */
+  setAgentURI(tokenId: bigint, agentURI: string): void {
+    const agent = this.agents.get(tokenId);
+    if (!agent) throw new Erc8004Error('unknown_agent', `setAgentURI(${tokenId}): no such agent`);
+    agent.agentURI = agentURI;
+  }
+
+  /**
    * Hydration primitive: reinsert a known registration verbatim (world boot
    * rebuilding "the chain" from persisted agent docs). Keeps minted ids stable
    * across restarts — the next register() mints past the highest loaded id.
@@ -106,6 +117,7 @@ interface MockFeedbackRow extends FeedbackEntry {
   endpoint: string;
   feedbackURI: string;
   feedbackHash: string;
+  responses: { responder: string; responseURI: string; responseHash: string }[];
 }
 
 /**
@@ -118,11 +130,17 @@ interface MockFeedbackRow extends FeedbackEntry {
  * (via ownerOf) and for the agent's own owner ("Self-feedback not allowed");
  * getSummary WAD-averages non-revoked matching rows and scales the result to
  * the mode of the matched valueDecimals; readFeedback reverts out-of-bounds.
+ * revokeFeedback/appendResponse mirror the verified contract semantics (S25):
+ * revocation is implicitly self-only (rows key by the caller), out-of-bounds
+ * and double-revokes revert with the contract's strings; responses require an
+ * existing entry + non-empty URI and accumulate per-responder counts (the
+ * URI itself only rides the event on-chain — the mock keeps it for tests).
+ *
  * Documented divergences: no ERC-721 operator approvals (only the OWNER is
- * blocked from self-feedback); no revokeFeedback/appendResponse surface; and
- * getSummary here treats an empty client filter as ALL clients — matching
- * feedback.ts's readSummary HELPER semantics, not the raw deployed contract,
- * which live-reverts "clientAddresses required" on an empty list (S19).
+ * blocked from self-feedback); and getSummary here treats an empty client
+ * filter as ALL clients — matching feedback.ts's readSummary HELPER
+ * semantics, not the raw deployed contract, which live-reverts
+ * "clientAddresses required" on an empty list (S19).
  */
 export class MockReputationRegistry {
   readonly ref: RegistryRef;
@@ -162,6 +180,7 @@ export class MockReputationRegistry {
       feedbackURI: input.feedbackURI ?? '',
       feedbackHash: input.feedbackHash ?? `0x${'0'.repeat(64)}`,
       revoked: false,
+      responses: [],
     });
     this.txCounter += 1;
     return {
@@ -231,8 +250,67 @@ export class MockReputationRegistry {
     return { value, valueDecimals, tag1, tag2, revoked };
   }
 
+  /** Revoke the caller's own entry — self-only by construction, like the contract. */
+  async revokeFeedback(
+    clientAddress: string,
+    agentId: bigint,
+    feedbackIndex: bigint,
+  ): Promise<void> {
+    const row = this.rowAt(agentId, clientAddress, feedbackIndex, 'revokeFeedback');
+    if (row.revoked) throw new Erc8004Error('feedback_failed', 'Already revoked');
+    row.revoked = true;
+  }
+
+  /** Anyone responds to an existing entry; responses accumulate per responder. */
+  async appendResponse(
+    responder: string,
+    input: {
+      agentId: bigint;
+      clientAddress: string;
+      feedbackIndex: bigint;
+      responseURI: string;
+      responseHash?: string;
+    },
+  ): Promise<void> {
+    if (input.responseURI.length === 0) {
+      throw new Erc8004Error('feedback_failed', 'Empty URI');
+    }
+    const row = this.rowAt(input.agentId, input.clientAddress, input.feedbackIndex, 'appendResponse');
+    row.responses.push({
+      responder,
+      responseURI: input.responseURI,
+      responseHash: input.responseHash ?? `0x${'0'.repeat(64)}`,
+    });
+  }
+
+  /** The responses appended to one entry (the mock's stand-in for event reads). */
+  async readResponses(
+    agentId: bigint,
+    clientAddress: string,
+    feedbackIndex: bigint,
+  ): Promise<readonly { responder: string; responseURI: string; responseHash: string }[]> {
+    return this.rowAt(agentId, clientAddress, feedbackIndex, 'readResponses').responses;
+  }
+
   async getLastIndex(agentId: bigint, clientAddress: string): Promise<bigint> {
     return BigInt(this.rows.get(agentId)?.get(clientAddress.toLowerCase())?.length ?? 0);
+  }
+
+  /** Bounds-checked row lookup — the contract's "index out of bounds" gate. */
+  private rowAt(
+    agentId: bigint,
+    clientAddress: string,
+    feedbackIndex: bigint,
+    what: string,
+  ): MockFeedbackRow {
+    const list = this.rows.get(agentId)?.get(clientAddress.toLowerCase()) ?? [];
+    if (feedbackIndex < 1n || feedbackIndex > BigInt(list.length)) {
+      throw new Erc8004Error(
+        'feedback_failed',
+        `${what}(${agentId}, ${feedbackIndex}): index out of bounds`,
+      );
+    }
+    return list[Number(feedbackIndex) - 1]!;
   }
 
   /** Every client that has published about the agent (lowercased here). */

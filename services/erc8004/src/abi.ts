@@ -19,7 +19,9 @@ export const identityRegistryAbi = parseAbi([
   'function ownerOf(uint256 tokenId) view returns (address)',
   'function tokenURI(uint256 tokenId) view returns (string)',
   'function getAgentWallet(uint256 agentId) view returns (address)',
+  'function setAgentURI(uint256 agentId, string newURI)',
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)',
+  'event URIUpdated(uint256 indexed agentId, string newURI, address indexed updatedBy)',
 ]);
 
 /**
@@ -38,6 +40,17 @@ export const identityRegistryAbi = parseAbi([
  *   Sepolia contract REVERTS "clientAddresses required" on an empty client
  *   list — callers must resolve `getClients(agentId)` first (readSummary
  *   does). `readFeedback` reverts on an out-of-bounds index.
+ * - `revokeFeedback` implicitly authorizes by msg.sender (the mapping is keyed
+ *   by it — you can only ever revoke your OWN entries); reverts "index out of
+ *   bounds" past your lastIndex and "Already revoked" on a second revoke.
+ * - `appendResponse` is open to ANYONE, requires the referenced feedback to
+ *   exist ("index out of bounds") and a non-empty URI ("Empty URI"); the
+ *   responseURI/responseHash ride only the EVENT — reads expose counters.
+ *
+ * setAgentURI/revokeFeedback/appendResponse selectors AND their event topics
+ * were verified present in the DEPLOYED Base Sepolia implementation bytecode
+ * (EIP-1967 impl slots resolved, S25) — not just the repo source, which the
+ * deployment is known to diverge from (the S19 getSummary lesson).
  */
 export const reputationRegistryAbi = parseAbi([
   'function getIdentityRegistry() view returns (address)',
@@ -46,5 +59,9 @@ export const reputationRegistryAbi = parseAbi([
   'function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)',
   'function getClients(uint256 agentId) view returns (address[])',
   'function getLastIndex(uint256 agentId, address clientAddress) view returns (uint64)',
+  'function revokeFeedback(uint256 agentId, uint64 feedbackIndex)',
+  'function appendResponse(uint256 agentId, address clientAddress, uint64 feedbackIndex, string responseURI, bytes32 responseHash)',
   'event NewFeedback(uint256 indexed agentId, address indexed clientAddress, uint64 feedbackIndex, int128 value, uint8 valueDecimals, string indexed indexedTag1, string tag1, string tag2, string endpoint, string feedbackURI, bytes32 feedbackHash)',
+  'event FeedbackRevoked(uint256 indexed agentId, address indexed clientAddress, uint64 indexed feedbackIndex)',
+  'event ResponseAppended(uint256 indexed agentId, address indexed clientAddress, uint64 feedbackIndex, address indexed responder, string responseURI, bytes32 responseHash)',
 ]);

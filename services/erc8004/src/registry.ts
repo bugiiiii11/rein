@@ -178,11 +178,18 @@ export async function registerAgent(options: {
     if (receipt.status === 'reverted') {
       throw new Erc8004Error('registration_failed', `register() tx reverted: ${txHash}`);
     }
+    // Filter by registry address AND owner: a proxy/multicall tx could carry
+    // Registered events for OTHER minters — only ours names our account.
+    const sender = options.walletClient.account.address.toLowerCase();
     const [event] = parseEventLogs({
       abi: identityRegistryAbi,
       eventName: 'Registered',
       logs: receipt.logs,
-    }).filter((log) => log.address.toLowerCase() === ref.address.toLowerCase());
+    }).filter(
+      (log) =>
+        log.address.toLowerCase() === ref.address.toLowerCase() &&
+        log.args.owner.toLowerCase() === sender,
+    );
     if (!event) {
       throw new Erc8004Error('registration_failed', `no Registered event in tx ${txHash}`);
     }
@@ -199,5 +206,76 @@ export async function registerAgent(options: {
   } catch (err) {
     if (err instanceof Erc8004Error) throw err;
     throw new Erc8004Error('registration_failed', `register() failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * The spec's `registrations[]` entry for a minted identity — the registration
+ * file's self-reference back to the chain. It cannot exist in the URI passed
+ * to register() (no agentId before the mint); the intended flow is register ->
+ * merge this into the file -> setAgentUri. The registry address is lowercased
+ * to match the canonical id casing rule.
+ */
+export function registrationRef(
+  tokenId: bigint,
+  ref: RegistryRef = BASE_SEPOLIA_REGISTRY,
+): { agentId: string; agentRegistry: string } {
+  return {
+    agentId: tokenId.toString(),
+    agentRegistry: `eip155:${ref.chainId}:${ref.address.toLowerCase()}`,
+  };
+}
+
+export interface UpdatedAgentUri {
+  tokenId: bigint;
+  agentURI: string;
+  txHash: string;
+}
+
+/**
+ * Update an agent's registration file URI (owner/operator only on-chain).
+ * Mirrors registerAgent's shape: simulate -> write -> receipt -> decode the
+ * URIUpdated EVENT (authoritative), filtered by registry address + tokenId.
+ * Signature + event verified against the DEPLOYED Base Sepolia implementation
+ * bytecode (S25). The registerAgent retry warning applies here too, though an
+ * accidental double-set of the same URI is idempotent on-chain state.
+ */
+export async function setAgentUri(options: {
+  publicClient: Pick<PublicClient, 'simulateContract' | 'waitForTransactionReceipt'>;
+  walletClient: Pick<WalletClient<Transport, Chain, Account>, 'writeContract' | 'account'>;
+  ref?: RegistryRef;
+  tokenId: bigint;
+  agentURI: string;
+}): Promise<UpdatedAgentUri> {
+  const ref = options.ref ?? BASE_SEPOLIA_REGISTRY;
+  try {
+    const { request } = await options.publicClient.simulateContract({
+      address: ref.address as Address,
+      abi: identityRegistryAbi,
+      functionName: 'setAgentURI',
+      args: [options.tokenId, options.agentURI],
+      account: options.walletClient.account,
+    });
+    const txHash = await options.walletClient.writeContract(request);
+    const receipt = await options.publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status === 'reverted') {
+      throw new Erc8004Error('registration_failed', `setAgentURI() tx reverted: ${txHash}`);
+    }
+    const [event] = parseEventLogs({
+      abi: identityRegistryAbi,
+      eventName: 'URIUpdated',
+      logs: receipt.logs,
+    }).filter(
+      (log) =>
+        log.address.toLowerCase() === ref.address.toLowerCase() &&
+        log.args.agentId === options.tokenId,
+    );
+    if (!event) {
+      throw new Erc8004Error('registration_failed', `no URIUpdated event in tx ${txHash}`);
+    }
+    return { tokenId: options.tokenId, agentURI: event.args.newURI, txHash };
+  } catch (err) {
+    if (err instanceof Erc8004Error) throw err;
+    throw new Erc8004Error('registration_failed', `setAgentURI() failed: ${(err as Error).message}`);
   }
 }

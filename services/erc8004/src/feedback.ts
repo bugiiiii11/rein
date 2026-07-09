@@ -212,6 +212,119 @@ export async function readFeedbackEntry(
   }
 }
 
+/**
+ * Revoke ONE of the caller's own feedback entries. The contract authorizes
+ * implicitly — storage is keyed by msg.sender, so only the original client
+ * can ever hit its rows; reverts "index out of bounds" past the caller's
+ * lastIndex and "Already revoked" on a repeat. Revoked entries drop out of
+ * getSummary but stay readable (readFeedback reports `revoked: true`).
+ * Signature + event verified against the deployed bytecode (S25).
+ */
+export async function revokeFeedback(options: {
+  publicClient: Pick<PublicClient, 'simulateContract' | 'waitForTransactionReceipt'>;
+  walletClient: Pick<WalletClient<Transport, Chain, Account>, 'writeContract' | 'account'>;
+  registry?: RegistryRef;
+  agentId: bigint;
+  feedbackIndex: bigint;
+}): Promise<{ agentId: bigint; clientAddress: string; feedbackIndex: bigint; txHash: string }> {
+  const registry = options.registry ?? BASE_SEPOLIA_REPUTATION;
+  try {
+    const { request } = await options.publicClient.simulateContract({
+      address: registry.address as Address,
+      abi: reputationRegistryAbi,
+      functionName: 'revokeFeedback',
+      args: [options.agentId, options.feedbackIndex],
+      account: options.walletClient.account,
+    });
+    const txHash = await options.walletClient.writeContract(request);
+    const receipt = await options.publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status === 'reverted') {
+      throw new Erc8004Error('feedback_failed', `revokeFeedback() tx reverted: ${txHash}`);
+    }
+    const [event] = parseEventLogs({
+      abi: reputationRegistryAbi,
+      eventName: 'FeedbackRevoked',
+      logs: receipt.logs,
+    }).filter((log) => log.address.toLowerCase() === registry.address.toLowerCase());
+    if (!event) {
+      throw new Erc8004Error('feedback_failed', `no FeedbackRevoked event in tx ${txHash}`);
+    }
+    return {
+      agentId: event.args.agentId,
+      clientAddress: event.args.clientAddress,
+      feedbackIndex: event.args.feedbackIndex,
+      txHash,
+    };
+  } catch (err) {
+    if (err instanceof Erc8004Error) throw err;
+    throw new Erc8004Error('feedback_failed', `revokeFeedback() failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Append a response to an existing feedback entry — the agent's rebuttal, a
+ * counterparty's context, an aggregator's annotation; the contract lets
+ * ANYONE respond. The responseURI/responseHash ride only the EVENT (on-chain
+ * state keeps responder counters), so indexers are the read side. Requires
+ * the referenced feedback to exist and a non-empty URI ("Empty URI").
+ */
+export async function appendResponse(options: {
+  publicClient: Pick<PublicClient, 'simulateContract' | 'waitForTransactionReceipt'>;
+  walletClient: Pick<WalletClient<Transport, Chain, Account>, 'writeContract' | 'account'>;
+  registry?: RegistryRef;
+  agentId: bigint;
+  clientAddress: string;
+  feedbackIndex: bigint;
+  responseURI: string;
+  /** keccak256 of the responseURI content (optional for content-addressed URIs). */
+  responseHash?: `0x${string}`;
+}): Promise<{ agentId: bigint; feedbackIndex: bigint; responder: string; txHash: string }> {
+  const registry = options.registry ?? BASE_SEPOLIA_REPUTATION;
+  if (options.responseURI.length === 0) {
+    throw new Erc8004Error('feedback_failed', 'appendResponse: responseURI must be non-empty');
+  }
+  if (options.responseHash !== undefined && !/^0x[0-9a-fA-F]{64}$/.test(options.responseHash)) {
+    throw new Erc8004Error('feedback_failed', `responseHash must be bytes32 hex, got ${options.responseHash}`);
+  }
+  try {
+    const { request } = await options.publicClient.simulateContract({
+      address: registry.address as Address,
+      abi: reputationRegistryAbi,
+      functionName: 'appendResponse',
+      args: [
+        options.agentId,
+        options.clientAddress as Address,
+        options.feedbackIndex,
+        options.responseURI,
+        options.responseHash ?? ZERO_HASH,
+      ],
+      account: options.walletClient.account,
+    });
+    const txHash = await options.walletClient.writeContract(request);
+    const receipt = await options.publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status === 'reverted') {
+      throw new Erc8004Error('feedback_failed', `appendResponse() tx reverted: ${txHash}`);
+    }
+    const [event] = parseEventLogs({
+      abi: reputationRegistryAbi,
+      eventName: 'ResponseAppended',
+      logs: receipt.logs,
+    }).filter((log) => log.address.toLowerCase() === registry.address.toLowerCase());
+    if (!event) {
+      throw new Erc8004Error('feedback_failed', `no ResponseAppended event in tx ${txHash}`);
+    }
+    return {
+      agentId: event.args.agentId,
+      feedbackIndex: event.args.feedbackIndex,
+      responder: event.args.responder,
+      txHash,
+    };
+  } catch (err) {
+    if (err instanceof Erc8004Error) throw err;
+    throw new Erc8004Error('feedback_failed', `appendResponse() failed: ${(err as Error).message}`);
+  }
+}
+
 /** How many entries this client has published about the agent (0 = none). */
 export async function lastFeedbackIndex(
   client: RegistryChainReader,

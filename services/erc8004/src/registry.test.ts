@@ -14,6 +14,8 @@ import {
   BASE_SEPOLIA_REGISTRY,
   identityRegistryReader,
   registerAgent,
+  registrationRef,
+  setAgentUri,
   type RegistryChainReader,
 } from './registry.js';
 
@@ -131,5 +133,92 @@ describe('registerAgent — receipt decoding', () => {
     await expect(
       registerAgent({ ...clients, agentURI: 'u' }),
     ).rejects.toMatchObject({ code: 'registration_failed' });
+  });
+
+  it('picks OUR Registered event out of a multi-mint receipt (owner filter)', async () => {
+    // Proxy/multicall future-proofing: a batched tx can carry Registered
+    // events for OTHER minters from the same registry.
+    const foreignOwner = registeredLog({
+      tokenId: 111n,
+      owner: '0x000000000000000000000000000000000000dead',
+    });
+    const ours = registeredLog({ tokenId: 222n });
+    const clients = stubClients({ status: 'success', logs: [foreignOwner, ours] as never });
+    const minted = await registerAgent({ ...clients, agentURI: 'u' });
+    expect(minted.tokenId).toBe(222n);
+  });
+
+  it('a receipt with ONLY someone else\'s Registered event fails honestly', async () => {
+    const foreignOwner = registeredLog({
+      owner: '0x000000000000000000000000000000000000dead',
+    });
+    const clients = stubClients({ status: 'success', logs: [foreignOwner] as never });
+    await expect(
+      registerAgent({ ...clients, agentURI: 'u' }),
+    ).rejects.toMatchObject({ code: 'registration_failed' });
+  });
+});
+
+// ── setAgentUri (stubbed clients, same seam as registerAgent) ────────────────
+
+function uriUpdatedLog(over: { address?: Address; tokenId?: bigint; uri?: string } = {}) {
+  const topics = encodeEventTopics({
+    abi: identityRegistryAbi,
+    eventName: 'URIUpdated',
+    args: { agentId: over.tokenId ?? 7393n, updatedBy: OWNER },
+  });
+  return {
+    address: over.address ?? (BASE_SEPOLIA_REGISTRY.address as Address),
+    topics,
+    data: encodeAbiParameters([{ type: 'string' }], [over.uri ?? 'data:application/json,{"v":2}']),
+  };
+}
+
+describe('setAgentUri — receipt decoding', () => {
+  it('decodes the URIUpdated event for OUR tokenId', async () => {
+    const clients = stubClients({
+      status: 'success',
+      logs: [uriUpdatedLog({ tokenId: 41n }), uriUpdatedLog({ tokenId: 42n })] as never,
+    });
+    const updated = await setAgentUri({
+      ...(clients as unknown as Parameters<typeof setAgentUri>[0]),
+      tokenId: 42n,
+      agentURI: 'data:application/json,{"v":2}',
+    });
+    expect(updated.tokenId).toBe(42n);
+    expect(updated.agentURI).toBe('data:application/json,{"v":2}');
+    expect(updated.txHash).toBe('0xtxhash');
+  });
+
+  it('a receipt without our URIUpdated event fails as registration_failed', async () => {
+    const foreign = uriUpdatedLog({ address: '0x000000000000000000000000000000000000dead' });
+    const clients = stubClients({ status: 'success', logs: [foreign] as never });
+    await expect(
+      setAgentUri({
+        ...(clients as unknown as Parameters<typeof setAgentUri>[0]),
+        tokenId: 7393n,
+        agentURI: 'u',
+      }),
+    ).rejects.toMatchObject({ code: 'registration_failed' });
+  });
+
+  it('a reverted tx fails honestly', async () => {
+    const clients = stubClients({ status: 'reverted', logs: [] });
+    await expect(
+      setAgentUri({
+        ...(clients as unknown as Parameters<typeof setAgentUri>[0]),
+        tokenId: 1n,
+        agentURI: 'u',
+      }),
+    ).rejects.toThrow(/tx reverted/);
+  });
+});
+
+describe('registrationRef — the registrations[] self-reference', () => {
+  it('lowercases the registry and stringifies the tokenId', () => {
+    expect(registrationRef(7393n)).toEqual({
+      agentId: '7393',
+      agentRegistry: 'eip155:84532:0x8004a818bfb912233c491871b3d84c89a494bd9e',
+    });
   });
 });

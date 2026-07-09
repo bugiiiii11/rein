@@ -41,6 +41,8 @@ import {
   readFeedbackEntry,
   readSummary,
   registerAgent,
+  registrationRef,
+  setAgentUri,
 } from '@reinconsole/erc8004';
 import { basescanTxUrl, createBaseSepoliaClient, generateWallet } from '@reinconsole/x402-rails';
 import { appendEnv, readEnv } from './env.js';
@@ -140,8 +142,8 @@ async function main() {
     console.log(`  ETH for gas    ${formatEther(gas)}`);
 
     // Minimal registration-v1 file as a self-contained data: URI — no hosting,
-    // read back verbatim from tokenURI. (No self-referencing `registrations[]`:
-    // the agentId does not exist before the mint; setAgentURI could add it.)
+    // read back verbatim from tokenURI. The self-referencing `registrations[]`
+    // cannot ride the mint (no agentId exists yet) — setAgentUri adds it below.
     const registrationFile = {
       type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
       name: 'rein-sepolia-agent',
@@ -163,6 +165,24 @@ async function main() {
     console.log(`  agentId        ${minted.tokenId}`);
     console.log(`  erc8004Id      ${erc8004Id}  (saved to ${path})`);
     console.log(`  tx             ${basescanTxUrl(minted.txHash)}`);
+
+    // Post-mint: rewrite the registration file WITH the spec's registrations[]
+    // self-reference, now that the agentId exists. Fresh mints only — resumed
+    // runs stay read-only (7393's file predates this and that is fine).
+    const selfReferenced = {
+      ...registrationFile,
+      registrations: [registrationRef(minted.tokenId)],
+    };
+    const updated = await setAgentUri({
+      publicClient,
+      walletClient,
+      tokenId: minted.tokenId,
+      agentURI: `data:application/json;base64,${Buffer.from(
+        JSON.stringify(selfReferenced),
+      ).toString('base64')}`,
+    });
+    console.log(`  registrations[] self-reference added via setAgentURI`);
+    console.log(`  tx             ${basescanTxUrl(updated.txHash)}`);
   }
 
   const ref = parseErc8004Id(erc8004Id!)!;
