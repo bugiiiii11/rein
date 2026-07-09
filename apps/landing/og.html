@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Rein — og:image card source (screenshot via Playwright, not linked from the site)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --font-display: 'Archivo', system-ui, sans-serif;
+        --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+        --bg: #06080b;
+        --bg-2: #0e1219;
+        --line: rgba(150, 170, 200, 0.09);
+        --line-strong: rgba(150, 170, 200, 0.18);
+        --ink: #e9eef6;
+        --ink-dim: #93a0b4;
+        --ink-faint: #56627a;
+        --accent: #5b8cff;
+        --accent-soft: rgba(91, 140, 255, 0.14);
+        --accent-line: rgba(91, 140, 255, 0.45);
+        --ok: #34d399;
+        --bad: #ff6b81;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #222; font-family: var(--font-display); }
+
+      .card {
+        position: relative;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse 900px 500px at 8% -10%, rgba(91, 140, 255, 0.16), transparent 60%),
+          radial-gradient(ellipse 700px 400px at 105% 115%, rgba(91, 140, 255, 0.1), transparent 60%),
+          var(--bg);
+        color: var(--ink);
+        margin-bottom: 24px;
+      }
+      .card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 72px),
+          repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 72px);
+        mask-image: radial-gradient(ellipse 1100px 700px at 30% 30%, #000 40%, transparent 100%);
+      }
+      .inner {
+        position: relative;
+        height: 100%;
+        padding: 56px 64px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .brand { display: flex; align-items: center; gap: 14px; color: var(--ink); }
+      .brand svg { width: 40px; height: 40px; }
+      .brand-name { font-weight: 800; font-size: 26px; letter-spacing: 0.34em; }
+      .brand-domain {
+        font-family: var(--font-mono);
+        font-size: 19px;
+        color: var(--ink-faint);
+        letter-spacing: 0.06em;
+      }
+
+      .headline-block { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        align-self: flex-start;
+        font-family: var(--font-mono);
+        font-size: 17px;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        color: var(--ink-dim);
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        padding: 10px 20px;
+        background: rgba(14, 18, 25, 0.7);
+      }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+      h1 {
+        font-size: 78px;
+        line-height: 1.04;
+        font-weight: 800;
+        letter-spacing: -0.022em;
+        max-width: 950px;
+      }
+      /* index card shares the row with the feed panel — keep clear of it */
+      #card-index h1 { font-size: 64px; max-width: 700px; }
+      #card-index .sub { font-size: 22px; max-width: 700px; }
+      h1 .accent { color: var(--accent); }
+      .sub {
+        font-family: var(--font-mono);
+        font-size: 24px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+        max-width: 860px;
+      }
+      .sub em { font-style: normal; color: var(--ink); border-bottom: 2px solid var(--accent-line); }
+
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-family: var(--font-mono);
+        font-size: 17px;
+        letter-spacing: 0.12em;
+        color: var(--ink-faint);
+      }
+      .foot .sep { color: var(--ink-faint); opacity: 0.6; }
+
+      /* feed strip (index card) */
+      .feed {
+        position: absolute;
+        right: -46px;
+        top: 96px;
+        width: 460px;
+        transform: rotate(3.5deg);
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: rgba(10, 13, 18, 0.92);
+        box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.9);
+        font-family: var(--font-mono);
+        font-size: 16.5px;
+        overflow: hidden;
+      }
+      .feed-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink-faint);
+        font-size: 13.5px;
+        letter-spacing: 0.16em;
+      }
+      .feed-head .lamp { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
+      .feed-head .lamp.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+      .feed-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 13px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .feed-row:last-child { border-bottom: 0; }
+      .verdict { font-weight: 600; width: 94px; letter-spacing: 0.08em; }
+      .v-allow { color: var(--ok); }
+      .v-deny { color: var(--bad); }
+      .v-settled { color: var(--accent); }
+      .amt { color: var(--ink); width: 84px; }
+      .why { color: var(--ink-faint); font-size: 14.5px; flex: 1; white-space: nowrap; }
+
+      /* install command (get-started card) */
+      .install {
+        display: inline-flex;
+        align-items: center;
+        gap: 16px;
+        align-self: flex-start;
+        font-family: var(--font-mono);
+        font-size: 26px;
+        color: var(--ink);
+        border: 1px solid var(--accent-line);
+        background: var(--accent-soft);
+        border-radius: 12px;
+        padding: 18px 28px;
+      }
+      .install .prompt { color: var(--accent); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <!-- ── card 1: index ─────────────────────────────────────────────── -->
+    <div class="card" id="card-index">
+      <div class="feed" aria-hidden="true">
+        <div class="feed-head"><span class="lamp on"></span><span class="lamp"></span>LIVE DECISION FEED</div>
+        <div class="feed-row"><span class="verdict v-allow">ALLOW</span><span class="amt">$0.45</span><span class="why">api.search · under budget</span></div>
+        <div class="feed-row"><span class="verdict v-settled">SETTLED</span><span class="amt">$0.45</span><span class="why">tx 0x9f2c… · base-sepolia</span></div>
+        <div class="feed-row"><span class="verdict v-allow">ALLOW</span><span class="amt">$1.20</span><span class="why">data.vendor · reputation 82</span></div>
+        <div class="feed-row"><span class="verdict v-deny">DENY</span><span class="amt">$380.00</span><span class="why">exceeds per-tx cap</span></div>
+      </div>
+      <div class="inner">
+        <div class="brand-row">
+          <span class="brand">
+            <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+              <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+              <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+            <span class="brand-name">REIN</span>
+          </span>
+        </div>
+        <div class="headline-block">
+          <h1>The control plane for<br />AI&nbsp;agent <span class="accent">payments.</span></h1>
+          <p class="sub">Set the rules. Watch every payment. Score every counterparty. Rein governs your agent's <em>authority to spend</em> — it never holds the funds.</p>
+        </div>
+        <div class="foot">
+          <span>NON-CUSTODIAL</span><span class="sep">·</span>
+          <span>OPEN SOURCE</span><span class="sep">·</span>
+          <span>LIVE ON BASE SEPOLIA</span><span class="sep">·</span>
+          <span class="brand-domain">reinconsole.com</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── card 2: get-started ───────────────────────────────────────── -->
+    <div class="card" id="card-get-started">
+      <div class="inner">
+        <div class="brand-row">
+          <span class="brand">
+            <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+              <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+              <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+              <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+            </svg>
+            <span class="brand-name">REIN</span>
+          </span>
+          <span class="brand-domain">reinconsole.com/get-started</span>
+        </div>
+        <div class="headline-block">
+          <span class="eyebrow"><span class="dot"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
+          <h1>From npm install to a governed agent <span class="accent">payment.</span></h1>
+          <div class="install"><span class="prompt">$</span> npm install @reinconsole/sdk</div>
+        </div>
+        <div class="foot">
+          <span>QUICKSTART RUNS 100% OFFLINE</span><span class="sep">·</span>
+          <span>NODE ≥22</span><span class="sep">·</span>
+          <span>MIT</span>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
