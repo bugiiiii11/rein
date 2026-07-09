@@ -52,6 +52,9 @@ export function createGatedFetch(gate: Gate, options: GatedFetchOptions = {}): F
         ...(outcome.paymentRequiredHeader !== undefined
           ? { 'payment-required': outcome.paymentRequiredHeader }
           : {}),
+        ...(outcome.kind === 'refused' && outcome.paymentResponseHeader !== undefined
+          ? { 'payment-response': outcome.paymentResponseHeader }
+          : {}),
         ...(outcome.kind === 'refused' && outcome.retryAfterSeconds !== undefined
           ? { 'retry-after': String(outcome.retryAfterSeconds) }
           : {}),

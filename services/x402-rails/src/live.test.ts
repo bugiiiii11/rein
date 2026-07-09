@@ -2,12 +2,13 @@ import { describe, it, expect } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { newId } from '@reinconsole/core';
+import { newId, type Decision, type PaymentIntent } from '@reinconsole/core';
 import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
-import { createGuard } from '@reinconsole/sdk';
+import { PaymentRequirement, createGuard, v2Requirements, wrapPaymentV2 } from '@reinconsole/sdk';
 import { FacilitatorClient } from './facilitator.js';
 import { createX402Payer } from './payer.js';
 import { createRealVendor } from './vendor.js';
+import { BASE_SEPOLIA_USDC } from './wallet.js';
 
 /**
  * LIVE tests against the hosted facilitator at x402.org and Base Sepolia.
@@ -82,4 +83,48 @@ describe.skipIf(!live)('live: hosted facilitator on Base Sepolia', () => {
       await app.close();
     }
   });
+
+  it('advertises v2 exact on eip155:84532 via /supported', { timeout: 30_000 }, async () => {
+    const kinds = (await new FacilitatorClient().supported()) as {
+      kinds?: { x402Version?: number; scheme?: string; network?: string }[];
+    };
+    expect(
+      kinds.kinds!.some(
+        (k) => k.x402Version === 2 && k.scheme === 'exact' && k.network === 'eip155:84532',
+      ),
+    ).toBe(true);
+  });
+
+  it('the facilitator verifies a rewrapped v2 envelope (no settle)', { timeout: 30_000 }, async () => {
+    const wallet = privateKeyToAccount(KEY!).address;
+    const requirement = PaymentRequirement.parse({
+      scheme: 'exact',
+      network: 'base-sepolia',
+      maxAmountRequired: '10000',
+      resource: 'https://demo.rein.dev/v1/live-v2-verify',
+      description: 'rein v2 verify probe',
+      mimeType: 'application/json',
+      payTo: process.env['REIN_SEPOLIA_VENDOR_ADDRESS'] ?? wallet,
+      maxTimeoutSeconds: 300,
+      asset: BASE_SEPOLIA_USDC,
+      extra: { name: 'USDC', version: '2' },
+    });
+    // The payer only reads the intent id (the EIP-3009 nonce derivation).
+    const v1Header = await createX402Payer({ privateKey: KEY! })(
+      requirement,
+      { id: newId('int') } as PaymentIntent,
+      undefined as unknown as Decision,
+    );
+    const envelope = JSON.parse(
+      Buffer.from(wrapPaymentV2(v1Header, requirement), 'base64').toString('utf8'),
+    ) as { x402Version: number } & Record<string, unknown>;
+
+    const verified = await new FacilitatorClient().verify(envelope, v2Requirements(requirement));
+
+    expect(verified.isValid).toBe(true);
+  });
+
+  // The live v2 SETTLE test (guard → gate → x402.org) lives in
+  // packages/gate/src/live.test.ts — the gate cannot be imported from here
+  // without a workspace dependency cycle (gate devDepends on these rails).
 });

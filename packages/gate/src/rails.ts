@@ -163,7 +163,9 @@ export function facilitatorClientRails(client: FacilitatorClientLike): GateRails
         classifyTransport(err);
       }
       if (!settled.success) {
-        throw new GateError('settle_failed', settled.errorReason ?? 'payment settlement failed');
+        throw new GateError('settle_failed', settled.errorReason ?? 'payment settlement failed', {
+          paymentResponse: settled,
+        });
       }
       return {
         header: encodeSettlementHeader(settled),

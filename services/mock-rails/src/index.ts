@@ -29,9 +29,11 @@ export { createMockVendor, type MockVendor, type MockVendorOptions, type VendorC
 export {
   MockExactPayload,
   MockPaymentHeader,
+  MockPaymentHeaderV2,
   SettlementResponse,
   encodePaymentHeader,
   decodePaymentHeader,
   encodeSettlementHeader,
+  type DecodedPayment,
 } from './payload.js';
 export { FacilitatorError, type FacilitatorErrorCode } from './errors.js';

@@ -29,6 +29,19 @@ export {
   type IntentSubmission,
 } from './x402.js';
 export {
+  PaymentRequiredV2,
+  PaymentRequirementsV2,
+  ResourceInfoV2,
+  buildPaymentRequiredV2,
+  caip2Of,
+  encodeBase64Json,
+  parsePaymentRequiredHeader,
+  requirementFromV2,
+  sameNetwork,
+  v2Requirements,
+  wrapPaymentV2,
+} from './x402v2.js';
+export {
   ReinError,
   EngineError,
   PaymentBlockedError,

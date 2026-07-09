@@ -18,7 +18,7 @@ import {
   validateVelocity,
   type GateVelocity,
 } from './velocity.js';
-import { buildPaymentRequiredV2, encodeBase64Json, sameNetwork } from './v2.js';
+import { buildPaymentRequiredV2, caip2Of, encodeBase64Json, sameNetwork } from './v2.js';
 import { inspectPaymentHeader, type InspectedPayment } from './wire.js';
 
 /** Wallet-address screening. Addresses compare case-insensitively (EVM rule). */
@@ -111,6 +111,9 @@ export type GateOutcome =
       retryAfterSeconds?: number;
       /** On 402 re-quotes with advertiseV2: the v2 PAYMENT-REQUIRED value. */
       paymentRequiredHeader?: string;
+      /** On 402 refusals of v2 payments: the failed SettlementResponse for
+       *  the PAYMENT-RESPONSE header (v2 reports verdicts in headers). */
+      paymentResponseHeader?: string;
     }
   /** Verified and settled — serve, attaching settlementHeader as X-PAYMENT-RESPONSE. */
   | { kind: 'paid'; receipt: GateReceipt; settlementHeader: string };
@@ -254,9 +257,11 @@ export class Gate {
     }
 
     let payer: string | undefined;
+    let wire: 1 | 2 | undefined;
     try {
       const payment = inspectPaymentHeader(request.payment);
       payer = payment.payer;
+      wire = payment.version;
       this.checkRate(payment.payer);
       this.checkConsistency(payment, requirement);
       this.screenPayer(payment.payer);
@@ -283,7 +288,7 @@ export class Gate {
       return { kind: 'paid', receipt, settlementHeader: settlement.header };
     } catch (err) {
       if (!(err instanceof GateError)) throw err;
-      return this.refuse(err, url.pathname, requirement, payer);
+      return this.refuse(err, url.pathname, requirement, payer, wire);
     }
   }
 
@@ -516,6 +521,7 @@ export class Gate {
     resource: string,
     requirement: PaymentRequirement,
     payer: string | undefined,
+    wire: 1 | 2 | undefined,
   ): GateOutcome {
     this.fire(() => this.store.recordRefusal());
     this.emit({
@@ -564,6 +570,8 @@ export class Gate {
       };
     }
     // Payment problems re-quote per the x402 spec: 402 + accepts + error.
+    // A refused v2 payment also gets its verdict where v2 clients read them:
+    // a failed SettlementResponse in PAYMENT-RESPONSE.
     return {
       kind: 'refused',
       status: 402,
@@ -571,6 +579,9 @@ export class Gate {
       reason: err.message,
       body: { x402Version: 1, accepts: [requirement], error: err.message },
       ...this.v2Quote(requirement, err.message),
+      ...(wire === 2
+        ? { paymentResponseHeader: v2FailureHeader(err, requirement, payer) }
+        : {}),
     };
   }
 
@@ -593,6 +604,28 @@ export function createGate(options: GateOptions): Gate {
 /** The replay-slot key: hash of the exact header bytes as presented. */
 function replayKey(paymentHeader: string): string {
   return createHash('sha256').update(paymentHeader).digest('hex');
+}
+
+/**
+ * The PAYMENT-RESPONSE value for a refused v2 payment. When the rails
+ * produced a real failed settlement (facilitator answered success: false) it
+ * relays VERBATIM — the payer sees the facilitator's own errorReason; every
+ * other refusal synthesizes one carrying the gate's stable refusal code.
+ */
+function v2FailureHeader(
+  err: GateError,
+  requirement: PaymentRequirement,
+  payer: string | undefined,
+): string {
+  return encodeBase64Json(
+    err.paymentResponse ?? {
+      success: false,
+      errorReason: err.code,
+      transaction: '',
+      network: caip2Of(requirement.network),
+      ...(payer !== undefined ? { payer } : {}),
+    },
+  );
 }
 
 function messageOf(err: unknown): string {

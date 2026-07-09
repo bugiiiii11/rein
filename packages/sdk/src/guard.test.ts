@@ -2,9 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { newId } from '@reinconsole/core';
 import { buildServer } from '@reinconsole/policy-engine';
-import { createGuard } from './guard.js';
+import { createGuard, type Payer } from './guard.js';
 import { EngineClient, type FetchLike } from './client.js';
 import { EngineError, PaymentBlockedError, UnsupportedRequirementError } from './errors.js';
+import { PaymentRequirement } from './x402.js';
+import { buildPaymentRequiredV2, encodeBase64Json } from './x402v2.js';
 
 /** A real policy engine on an ephemeral port -- the SDK talks actual HTTP. */
 let app: ReturnType<typeof buildServer>;
@@ -284,6 +286,210 @@ describe('Guard (against a live policy engine)', () => {
     await expect(guard.wrap()('https://api.vendor.test/v1/answer')).rejects.toMatchObject({
       decision: { outcome: 'deny', matchedRules: ['agent-frozen'] },
     });
+  });
+});
+
+interface V2VendorOptions {
+  /** Also offer a governable v1 body beside the v2 header (dual-stack). */
+  dual?: boolean;
+  /** Scheme quoted in the v2 header only (the v1 body stays 'exact'). */
+  v2Scheme?: string;
+  /** The paid retry answers 402 + a failed v2 settlement instead of 200. */
+  settleFails?: boolean;
+}
+
+/**
+ * An in-process v2 x402 vendor: the 402 advertises on the PAYMENT-REQUIRED
+ * header (plus optionally the v1 body); payments arrive on either dialect's
+ * header; settlement returns ONLY on PAYMENT-RESPONSE (strict v2).
+ */
+function v2Vendor(atomicPrice: string, options: V2VendorOptions = {}) {
+  const calls: { url: string; v1Payment: string | null; v2Payment: string | null }[] = [];
+  const requirementFor = (url: string, scheme: string) =>
+    PaymentRequirement.parse({
+      scheme,
+      network: 'base',
+      maxAmountRequired: atomicPrice,
+      resource: new URL(url).pathname,
+      payTo: '0xVENDOR',
+      asset: 'USDC',
+    });
+
+  const fetchImpl: FetchLike = async (input, init) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const headers = init?.headers ? new Headers(init.headers) : new Headers();
+    const v1Payment = headers.get('X-PAYMENT');
+    const v2Payment = headers.get('PAYMENT-SIGNATURE');
+    calls.push({ url, v1Payment, v2Payment });
+
+    if (v1Payment === null && v2Payment === null) {
+      return new Response(
+        JSON.stringify(
+          options.dual
+            ? {
+                x402Version: 1,
+                accepts: [requirementFor(url, 'exact')],
+                error: 'payment is required',
+              }
+            : { error: 'payment is required' },
+        ),
+        {
+          status: 402,
+          headers: {
+            'content-type': 'application/json',
+            'PAYMENT-REQUIRED': encodeBase64Json(
+              buildPaymentRequiredV2(
+                requirementFor(url, options.v2Scheme ?? 'exact'),
+                'payment is required',
+              ),
+            ),
+          },
+        },
+      );
+    }
+
+    if (options.settleFails) {
+      return new Response(JSON.stringify({}), {
+        status: 402,
+        headers: {
+          'PAYMENT-RESPONSE': encodeBase64Json({
+            success: false,
+            errorReason: 'insufficient_funds',
+            transaction: '',
+            network: 'eip155:8453',
+          }),
+        },
+      });
+    }
+    return new Response(JSON.stringify({ answer: 42 }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'PAYMENT-RESPONSE': encodeBase64Json({
+          success: true,
+          transaction: '0xv2settled',
+          network: 'eip155:8453',
+        }),
+      },
+    });
+  };
+  return { fetchImpl, calls };
+}
+
+/** A payer that returns a real v1 envelope — what every Rein payer emits. */
+const envelopePayer: Payer = (requirement, intent) =>
+  encodeBase64Json({
+    x402Version: 1,
+    scheme: requirement.scheme,
+    network: requirement.network,
+    payload: {
+      from: '0xAGENT',
+      to: requirement.payTo,
+      value: requirement.maxAmountRequired,
+      intentId: intent.id,
+    },
+  });
+
+describe('Guard on the x402 v2 wire', () => {
+  async function allowAll(agentId: string) {
+    const client = new EngineClient({ baseUrl: engineUrl });
+    await client.addPolicy({
+      policyId: `pol_v2_${agentId.slice(-6)}`,
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+  }
+
+  it('pays a v2-only vendor on the v2 wire, envelope rewrapped from the payer', async () => {
+    const agentId = await newAgent();
+    const vendor = v2Vendor('10000');
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: envelopePayer });
+    await allowAll(agentId);
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+
+    expect(res.status).toBe(200);
+    expect(vendor.calls).toHaveLength(2);
+    expect(vendor.calls[1]?.v1Payment).toBeNull();
+    const envelope = JSON.parse(
+      Buffer.from(vendor.calls[1]!.v2Payment!, 'base64').toString('utf8'),
+    ) as { x402Version: number; accepted: Record<string, unknown>; payload: Record<string, unknown> };
+    expect(envelope.x402Version).toBe(2);
+    // The guard resolved the CAIP-2 offer and echoed it back as `accepted`.
+    expect(envelope.accepted).toMatchObject({
+      scheme: 'exact',
+      network: 'eip155:8453',
+      amount: '10000',
+    });
+    expect(envelope.payload['value']).toBe('10000');
+
+    const receipt = guard.receipts()[0];
+    expect(receipt?.outcome).toBe('allow');
+    expect(receipt?.amount).toBe('0.01');
+    // Settlement parsed from the v2-only PAYMENT-RESPONSE header.
+    expect(receipt?.settlement?.txHash).toBe('0xv2settled');
+    expect(receipt?.settlement?.networkId).toBe('eip155:8453');
+  });
+
+  it('prefers the v2 channel on a dual-stack 402', async () => {
+    const agentId = await newAgent();
+    const vendor = v2Vendor('10000', { dual: true });
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: envelopePayer });
+    await allowAll(agentId);
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+
+    expect(res.status).toBe(200);
+    expect(vendor.calls[1]?.v2Payment).not.toBeNull();
+    expect(vendor.calls[1]?.v1Payment).toBeNull();
+  });
+
+  it('falls back to the v1 body when the v2 offers are ungovernable', async () => {
+    const agentId = await newAgent();
+    // The header quotes a scheme the guard cannot govern; the body is fine.
+    const vendor = v2Vendor('10000', { dual: true, v2Scheme: 'upto' });
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: envelopePayer });
+    await allowAll(agentId);
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+
+    expect(res.status).toBe(200);
+    expect(vendor.calls[1]?.v1Payment).not.toBeNull();
+    expect(vendor.calls[1]?.v2Payment).toBeNull();
+  });
+
+  it('fails closed on a v2-only paywall with no governable offer', async () => {
+    const agentId = await newAgent();
+    const vendor = v2Vendor('10000', { v2Scheme: 'upto' });
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: envelopePayer });
+    await allowAll(agentId);
+
+    await expect(guard.wrap()('https://api.vendor.test/v1/answer')).rejects.toBeInstanceOf(
+      UnsupportedRequirementError,
+    );
+    expect(vendor.calls).toHaveLength(1);
+  });
+
+  it('records a failed v2 settlement without inventing a txHash', async () => {
+    const agentId = await newAgent();
+    const vendor = v2Vendor('10000', { settleFails: true });
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: envelopePayer });
+    await allowAll(agentId);
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+
+    expect(res.status).toBe(402);
+    const settlement = guard.receipts()[0]?.settlement;
+    expect(settlement?.txHash).toBeUndefined();
+    expect(settlement?.raw).toContain(
+      encodeBase64Json({
+        success: false,
+        errorReason: 'insufficient_funds',
+        transaction: '',
+        network: 'eip155:8453',
+      }),
+    );
   });
 });
 

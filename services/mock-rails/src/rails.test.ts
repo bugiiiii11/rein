@@ -21,7 +21,7 @@ afterEach(async () => {
  * mock chain, a facilitator settling onto it, an indexer watching it, and a
  * paywalled vendor — the complete v0.1 loop.
  */
-async function rig(atomicPrice = '10000') {
+async function rig(atomicPrice = '10000', advertise?: 'v1' | 'dual' | 'v2') {
   const engine = new PolicyEngine();
   const app = buildServer(engine);
   await app.listen({ port: 0, host: '127.0.0.1' });
@@ -35,7 +35,12 @@ async function rig(atomicPrice = '10000') {
     facilitator: facilitator.name,
   });
   indexer.connectEngine(engine);
-  const vendor = createMockVendor({ facilitator, atomicPrice, payTo: '0xVENDOR' });
+  const vendor = createMockVendor({
+    facilitator,
+    atomicPrice,
+    payTo: '0xVENDOR',
+    ...(advertise !== undefined ? { advertise } : {}),
+  });
 
   closables.push(app);
   return { engine, engineUrl, ledger, facilitator, indexer, vendor };
@@ -245,6 +250,69 @@ describe('mock rails end-to-end (engine + guard + facilitator + indexer)', () =>
 
     expect(world.indexer.settledPayments()).toHaveLength(1); // still just one
     expect(world.indexer.shadowSpends()).toHaveLength(1);
+  });
+});
+
+describe('mock rails on the x402 v2 wire', () => {
+  it('settles the full loop against a strict v2 vendor, indexer reconciled', async () => {
+    const world = await rig('10000', 'v2');
+    const agent = await registerAgent(world);
+    const guard = createGuard({
+      engineUrl: world.engineUrl,
+      agentId: agent,
+      fetch: world.vendor.fetch,
+      payer: world.facilitator.payerFor(WALLET),
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_v2_allow',
+      appliesTo: { agents: [agent] },
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()(URL_ANSWER);
+
+    expect(res.status).toBe(200);
+    // The guard paid on the v2 header with a rewrapped envelope.
+    const paidCall = world.vendor.calls[1];
+    const envelope = JSON.parse(
+      Buffer.from(paidCall!.payment!, 'base64').toString('utf8'),
+    ) as { x402Version: number; accepted: { network: string } };
+    expect(envelope.x402Version).toBe(2);
+    expect(envelope.accepted.network).toBe('eip155:8453');
+
+    // Same ledger write, same intent memo — the indexer reconciles exactly
+    // as it does on v1, because the payload inside the envelope is identical.
+    const receipt = guard.receipts()[0];
+    const entry = world.ledger.entries()[0];
+    expect(entry).toMatchObject({ from: WALLET, to: '0xVENDOR', amount: '0.01', memo: receipt?.intentId });
+    expect(receipt?.settlement?.txHash).toBe(entry?.txHash);
+    expect(world.indexer.settledPayments()).toHaveLength(1);
+    expect(world.indexer.shadowSpends()).toHaveLength(0);
+  });
+
+  it('prefers the v2 channel of a dual-stack vendor', async () => {
+    const world = await rig('10000', 'dual');
+    const agent = await registerAgent(world);
+    const guard = createGuard({
+      engineUrl: world.engineUrl,
+      agentId: agent,
+      fetch: world.vendor.fetch,
+      payer: world.facilitator.payerFor(WALLET),
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_dual_allow',
+      appliesTo: { agents: [agent] },
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()(URL_ANSWER);
+
+    expect(res.status).toBe(200);
+    const envelope = JSON.parse(
+      Buffer.from(world.vendor.calls[1]!.payment!, 'base64').toString('utf8'),
+    ) as { x402Version: number };
+    expect(envelope.x402Version).toBe(2);
+    expect(world.ledger.entries()).toHaveLength(1);
   });
 });
 

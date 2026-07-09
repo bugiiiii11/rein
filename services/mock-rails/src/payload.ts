@@ -33,22 +33,82 @@ export const MockPaymentHeader = z.object({
 });
 export type MockPaymentHeader = z.infer<typeof MockPaymentHeader>;
 
+/**
+ * The v2 envelope (PAYMENT-SIGNATURE header): scheme/network live inside
+ * `accepted` — the requirement the payer chose — around the SAME scheme
+ * payload. `.passthrough()` keeps resource/extensions intact.
+ */
+export const MockPaymentHeaderV2 = z
+  .object({
+    x402Version: z.literal(2),
+    accepted: z
+      .object({
+        scheme: z.string(),
+        network: z.string(),
+        amount: z.string().regex(/^\d+$/, 'atomic amount must be an integer string'),
+        asset: z.string().min(1),
+        payTo: z.string().min(1),
+      })
+      .passthrough(),
+    payload: MockExactPayload,
+  })
+  .passthrough();
+export type MockPaymentHeaderV2 = z.infer<typeof MockPaymentHeaderV2>;
+
+/** A payment as the facilitator sees it, whichever dialect it arrived in. */
+export interface DecodedPayment {
+  version: 1 | 2;
+  scheme: string;
+  network: string;
+  payload: MockExactPayload;
+}
+
 export function encodePaymentHeader(header: MockPaymentHeader): string {
   return Buffer.from(JSON.stringify(header)).toString('base64');
 }
 
-export function decodePaymentHeader(raw: string): MockPaymentHeader {
+export function decodePaymentHeader(raw: string): DecodedPayment {
   let json: unknown;
   try {
     json = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
   } catch {
     throw new FacilitatorError('malformed_payment', 'X-PAYMENT is not base64-encoded JSON');
   }
+
+  if ((json as { x402Version?: unknown } | null)?.x402Version === 2) {
+    const parsed = MockPaymentHeaderV2.safeParse(json);
+    if (!parsed.success) {
+      throw new FacilitatorError(
+        'malformed_payment',
+        `invalid v2 payment envelope: ${parsed.error.message}`,
+      );
+    }
+    // A self-contradictory envelope (accepted terms vs transfer payload) is
+    // malformed on its face — mirroring the gate's inspection.
+    if (parsed.data.payload.value !== parsed.data.accepted.amount) {
+      throw new FacilitatorError(
+        'malformed_payment',
+        `v2 envelope contradicts itself: accepted.amount ${parsed.data.accepted.amount} vs payload value ${parsed.data.payload.value}`,
+      );
+    }
+    return {
+      version: 2,
+      scheme: parsed.data.accepted.scheme,
+      network: parsed.data.accepted.network,
+      payload: parsed.data.payload,
+    };
+  }
+
   const parsed = MockPaymentHeader.safeParse(json);
   if (!parsed.success) {
     throw new FacilitatorError('malformed_payment', `invalid X-PAYMENT body: ${parsed.error.message}`);
   }
-  return parsed.data;
+  return {
+    version: 1,
+    scheme: parsed.data.scheme,
+    network: parsed.data.network,
+    payload: parsed.data.payload,
+  };
 }
 
 /** What the facilitator returns on settle; the vendor base64s it into X-PAYMENT-RESPONSE. */

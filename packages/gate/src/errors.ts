@@ -33,14 +33,22 @@ export type GateRefusalCode =
 export class GateError extends Error {
   /** Seconds until the refused payment could be admitted (throttle codes). */
   readonly retryAfterSeconds?: number;
+  /**
+   * The rails' own failed settlement response, when there is one (a
+   * facilitator settle that answered `success: false`). Refusals of v2
+   * payments relay it verbatim in the PAYMENT-RESPONSE header instead of a
+   * synthesized one, so the payer sees the facilitator's real errorReason.
+   */
+  readonly paymentResponse?: unknown;
 
   constructor(
     readonly code: GateRefusalCode,
     message: string,
-    options: { retryAfterSeconds?: number } = {},
+    options: { retryAfterSeconds?: number; paymentResponse?: unknown } = {},
   ) {
     super(message);
     this.name = 'GateError';
     this.retryAfterSeconds = options.retryAfterSeconds;
+    this.paymentResponse = options.paymentResponse;
   }
 }

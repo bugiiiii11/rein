@@ -141,4 +141,44 @@ describe('MockFacilitator', () => {
     const wrongShape = Buffer.from(JSON.stringify({ hello: 'world' })).toString('base64');
     expect(code(() => facilitator.settle(wrongShape, requirement))).toBe('malformed_payment');
   });
+
+  it('settles a v2 envelope, CAIP-2 network matched against the v1 requirement', () => {
+    const { ledger, facilitator } = rails();
+    const v2Header = Buffer.from(
+      JSON.stringify({
+        x402Version: 2,
+        accepted: {
+          scheme: 'exact',
+          network: 'eip155:8453', // the requirement says 'base'
+          amount: '10000',
+          asset: 'USDC',
+          payTo: '0xVENDOR',
+        },
+        payload: { from: '0xAGENT', to: '0xVENDOR', value: '10000', asset: 'USDC', intentId: intent.id },
+      }),
+    ).toString('base64');
+
+    const settled = facilitator.settle(v2Header, requirement);
+
+    expect(ledger.entries()[0]).toMatchObject({
+      chain: 'base',
+      from: '0xAGENT',
+      amount: '0.01',
+      memo: intent.id,
+    });
+    // The settlement echoes the network as the payment presented it.
+    expect(settled.response).toMatchObject({ success: true, network: 'eip155:8453' });
+  });
+
+  it('refuses a self-contradictory v2 envelope on its face', () => {
+    const { facilitator } = rails();
+    const contradictory = Buffer.from(
+      JSON.stringify({
+        x402Version: 2,
+        accepted: { scheme: 'exact', network: 'eip155:8453', amount: '10000', asset: 'USDC', payTo: '0xVENDOR' },
+        payload: { from: '0xAGENT', to: '0xVENDOR', value: '99999', asset: 'USDC' },
+      }),
+    ).toString('base64');
+    expect(code(() => facilitator.settle(contradictory, requirement))).toBe('malformed_payment');
+  });
 });

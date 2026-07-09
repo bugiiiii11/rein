@@ -4,6 +4,7 @@ import {
   networkToChain,
   requirementDecimals,
   resolveAsset,
+  sameNetwork,
   type PaymentRequirement,
   type Payer,
 } from '@reinconsole/sdk';
@@ -13,7 +14,7 @@ import {
   decodePaymentHeader,
   encodePaymentHeader,
   encodeSettlementHeader,
-  type MockPaymentHeader,
+  type DecodedPayment,
   type SettlementResponse,
 } from './payload.js';
 
@@ -74,8 +75,9 @@ export class MockFacilitator {
       });
   }
 
-  /** Verify an X-PAYMENT header against the requirement it claims to satisfy. */
-  verify(paymentHeader: string, requirement: PaymentRequirement): MockPaymentHeader {
+  /** Verify a payment header (either dialect) against the requirement it
+   *  claims to satisfy. */
+  verify(paymentHeader: string, requirement: PaymentRequirement): DecodedPayment {
     const header = decodePaymentHeader(paymentHeader);
     if (header.scheme.toLowerCase() !== 'exact' || requirement.scheme.toLowerCase() !== 'exact') {
       throw new FacilitatorError(
@@ -83,7 +85,9 @@ export class MockFacilitator {
         `mock facilitator only settles "exact", got "${header.scheme}"/"${requirement.scheme}"`,
       );
     }
-    if (header.network !== requirement.network) {
+    // Compared through CAIP-2 normalization: a v2 envelope naming
+    // "eip155:8453" satisfies a requirement quoted as v1's "base".
+    if (!sameNetwork(header.network, requirement.network)) {
       throw new FacilitatorError(
         'network_mismatch',
         `payment is on "${header.network}" but the requirement wants "${requirement.network}"`,

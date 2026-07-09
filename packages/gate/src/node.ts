@@ -48,6 +48,9 @@ export function gateMiddleware(gate: Gate, options: GateMiddlewareOptions = {}) 
         ...(outcome.paymentRequiredHeader !== undefined
           ? { 'payment-required': outcome.paymentRequiredHeader }
           : {}),
+        ...(outcome.kind === 'refused' && outcome.paymentResponseHeader !== undefined
+          ? { 'payment-response': outcome.paymentResponseHeader }
+          : {}),
         ...(outcome.kind === 'refused' && outcome.retryAfterSeconds !== undefined
           ? { 'retry-after': String(outcome.retryAfterSeconds) }
           : {}),

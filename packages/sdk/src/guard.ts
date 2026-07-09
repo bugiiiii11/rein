@@ -16,7 +16,14 @@ import {
   selectRequirement,
   toIntentSubmission,
   type PaymentRequirement,
+  type ResolvedRequirement,
 } from './x402.js';
+import {
+  parsePaymentRequiredHeader,
+  requirementFromV2,
+  wrapPaymentV2,
+  type ResourceInfoV2,
+} from './x402v2.js';
 
 /**
  * Builds the `X-PAYMENT` header for an allowed intent. Mock payers and the
@@ -102,9 +109,13 @@ export class Guard {
 
     return async (input, init) => {
       const url = requestUrl(input);
-      // A request that already carries a payment is the release leg of an
-      // intent this guard allowed — pass it through and capture settlement.
-      if (readHeader(input, init, 'X-PAYMENT') !== null) {
+      // A request that already carries a payment (either dialect's header) is
+      // the release leg of an intent this guard allowed — pass it through and
+      // capture settlement.
+      if (
+        readHeader(input, init, 'X-PAYMENT') !== null ||
+        readHeader(input, init, 'PAYMENT-SIGNATURE') !== null
+      ) {
         const res = await inner(input, init);
         this.settlePending(url, res);
         return res;
@@ -113,15 +124,11 @@ export class Guard {
       const res = await inner(input, init);
       if (res.status !== 402) return res;
 
-      const body = await res
-        .clone()
-        .json()
-        .catch(() => undefined);
-      const parsed = PaymentRequired.safeParse(body);
+      const paywall = await parse402(res, this.options.assetAddresses);
       // Not an x402 paywall — nothing to govern, hand it back untouched.
-      if (!parsed.success) return res;
+      if (!paywall) return res;
 
-      const resolved = selectRequirement(parsed.data.accepts, this.options.assetAddresses);
+      const { resolved, wire, resource } = paywall;
       if (!resolved) throw new UnsupportedRequirementError(url);
 
       const taskContext = this.task.getStore() ?? this.options.taskContext;
@@ -142,8 +149,21 @@ export class Guard {
         return res;
       }
 
+      // The payer always produces the v1 envelope it knows; on a v2 paywall
+      // the guard rewraps it (same signed payload, v2 PaymentPayload around
+      // it) and pays on the v2 header. Every payer is v2-capable this way.
       const paymentHeader = await this.options.payer(resolved.requirement, intent, decision);
-      const retry = await inner(input, withHeader(input, init, 'X-PAYMENT', paymentHeader));
+      const retry = await inner(
+        input,
+        wire === 2
+          ? withHeader(
+              input,
+              init,
+              'PAYMENT-SIGNATURE',
+              wrapPaymentV2(paymentHeader, resolved.requirement, resource),
+            )
+          : withHeader(input, init, 'X-PAYMENT', paymentHeader),
+      );
       this.record(intent, decision, url, init, parseSettlement(retry));
       return retry;
     };
@@ -192,6 +212,52 @@ export function createGuard(options: GuardOptions): Guard {
   return new Guard(options);
 }
 
+/** What a 402 offered, in whichever dialect the guard could govern. */
+interface ParsedPaywall {
+  /** The offer the guard selected, or undefined when none qualifies. */
+  resolved: ResolvedRequirement | undefined;
+  /** Which wire dialect to pay on: 2 = PAYMENT-SIGNATURE, 1 = X-PAYMENT. */
+  wire: 1 | 2;
+  /** The v2 402's shared resource info, echoed into the payment envelope. */
+  resource?: ResourceInfoV2;
+}
+
+/**
+ * Read a 402 in both dialects. v2 (the PAYMENT-REQUIRED header) is preferred
+ * when it carries an offer the guard can govern; otherwise the v1 body gets
+ * its chance — a dual-stack vendor is served on whichever channel works.
+ * Returns undefined when neither channel is x402 at all (not a paywall).
+ */
+async function parse402(
+  res: Response,
+  assetAddresses: Record<string, Asset> | undefined,
+): Promise<ParsedPaywall | undefined> {
+  const v2 = parsePaymentRequiredHeader(res.headers.get('PAYMENT-REQUIRED'));
+  if (v2) {
+    const resolved = selectRequirement(
+      v2.accepts.map((offer) => requirementFromV2(offer, v2.resource)),
+      assetAddresses,
+    );
+    if (resolved) {
+      return v2.resource !== undefined
+        ? { resolved, wire: 2, resource: v2.resource }
+        : { resolved, wire: 2 };
+    }
+  }
+
+  const body = await res
+    .clone()
+    .json()
+    .catch(() => undefined);
+  const parsed = PaymentRequired.safeParse(body);
+  if (parsed.success) {
+    return { resolved: selectRequirement(parsed.data.accepts, assetAddresses), wire: 1 };
+  }
+  // A v2 header alone still marks this as a paywall — one the guard must
+  // fail closed on if nothing in it was governable.
+  return v2 ? { resolved: undefined, wire: 2 } : undefined;
+}
+
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') return input;
   if (input instanceof URL) return input.toString();
@@ -221,11 +287,12 @@ function withHeader(
 }
 
 /**
- * Decode the vendor's `X-PAYMENT-RESPONSE` header (base64 JSON per the x402
- * spec; plain JSON tolerated mock-first). Absent or undecodable -> undefined.
+ * Decode the vendor's settlement header — `X-PAYMENT-RESPONSE` (v1) or
+ * `PAYMENT-RESPONSE` (v2); base64 JSON per the x402 spec, plain JSON
+ * tolerated mock-first. Absent or undecodable -> undefined.
  */
 function parseSettlement(res: Response): ReceiptSettlement | undefined {
-  const raw = res.headers.get('X-PAYMENT-RESPONSE');
+  const raw = res.headers.get('X-PAYMENT-RESPONSE') ?? res.headers.get('PAYMENT-RESPONSE');
   if (raw === null) return undefined;
   let payload: unknown;
   try {
@@ -240,7 +307,11 @@ function parseSettlement(res: Response): ReceiptSettlement | undefined {
   const record =
     typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
   return {
-    txHash: typeof record['transaction'] === 'string' ? record['transaction'] : undefined,
+    // A failed v2 settle carries transaction: "" — no tx is no txHash.
+    txHash:
+      typeof record['transaction'] === 'string' && record['transaction'] !== ''
+        ? record['transaction']
+        : undefined,
     networkId: typeof record['network'] === 'string' ? record['network'] : undefined,
     raw,
   };
