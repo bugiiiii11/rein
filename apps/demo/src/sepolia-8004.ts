@@ -173,14 +173,29 @@ async function main() {
       ...registrationFile,
       registrations: [registrationRef(minted.tokenId)],
     };
-    const updated = await setAgentUri({
-      publicClient,
-      walletClient,
-      tokenId: minted.tokenId,
-      agentURI: `data:application/json;base64,${Buffer.from(
-        JSON.stringify(selfReferenced),
-      ).toString('base64')}`,
-    });
+    // Same propagation caveat as the read-backs below, but on the WRITE side:
+    // simulateContract against a node that has not seen the mint's block
+    // reverts ERC721NonexistentToken (hit live — the very first fresh-mint
+    // run after S25 crashed here). Bounded retry; a real failure still throws.
+    const setUriWithRetry = async () => {
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await setAgentUri({
+            publicClient,
+            walletClient,
+            tokenId: minted.tokenId,
+            agentURI: `data:application/json;base64,${Buffer.from(
+              JSON.stringify(selfReferenced),
+            ).toString('base64')}`,
+          });
+        } catch (err) {
+          if (attempt >= 5) throw err;
+          console.log(`  (rpc still propagating the mint — setAgentURI retry ${attempt}/5)`);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    };
+    const updated = await setUriWithRetry();
     console.log(`  registrations[] self-reference added via setAgentURI`);
     console.log(`  tx             ${basescanTxUrl(updated.txHash)}`);
   }
