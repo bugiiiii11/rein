@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AgentId, Decision, DecimalString, PaymentIntent, type Session } from '@reinconsole/core';
 import { PaymentRequirement } from '@reinconsole/sdk';
 import { SignerError } from './errors.js';
+import { sessionState } from './sessions.js';
 import type { SessionSigner } from './signer.js';
 
 const SessionInput = z.object({
@@ -67,6 +68,23 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
       return reply.status(404).send({ error: 'unknown_session' });
     }
     await signer.revokeSession(id);
+    return reply.status(204).send();
+  });
+
+  // Dead grants only — an active session 409s (revoke first). Deleting fails
+  // closed (a token with no record refuses as session_unknown).
+  app.delete('/v1/sessions/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const session = signer.sessions().find((s) => s.id === id);
+    if (!session) {
+      return reply.status(404).send({ error: 'unknown_session' });
+    }
+    if (sessionState(session, Date.now()) === 'active') {
+      return reply
+        .status(409)
+        .send({ error: 'session_active', reason: 'revoke the session before deleting it' });
+    }
+    await signer.deleteSession(id);
     return reply.status(204).send();
   });
 

@@ -153,6 +153,23 @@ export class SessionSigner {
     await this.store.revoke(id, new Date(this.now()));
   }
 
+  /**
+   * Drop a DEAD grant's record (revoked or expired only — an active grant must
+   * die by revocation, not vanish). Deleting fails closed: a token whose
+   * record is gone refuses as session_unknown. Voucher burns are untouched
+   * (keyed by decision id, TTL-pruned separately). Requires a store with
+   * delete support; the default in-memory store and @reinconsole/store both have it.
+   */
+  async deleteSession(id: string): Promise<void> {
+    const session = this.store.get(id);
+    if (!session) throw new Error(`unknown session: ${id}`);
+    if (sessionState(session, this.now()) === 'active') {
+      throw new Error(`session ${id} is still active — revoke it before deleting`);
+    }
+    if (!this.store.delete) throw new Error('session store does not support delete');
+    await this.store.delete(id);
+  }
+
   sessions(): readonly Session[] {
     return this.store.list();
   }

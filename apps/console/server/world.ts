@@ -1125,11 +1125,14 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       if (ref) registry.setAgentWallet(ref.tokenId, address);
       await linkAgentIdentity(rotated);
       // The previous boot's grant died with its token — revoke it (durably)
-      // rather than leave spent authority dangling until TTL.
+      // rather than leave spent authority dangling until TTL, then DROP the
+      // record: a dead grant whose key was never persisted is pure accretion
+      // (one per boot — the S28 finding), and deleting fails closed. This
+      // also drains records accreted by boots that predate the delete.
       for (const stale of signer.sessions()) {
-        if (stale.agentId === agent.id && stale.revokedAt === undefined) {
-          await signer.revokeSession(stale.id);
-        }
+        if (stale.agentId !== agent.id) continue;
+        if (stale.revokedAt === undefined) await signer.revokeSession(stale.id);
+        await signer.deleteSession(stale.id);
       }
       const { token } = await signer.createSession({
         agentId: agent.id,

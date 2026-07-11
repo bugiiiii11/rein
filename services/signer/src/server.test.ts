@@ -207,6 +207,23 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
     expect(missing.status).toBe(404);
   });
 
+  it('deletes a dead grant over HTTP: 409 while active, 204 after revoke, then 404', async () => {
+    const { session } = await createSession();
+    const id = session['id'] as string;
+
+    const active = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    expect(active.status).toBe(409);
+    expect(await active.json()).toMatchObject({ error: 'session_active' });
+
+    await fetch(`${signerUrl}/v1/sessions/${id}/revoke`, { method: 'POST' });
+    const deleted = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    expect(deleted.status).toBe(204);
+    expect(signer.sessions().some((s) => s.id === id)).toBe(false);
+
+    const again = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    expect(again.status).toBe(404);
+  });
+
   it('verifies the signature in the header recovers to the custodied wallet', async () => {
     const { token } = await createSession();
     const { intent, decision } = await evaluateFor(engine, agentId);

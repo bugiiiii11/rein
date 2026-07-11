@@ -214,6 +214,38 @@ describe('PgSessionStore across restarts', () => {
     );
   });
 
+  it('a deleted dead grant stays gone after the restart — the spared one still signs', async () => {
+    const dir = tempDir();
+    const key = generatePrivateKey();
+
+    const first = await open(dir);
+    const w1 = await makeSignerWorld(first, key);
+    const dead = await w1.signer.createSession({ agentId: w1.agentId });
+    const kept = await w1.signer.createSession({ agentId: w1.agentId });
+    await w1.signer.revokeSession(dead.session.id);
+    await w1.signer.deleteSession(dead.session.id);
+    expect(w1.signer.sessions().map((s) => s.id)).toEqual([kept.session.id]);
+    await first.close();
+
+    const second = await open(dir);
+    const w2 = await makeSignerWorld(second, key, w1.agentId);
+    expect(w2.signer.sessions().map((s) => s.id)).toEqual([kept.session.id]);
+    const v = await voucherFor(w2.engine, w2.agentId);
+    // The deleted grant's token finds NO record — deletion fails closed…
+    await expectRefusal(
+      w2.signer.sign({ sessionToken: dead.token, requirement: makeRequirement(), ...v }),
+      'session_unknown',
+    );
+    // …and the refusal fired before the burn, so the same voucher still
+    // clears through the spared session.
+    const result = await w2.signer.sign({
+      sessionToken: kept.token,
+      requirement: makeRequirement(),
+      ...v,
+    });
+    expect(result.paymentHeader).toBeTruthy();
+  });
+
   it('a burned voucher stays burned across the restart', async () => {
     const dir = tempDir();
     const key = generatePrivateKey();

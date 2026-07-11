@@ -10,7 +10,7 @@ import {
 } from '@reinconsole/x402-rails';
 import { SessionSigner } from './signer.js';
 import { SignerError } from './errors.js';
-import type { CreateSessionInput } from './sessions.js';
+import { InMemorySessionStore, type CreateSessionInput } from './sessions.js';
 import { evaluateFor, makeEngine, makeRequirement, VENDOR_ADDRESS } from './testkit.js';
 
 /** Engine + signer + custodied wallet + session, with a controllable clock. */
@@ -304,6 +304,51 @@ describe('SessionSigner', () => {
     const refused = w.events.filter((e) => e.type === 'signature.refused');
     expect(refused).toHaveLength(1);
     expect(refused[0]).toMatchObject({ code: 'session_unknown', intentId: intent.id });
+  });
+});
+
+describe('SessionSigner.deleteSession', () => {
+  it('refuses to delete an active grant — a kill must be a loud revocation', async () => {
+    const w = await makeWorld();
+    await expect(w.signer.deleteSession(w.session.id)).rejects.toThrow(
+      /revoke it before deleting/,
+    );
+    expect(w.signer.sessions()).toHaveLength(1);
+  });
+
+  it('drops a revoked grant entirely — its token then refuses as session_unknown', async () => {
+    const w = await makeWorld();
+    await w.signer.revokeSession(w.session.id);
+    await w.signer.deleteSession(w.session.id);
+    expect(w.signer.sessions()).toHaveLength(0);
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
+    await expectRefusal(
+      w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision }),
+      'session_unknown',
+    );
+  });
+
+  it('deletes an expired grant without a prior revocation', async () => {
+    const w = await makeWorld({ ttlSeconds: 10 });
+    w.clock.nowMs += 11_000;
+    await w.signer.deleteSession(w.session.id);
+    expect(w.signer.sessions()).toHaveLength(0);
+  });
+
+  it('throws on an unknown id', async () => {
+    const w = await makeWorld();
+    await expect(w.signer.deleteSession('ses_missing')).rejects.toThrow(/unknown session/);
+  });
+
+  it('surfaces a store without delete support instead of silently keeping the record', async () => {
+    const { engine, agentId } = await makeEngine();
+    // A custom port written before delete existed: shadow the method away.
+    const store = Object.assign(new InMemorySessionStore(), { delete: undefined });
+    const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem, store });
+    const { session } = await signer.createSession({ agentId });
+    await signer.revokeSession(session.id);
+    await expect(signer.deleteSession(session.id)).rejects.toThrow(/does not support delete/);
+    expect(signer.sessions()).toHaveLength(1);
   });
 });
 

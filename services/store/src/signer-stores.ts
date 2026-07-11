@@ -100,6 +100,17 @@ export class PgSessionStore implements SessionStorePort {
   }
 
   /**
+   * Drop a dead grant's row. Disk first, then the working set — a failed
+   * delete leaves memory truthful about what disk holds. Losing a session
+   * record fails closed (the token refuses as session_unknown), so unlike the
+   * other writes there is no resurrect-authority risk here.
+   */
+  async delete(id: string): Promise<void> {
+    await this.db.query('DELETE FROM signer_sessions WHERE id = $1', [id]);
+    this.mem.delete(id);
+  }
+
+  /**
    * TTL pruning: a burned voucher is dead weight once the signer's decision
    * staleness window has long passed — any replay after it refuses as stale
    * before the burn set is consulted, so dropping the row re-opens nothing.

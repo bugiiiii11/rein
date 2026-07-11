@@ -70,6 +70,17 @@ export interface SessionStorePort {
   burnDecision(decisionId: string): MaybePromise<boolean>;
   /** Release a burn after a failed signing leg — the voucher stays usable. */
   unburnDecision(decisionId: string): MaybePromise<void>;
+  /**
+   * Drop a session record entirely — token hash, spend accounting, and all.
+   * OPTIONAL (like GateStorePort.releaseReplay): stores that can't delete
+   * simply accrete dead grants. Deleting fails CLOSED — a token whose record
+   * is gone refuses as session_unknown — but callers must still route through
+   * SessionSigner.deleteSession, which refuses to delete an ACTIVE grant (a
+   * kill must be a loud revocation, not a vanished row). Idempotent: deleting
+   * an absent id is the desired end state, not an error. Voucher burns are
+   * NOT touched — they are keyed by decision id and TTL-pruned separately.
+   */
+  delete?(id: string): MaybePromise<void>;
 
   // Sync reads from the working set.
   findByTokenHash(hash: string): Session | undefined;
@@ -115,6 +126,14 @@ export class InMemorySessionStore implements SessionStorePort {
 
   unburnDecision(decisionId: string): void {
     this.usedDecisions.delete(decisionId);
+  }
+
+  delete(id: string): void {
+    const session = this.byId.get(id);
+    if (!session) return;
+    this.byId.delete(id);
+    this.idByTokenHash.delete(session.tokenHash);
+    this.spentById.delete(id);
   }
 
   findByTokenHash(hash: string): Session | undefined {
