@@ -84,6 +84,43 @@ describe('PolicyEngine', () => {
     );
   });
 
+  it('targets policies by agent label through the registry', async () => {
+    const engine = new PolicyEngine();
+    await engine.addPolicy({
+      policyId: 'pol_research',
+      appliesTo: { labels: ['research'] },
+      rules: [{ id: 'cap', deny: { amountGt: '1.00' } }],
+      default: 'allow',
+    });
+    const researcher = newId('agt');
+    const drone = newId('agt');
+    const at = (id: string, labels: string[]) =>
+      engine.registerAgent({
+        id,
+        orgId: newId('org'),
+        name: `agent-${labels[0] ?? 'plain'}`,
+        labels,
+        createdAt: new Date(),
+      });
+    await at(researcher, ['research']);
+    await at(drone, []);
+
+    const allowed = (await engine.evaluateIntent(baseIntent(researcher, '0.50'))).decision;
+    expect(allowed.outcome).toBe('allow');
+    expect(allowed.policyId).toBe('pol_research');
+    expect((await engine.evaluateIntent(baseIntent(researcher, '2.00'))).decision.outcome).toBe(
+      'deny',
+    );
+    // No matching label — the policy does not apply, so the intent fails
+    // closed. Same for an agent the registry has never seen.
+    const unlabeled = (await engine.evaluateIntent(baseIntent(drone, '0.50'))).decision;
+    expect(unlabeled.outcome).toBe('deny');
+    expect(unlabeled.policyId).toBe('none');
+    const unregistered = (await engine.evaluateIntent(baseIntent(newId('agt'), '0.50'))).decision;
+    expect(unregistered.outcome).toBe('deny');
+    expect(unregistered.policyId).toBe('none');
+  });
+
   it('emits intent.created and decision.made events', async () => {
     const engine = new PolicyEngine();
     await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });

@@ -111,8 +111,11 @@ export class InMemoryPolicyStore implements PolicyStorePort {
     return this.policies.find((p) => p.policyId === policyId);
   }
 
-  applicableFor(intent: Parameters<typeof policyApplies>[1]): Policy[] {
-    return this.policies.filter((p) => policyApplies(p, intent));
+  applicableFor(
+    intent: Parameters<typeof policyApplies>[1],
+    agent?: Parameters<typeof policyApplies>[2],
+  ): Policy[] {
+    return this.policies.filter((p) => policyApplies(p, intent, agent));
   }
 }
 

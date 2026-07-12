@@ -78,6 +78,7 @@ describe('openReinStore', () => {
       id: newId('agt'),
       orgId: newId('org'),
       name: 'survivor',
+      labels: ['research', 'prod-trading'],
       wallets: [{ chain: 'base', address: '0xabc', mode: 'sdk' }],
       status: 'active',
       createdAt: new Date(),
@@ -90,6 +91,7 @@ describe('openReinStore', () => {
     const engineB = new PolicyEngine(b);
     const loaded = engineB.agents.get(agent.id);
     expect(loaded?.name).toBe('survivor');
+    expect(loaded?.labels).toEqual(['research', 'prod-trading']);
     expect(loaded?.wallets).toEqual(agent.wallets);
     expect(loaded?.createdAt).toEqual(agent.createdAt);
     expect(engineB.agents.isFrozen(agent.id)).toBe(true);

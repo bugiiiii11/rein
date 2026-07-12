@@ -6,6 +6,11 @@ function PolicyCard({ p }: { p: PolicyView }) {
       <div className="policy-top">
         <span className="policy-id">{p.policyId}</span>
         <span className="policy-ver">v{p.version}</span>
+        {p.labels.length > 0 && (
+          <span className="policy-labels" title="Targets agents carrying these labels">
+            {p.labels.map((l) => `#${l}`).join(' ')}
+          </span>
+        )}
         <span className="policy-default">default · {p.default}</span>
       </div>
       {p.rules.map((r) => (

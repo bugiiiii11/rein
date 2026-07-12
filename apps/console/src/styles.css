@@ -446,6 +446,10 @@ a.pill:hover {
   color: var(--ok);
   border-color: rgba(52, 211, 153, 0.4);
 }
+.tag.label {
+  color: var(--ink-dim);
+  border-style: dashed;
+}
 .agent-figures {
   display: flex;
   gap: 18px;
@@ -566,6 +570,11 @@ a.pill:hover {
   font-size: 9px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.policy-labels {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
   color: var(--ink-dim);
 }
 .rule {

@@ -21,6 +21,11 @@ function AgentCard({ a }: { a: AgentView }) {
         <span className={`tag mode-${a.mode}`}>{a.mode}</span>
         <span className="tag">{a.chain}</span>
         <span className="tag">{shortAddr(a.address)}</span>
+        {a.labels.map((l) => (
+          <span className="tag label" key={l} title="Semantic label — policies can target it">
+            #{l}
+          </span>
+        ))}
       </div>
 
       <div className="agent-figures">

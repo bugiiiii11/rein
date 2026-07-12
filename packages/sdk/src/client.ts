@@ -61,6 +61,8 @@ export class EngineClient {
     orgId: string;
     name: string;
     erc8004Id?: string;
+    /** Semantic grouping labels (lowercase slugs) — policy `appliesTo.labels` targets these. */
+    labels?: Agent['labels'];
     wallets?: Agent['wallets'];
   }): Promise<Agent> {
     return this.request('POST', '/v1/agents', Agent, input);

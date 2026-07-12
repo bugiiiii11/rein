@@ -11,6 +11,7 @@ const AgentInput = z.object({
   orgId: OrgId,
   name: z.string().min(1).max(200),
   erc8004Id: z.string().optional(),
+  labels: Agent.shape.labels.optional(),
   wallets: Agent.shape.wallets.optional(),
 });
 
@@ -40,6 +41,7 @@ export function buildServer(engine: PolicyEngine = new PolicyEngine()): FastifyI
       orgId: input.orgId,
       name: input.name,
       erc8004Id: input.erc8004Id,
+      labels: input.labels ?? [],
       wallets: input.wallets ?? [],
       status: 'active',
       createdAt: new Date(),

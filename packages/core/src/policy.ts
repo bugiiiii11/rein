@@ -60,6 +60,13 @@ export type PolicyDefault = z.infer<typeof PolicyDefault>;
 export const AppliesTo = z.object({
   /** Agent id patterns (supports `*` globs, e.g. "agt_research_*"). */
   agents: z.array(z.string()).optional(),
+  /**
+   * Agent label patterns (supports `*` globs) — semantic targeting. Matches
+   * when the agent carries at least one label matching any pattern. Requires
+   * the agent DOCUMENT: an intent from an unregistered agent never matches a
+   * labels-targeted policy (and so fails closed when no other policy applies).
+   */
+  labels: z.array(z.string()).optional(),
   chains: z.array(Chain).optional(),
 });
 export type AppliesTo = z.infer<typeof AppliesTo>;

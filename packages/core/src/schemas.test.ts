@@ -15,6 +15,22 @@ describe('Agent schema', () => {
     });
     expect(agent.status).toBe('active');
     expect(agent.wallets).toEqual([]);
+    expect(agent.labels).toEqual([]);
+  });
+
+  it('accepts lowercase slug labels and rejects anything else', () => {
+    const base = {
+      id: newId('agt'),
+      orgId: newId('org'),
+      name: 'Labeled Agent',
+      createdAt: new Date().toISOString(),
+    };
+    const ok = Agent.parse({ ...base, labels: ['research', 'prod-trading'] });
+    expect(ok.labels).toEqual(['research', 'prod-trading']);
+    expect(Agent.safeParse({ ...base, labels: ['Research'] }).success).toBe(false);
+    expect(Agent.safeParse({ ...base, labels: ['has space'] }).success).toBe(false);
+    expect(Agent.safeParse({ ...base, labels: ['-leading'] }).success).toBe(false);
+    expect(Agent.safeParse({ ...base, labels: ['dup', 'dup'] }).success).toBe(false);
   });
 });
 

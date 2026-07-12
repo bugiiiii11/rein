@@ -58,6 +58,8 @@ export interface FeedItem {
 export interface AgentView {
   id: string;
   name: string;
+  /** Semantic grouping labels — policy `appliesTo.labels` targets these. */
+  labels: string[];
   status: 'active' | 'frozen';
   mode: string; // primary wallet enforcement mode
   chain: string;
@@ -78,6 +80,8 @@ export interface PolicyView {
   version: string;
   default: 'allow' | 'deny';
   agents: string[];
+  /** Label patterns this policy targets (semantic targeting), if any. */
+  labels: string[];
   rules: PolicyRuleView[];
 }
 

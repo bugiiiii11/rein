@@ -443,6 +443,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       return {
         id: a.id,
         name: a.name,
+        labels: a.labels,
         status: engine.agents.isFrozen(a.id) ? 'frozen' : 'active',
         mode: wallet?.mode ?? 'observed',
         chain: wallet?.chain ?? '—',
@@ -485,6 +486,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       version: p.version,
       default: p.default,
       agents: p.appliesTo.agents ?? [],
+      labels: p.appliesTo.labels ?? [],
       rules: p.rules.map(summarizeRule),
     }));
   }
@@ -874,6 +876,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
           orgId: newId('org'),
           name: `sepolia-agent-${ref.tokenId}`,
           erc8004Id,
+          labels: ['sepolia'],
           wallets: [{ chain: 'base', address: owner, mode: 'sdk' }],
           status: 'active',
           createdAt: new Date(),
@@ -1007,6 +1010,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       orgId: newId('org'),
       name,
       erc8004Id: registration.erc8004Id,
+      // The role slug ("research-agent-3" → "research") becomes a semantic
+      // label — what policy appliesTo.labels targets instead of opaque ULIDs.
+      labels: [name.replace(/-agent(-\d+)?$/, '')],
       wallets: [{ chain: 'base', address: wallet.address, mode: wallet.mode }],
       status: 'active',
       createdAt: new Date(),

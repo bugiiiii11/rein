@@ -142,12 +142,64 @@ describe('policyApplies', () => {
 
   it('filters by agent-id glob', () => {
     // Agent ids are opaque ULIDs, so glob targeting works for "all agents"
-    // (agt_*) or exact ids. Semantic grouping like the doc's "agt_research_*"
-    // needs agent labels (tracked as a future item), not id globs.
+    // (agt_*) or exact ids. Semantic grouping is what appliesTo.labels is for.
     const a = newId('agt');
     const matchAll = Policy.parse({ policyId: 'p_all', appliesTo: { agents: ['agt_*'] } });
     const matchNone = Policy.parse({ policyId: 'p_none', appliesTo: { agents: ['other_*'] } });
     expect(policyApplies(matchAll, intent({ agentId: a }))).toBe(true);
     expect(policyApplies(matchNone, intent({ agentId: a }))).toBe(false);
+  });
+
+  it('filters by agent label (any-of, glob patterns)', () => {
+    const p = Policy.parse({ policyId: 'p_lab', appliesTo: { labels: ['research', 'prod-*'] } });
+    expect(policyApplies(p, intent(), { labels: ['research'] })).toBe(true);
+    expect(policyApplies(p, intent(), { labels: ['prod-trading', 'other'] })).toBe(true);
+    expect(policyApplies(p, intent(), { labels: ['ops'] })).toBe(false);
+    expect(policyApplies(p, intent(), { labels: [] })).toBe(false);
+  });
+
+  it('never matches a labels-targeted policy without the agent document', () => {
+    const p = Policy.parse({ policyId: 'p_lab', appliesTo: { labels: ['*'] } });
+    expect(policyApplies(p, intent())).toBe(false);
+  });
+
+  it('ANDs labels with the other appliesTo fields', () => {
+    const p = Policy.parse({
+      policyId: 'p_both',
+      appliesTo: { agents: ['agt_*'], labels: ['research'], chains: ['base'] },
+    });
+    const labeled = { labels: ['research'] };
+    expect(policyApplies(p, intent(), labeled)).toBe(true);
+    expect(policyApplies(p, intent({ chain: 'solana' }), labeled)).toBe(false);
+    expect(policyApplies(p, intent(), { labels: ['ops'] })).toBe(false);
+  });
+});
+
+describe('evaluate with label targeting', () => {
+  const labelPolicy = Policy.parse({
+    policyId: 'p_research',
+    appliesTo: { labels: ['research'] },
+    rules: [{ id: 'cap', deny: { amountGt: '1.00' } }],
+    default: 'allow',
+  });
+
+  it('selects the labels policy for a labeled agent and fails closed otherwise', () => {
+    const allowed = evaluate(intent(), [labelPolicy], ctx(), { labels: ['research'] });
+    expect(allowed.outcome).toBe('allow');
+    expect(allowed.policyId).toBe('p_research');
+
+    const denied = evaluate(intent({ amount: '2.00' }), [labelPolicy], ctx(), {
+      labels: ['research'],
+    });
+    expect(denied.outcome).toBe('deny');
+    expect(denied.matchedRules).toEqual(['cap']);
+
+    // Unlabeled (or unregistered) agent: the policy does not apply => deny.
+    const unlabeled = evaluate(intent(), [labelPolicy], ctx(), { labels: [] });
+    expect(unlabeled.outcome).toBe('deny');
+    expect(unlabeled.policyId).toBe('none');
+    const unregistered = evaluate(intent(), [labelPolicy], ctx());
+    expect(unregistered.outcome).toBe('deny');
+    expect(unregistered.policyId).toBe('none');
   });
 });

@@ -1,4 +1,5 @@
 import {
+  type Agent,
   type Policy,
   type PaymentIntent,
   type Condition,
@@ -32,11 +33,22 @@ export interface EvaluationResult {
   policyVersion: string;
 }
 
-/** Does this policy target the given intent's agent + chain? */
-export function policyApplies(policy: Policy, intent: PaymentIntent): boolean {
-  const { agents, chains } = policy.appliesTo;
+/**
+ * The slice of the agent document label targeting needs. Optional at every
+ * seam: when the document is unknown (unregistered agent), a labels-targeted
+ * policy simply never applies — which fails closed downstream when no other
+ * policy picks the intent up.
+ */
+export type AgentFacts = Pick<Agent, 'labels'>;
+
+/** Does this policy target the given intent's agent (id + labels) + chain? */
+export function policyApplies(policy: Policy, intent: PaymentIntent, agent?: AgentFacts): boolean {
+  const { agents, labels, chains } = policy.appliesTo;
   if (chains && !chains.includes(intent.chain)) return false;
   if (agents && agents.length > 0 && !globMatchAny(agents, intent.agentId)) return false;
+  if (labels && labels.length > 0) {
+    if (!agent?.labels.some((label) => globMatchAny(labels, label))) return false;
+  }
   return true;
 }
 
@@ -106,8 +118,9 @@ export function evaluate(
   intent: PaymentIntent,
   policies: readonly Policy[],
   ctx: SpendContext,
+  agent?: AgentFacts,
 ): EvaluationResult {
-  const policy = policies.find((p) => policyApplies(p, intent));
+  const policy = policies.find((p) => policyApplies(p, intent, agent));
   if (!policy) {
     return {
       outcome: 'deny',

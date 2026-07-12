@@ -150,7 +150,9 @@ export class PolicyEngine {
       };
     } else {
       const ctx = this.spend.contextFor(intent.agentId, intent.createdAt.getTime());
-      result = evaluate(intent, this.policies.list(), ctx);
+      // The agent document (labels) rides along so appliesTo.labels can match;
+      // unregistered agents pass undefined and never match a labels policy.
+      result = evaluate(intent, this.policies.list(), ctx, this.agents.get(intent.agentId));
     }
 
     const latencyMs = performance.now() - start;
