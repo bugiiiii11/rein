@@ -38,8 +38,6 @@ jobs:
           # Windows is where every finding of the S31 journey test lived.
           - os: windows-latest
             node: 22
-          - os: macos-latest
-            node: 22
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +47,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+  # macOS bills at a 10x minute multiplier on private repos, so it does not run
+  # per push -- trigger it manually (workflow_dispatch) when a release or a
+  # platform-sensitive change warrants it.
+  test-macos:
+    name: test (macos-latest, node 22)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
           cache: pnpm
 
       - name: Install
