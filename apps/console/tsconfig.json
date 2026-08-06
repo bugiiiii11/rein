@@ -7,6 +7,6 @@
     "noEmit": true,
     "allowJs": false
   },
-  "include": ["src", "server", "vite.config.ts"],
+  "include": ["src", "server", "vite.config.ts", "vitest.config.ts"],
   "exclude": ["dist", "node_modules"]
 }
