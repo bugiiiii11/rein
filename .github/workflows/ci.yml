@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref makes the in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The live tests hit Base Sepolia with a funded key and self-skip unless
+  # RUN_LIVE is set (see packages/gate/src/live.test.ts and friends). CI must
+  # never set it: no secrets here, and settling real payments on every push is
+  # not something a test run should decide to do. Pinned empty so a repo-level
+  # variable cannot switch them on by accident.
+  RUN_LIVE: ''
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not hide the others -- cross-platform drift
+      # is the specific thing this matrix exists to surface.
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is the reference platform and carries the Node version range
+          # claimed by "engines": { "node": ">=22" }.
+          - os: ubuntu-latest
+            node: 22
+          - os: ubuntu-latest
+            node: 24
+          # Windows is where every finding of the S31 journey test lived.
+          - os: windows-latest
+            node: 22
+          - os: macos-latest
+            node: 22
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the pnpm version from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+  package-smoke:
+    name: package smoke (pack -> install -> import)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Everything else in this repo tests workspace source. This is the only
+      # job that consumes the packages the way npm users do, so a broken
+      # `exports` map, a missing `files` entry or an unbuilt `bin` fails here
+      # instead of after publish.
+      - name: Pack, install and import as a consumer
+        run: pnpm smoke
