@@ -170,10 +170,11 @@
                 they'll run on, and the core schemas (for <code class="inline-code">newId</code>).
               </p>
               <div class="code-card">
-                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="mkdir rein-quickstart && cd rein-quickstart && npm init -y && npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core" aria-label="Copy command">copy</button></div>
-                <pre class="code"><code><span class="install-prompt">$</span> mkdir rein-quickstart &amp;&amp; cd rein-quickstart
+                <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="mkdir rein-quickstart&#10;cd rein-quickstart&#10;npm init -y&#10;npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core" aria-label="Copy commands">copy</button></div>
+                <pre class="code"><code><span class="install-prompt">$</span> mkdir rein-quickstart
+<span class="install-prompt">$</span> cd rein-quickstart
 <span class="install-prompt">$</span> npm init -y
-<span class="install-prompt">$</span> npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core</code></pre>
+<span class="install-prompt">$</span> npm install @reinconsole/sdk @reinconsole/gate @reinconsole/mock-rails @reinconsole/core   <span class="tk-cm"># ~15 s</span></code></pre>
               </div>
             </div>
           </div>
@@ -183,8 +184,10 @@
             <div class="step-body">
               <span class="step-title">Boot the policy engine — in a second terminal</span>
               <p>
-                The engine is the referee: it holds your agents, policies, and the signed decision
-                log. It stays running while the quickstarts talk to it on port 8787.
+                <b>Open a new, second terminal window for this step</b> — the engine stays running
+                there for the rest of the runbook, and every other command goes in your first
+                terminal. The engine is the referee: it holds your agents, policies, and the signed
+                decision log, and the quickstarts talk to it on port 8787.
               </p>
               <div class="code-card">
                 <div class="code-head"><span>terminal 2 — leave this running</span><button class="copy-btn" type="button" data-copy="npx -p @reinconsole/policy-engine rein-policy-engine" aria-label="Copy command">copy</button></div>
@@ -210,8 +213,13 @@
             <span class="step-num">04</span>
             <div class="step-body">
               <span class="step-title">Save guard-quickstart.mjs</span>
+              <p>
+                Copy this file <b>into the <code class="inline-code">rein-quickstart</code> folder
+                from step 02</b>, next to <code class="inline-code">package.json</code> — that's how
+                Node finds the packages you installed there. Then run it from that folder.
+              </p>
               <div class="code-card">
-                <div class="code-head"><span>guard-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
+                <div class="code-head"><span>rein-quickstart/guard-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
                 <pre class="code"><code><span class="tk-cm">// guard-quickstart.mjs — cap an agent's spend, offline, in one file.</span>
 <span class="tk-cm">// Prereq: the policy engine is running:  npx -p @reinconsole/policy-engine rein-policy-engine</span>
 <span class="tk-kw">import</span> { newId } <span class="tk-kw">from</span> <span class="tk-str">'@reinconsole/core'</span>;
@@ -319,8 +327,12 @@ ledger has 4 entries — the denied payment was never constructed</code></pre>
             <span class="step-num">06</span>
             <div class="step-body">
               <span class="step-title">Save gate-quickstart.mjs</span>
+              <p>
+                Same place as before: <b>inside <code class="inline-code">rein-quickstart</code></b>,
+                next to <code class="inline-code">guard-quickstart.mjs</code>.
+              </p>
               <div class="code-card">
-                <div class="code-head"><span>gate-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
+                <div class="code-head"><span>rein-quickstart/gate-quickstart.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy file contents">copy</button></div>
                 <pre class="code"><code><span class="tk-cm">// gate-quickstart.mjs — put a paywall on any Node API, offline, in one file.</span>
 <span class="tk-cm">// Prereq: the policy engine is running:  npx -p @reinconsole/policy-engine rein-policy-engine</span>
 <span class="tk-kw">import</span> { createServer } <span class="tk-kw">from</span> <span class="tk-str">'node:http'</span>;
@@ -434,10 +446,12 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
           435-test suite behind them.
         </p>
         <div class="code-card reveal d2">
-          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="git clone https://github.com/bugiiiii11/rein && cd rein && corepack enable && pnpm install && pnpm build && node apps/demo/dist/index.js" aria-label="Copy commands">copy</button></div>
-          <pre class="code"><code><span class="install-prompt">$</span> git clone https://github.com/bugiiiii11/rein &amp;&amp; cd rein
-<span class="install-prompt">$</span> corepack enable          <span class="tk-cm"># ships pnpm with Node</span>
-<span class="install-prompt">$</span> pnpm install &amp;&amp; pnpm build
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy="git clone https://github.com/bugiiiii11/rein&#10;cd rein&#10;npm install -g pnpm&#10;pnpm install&#10;pnpm build&#10;node apps/demo/dist/index.js" aria-label="Copy commands">copy</button></div>
+          <pre class="code"><code><span class="install-prompt">$</span> git clone https://github.com/bugiiiii11/rein
+<span class="install-prompt">$</span> cd rein
+<span class="install-prompt">$</span> npm install -g pnpm       <span class="tk-cm"># skip if `pnpm -v` works · corepack enable is the alternative (needs an admin shell on Windows)</span>
+<span class="install-prompt">$</span> pnpm install              <span class="tk-cm"># ~40 s</span>
+<span class="install-prompt">$</span> pnpm build                <span class="tk-cm"># ~2 min · 12 packages</span>
 <span class="install-prompt">$</span> node apps/demo/dist/index.js</code></pre>
         </div>
 
@@ -477,7 +491,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
         </div>
 
         <p class="section-close reveal d3">
-          Then keep going: signer.js — six rogue paths, every one refused · gate.js — the vendor side over real local HTTP · graph.js — reputation closing the loop on both sides · pnpm test — the full 435.
+          Then keep going: signer.js — six rogue paths, every one refused · gate.js — the vendor side over real local HTTP · graph.js — reputation closing the loop on both sides · pnpm test — the full 435 (~3 min).
         </p>
       </section>
 

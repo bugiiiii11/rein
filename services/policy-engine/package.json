@@ -35,9 +35,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "bin"],
   "bin": {
-    "rein-policy-engine": "./dist/server.js"
+    "rein-policy-engine": "./bin/rein-policy-engine.mjs"
   },
   "scripts": {
     "build": "tsup",

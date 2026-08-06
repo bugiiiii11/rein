@@ -2,3 +2,9 @@ packages:
   - 'packages/*'
   - 'services/*'
   - 'apps/*'
+
+# Approved install-time build scripts (silences pnpm 10's "Ignored build scripts"
+# notice on a fresh install). esbuild's postinstall just validates the platform
+# binary shipped via optionalDependencies -- harmless either way.
+onlyBuiltDependencies:
+  - esbuild

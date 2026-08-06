@@ -28,6 +28,7 @@ const W = 64;
 // ─── formatting ───────────────────────────────────────────────────────────────
 
 const bar = (c: string) => c.repeat(W);
+const usd = (a: string | number) => `$${Number(a).toFixed(2)}`;
 const section = (label: string) =>
   `\n${bar('─')}\n ${label}\n${bar('─')}`;
 
@@ -138,7 +139,8 @@ async function main() {
 
   // ── Scenario 3: TX cap ────────────────────────────────────────────────────
   console.log(section('Scenario 3  ·  Single-transaction cap'));
-  console.log(`  A premium vendor quotes $5.00. The tx-cap rule blocks it before payment.\n`);
+  console.log(`  A premium vendor quotes $5.00 — over the $0.50 tx cap, and over what's left`);
+  console.log(`  of the hour budget too, so the deny below names both rules.\n`);
 
   // Create a separate vendor at $5.00 per call and wire a new guard for it
   // (same agent + same policy — the tx-cap rule applies regardless of vendor)
@@ -166,6 +168,8 @@ async function main() {
 
   // ── Scenario 4: Kill switch ────────────────────────────────────────────────
   console.log(section('Scenario 4  ·  Kill switch (agent freeze)'));
+  console.log(`  A second agent (ks-agent) with its own allow-all policy — fresh, so the`);
+  console.log(`  freeze/unfreeze story isn't tangled in research-agent's exhausted budget.\n`);
 
   // Register a fresh agent so the kill-switch demo is isolated from budget state
   const ksWallet = '0xKillSwitch01';
@@ -235,7 +239,7 @@ async function main() {
   if (shadow) {
     console.log(`    agentId:  ${shadow.agentId}`);
     console.log(`    chain:    ${shadow.chain}`);
-    console.log(`    amount:   $${shadow.amount}`);
+    console.log(`    amount:   ${usd(shadow.amount)}`);
     console.log(`    txHash:   ${shadow.txHash.slice(0, 20)}…`);
   }
 
@@ -266,7 +270,7 @@ async function main() {
     const mark = r.outcome === 'allow' ? 'ALLOW' : 'DENY ';
     const tx = r.settlement?.txHash ? `  tx: ${r.settlement.txHash.slice(0, 14)}…` : '';
     const why = r.reason ? `  (${r.reason})` : '';
-    console.log(`    [${mark}]  $${r.amount.padEnd(5)}  ${r.vendorHost.padEnd(18)}${tx}${why}`);
+    console.log(`    [${mark}]  ${usd(r.amount).padEnd(6)}  ${r.vendorHost.padEnd(18)}${tx}${why}`);
   }
 
   console.log('\n' + bar('═'));

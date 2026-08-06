@@ -8,8 +8,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "rein-engine": "./dist/server.js",
-    "rein-graph": "./dist/graph-server.js"
+    "rein-engine": "./bin/rein-engine.mjs",
+    "rein-graph": "./bin/rein-graph.mjs"
   },
   "scripts": {
     "build": "tsup",
