@@ -17,8 +17,8 @@ CTX=$(jq -r 'select(.isSidechain != true) | .message.usage | select(.input_token
 case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 
 WINDOW="${AUTOWRAP_WINDOW:-1000000}"
-SOFT_PCT="${AUTOWRAP_SOFT_PCT:-15}"
-HARD_PCT="${AUTOWRAP_HARD_PCT:-17}"
+SOFT_PCT="${AUTOWRAP_SOFT_PCT:-20}"
+HARD_PCT="${AUTOWRAP_HARD_PCT:-22}"
 SOFT=$(( WINDOW * SOFT_PCT / 100 ))
 HARD=$(( WINDOW * HARD_PCT / 100 ))
 
@@ -32,7 +32,7 @@ KTOK=$(( CTX / 1000 ))
 if [ "$CTX" -ge "$HARD" ]; then
   echo "[context-warn] Context at ${PCT}% (${KTOK}k tokens) -- past the ${HARD_PCT}% hard limit. Run /handoff wrap (or /handoff save) before taking on any new work."
 else
-  echo "[context-warn] Context at ${PCT}% (${KTOK}k tokens) -- over the ${SOFT_PCT}% wrap threshold. Prefer wrapping (/handoff wrap) before starting new work."
+  echo "[context-warn] Context at ${PCT}% (${KTOK}k tokens) -- over the ${SOFT_PCT}% checkpoint threshold. Checkpoint with /handoff docs (no commit, session continues) before taking on new work; the full wrap is due at ${HARD_PCT}%."
 fi
 
 exit 0

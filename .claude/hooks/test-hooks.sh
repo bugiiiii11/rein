@@ -2,7 +2,7 @@
 # Smoke tests for auto-wrap.sh (Stop) and context-warn.sh (UserPromptSubmit).
 # Run from the project root:  bash .claude/hooks/test-hooks.sh
 # Uses synthetic transcript fixtures with real .message.usage shapes.
-# Defaults under test: WINDOW=1,000,000 / soft 15% (150k) / hard 17% (170k).
+# Defaults under test: WINDOW=1,000,000 / soft 20% (200k, checkpoint) / hard 22% (220k, wrap).
 
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
 AUTOWRAP="$HOOKS_DIR/auto-wrap.sh"
@@ -24,8 +24,8 @@ mk_fixture() { # $1 = file, $2 = total tokens
 }
 
 mk_fixture "$FIX/low.jsonl"  100000   # 10% -> silent
-mk_fixture "$FIX/soft.jsonl" 160000   # 16% -> soft fire
-mk_fixture "$FIX/hard.jsonl" 180000   # 18% -> hard fire
+mk_fixture "$FIX/soft.jsonl" 210000   # 21% -> soft fire
+mk_fixture "$FIX/hard.jsonl" 230000   # 23% -> hard fire
 
 # Sidechain fixture: main thread at 10%, then a HUGE sidechain usage line that
 # must be ignored (subagent context is not the main window).
@@ -55,23 +55,28 @@ RUN=$RANDOM$RANDOM  # unique session ids per run so markers never collide
 
 # --- auto-wrap.sh ---
 OUT=$(stdin_json "$FIX/low.jsonl" "t1-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: below soft -> allow stop" 0 $? "" "$OUT"
-OUT=$(stdin_json "$FIX/soft.jsonl" "t2-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: soft crossing -> block once" 2 $? "AUTO-WRAP: context at 16%" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "t2-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: soft crossing -> block once" 2 $? "AUTO-WRAP (CHECKPOINT): context at 21%" "$OUT"
 OUT=$(stdin_json "$FIX/soft.jsonl" "t2-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: soft marker -> second stop allowed" 0 $? "" "$OUT"
-OUT=$(stdin_json "$FIX/hard.jsonl" "t3-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: hard crossing -> block with HARD msg" 2 $? "AUTO-WRAP (HARD): context at 18%" "$OUT"
+OUT=$(stdin_json "$FIX/hard.jsonl" "t3-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: hard crossing -> block with HARD msg" 2 $? "AUTO-WRAP (HARD): context at 23%" "$OUT"
 OUT=$(stdin_json "$FIX/hard.jsonl" "t3-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: hard marker -> second stop allowed" 0 $? "" "$OUT"
 # escalation: same session crosses soft, later hard -> two distinct fires
-OUT=$(stdin_json "$FIX/soft.jsonl" "t4-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: escalation step 1 (soft)" 2 $? "AUTO-WRAP:" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "t4-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: escalation step 1 (soft)" 2 $? "CHECKPOINT" "$OUT"
 OUT=$(stdin_json "$FIX/hard.jsonl" "t4-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: escalation step 2 (hard)" 2 $? "HARD" "$OUT"
 OUT=$(stdin_json "$FIX/hard.jsonl" "t4-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: escalation exhausted -> allow" 0 $? "" "$OUT"
 OUT=$(stdin_json "$FIX/hard.jsonl" "t5-$RUN" true | bash "$AUTOWRAP" 2>&1); check "autowrap: stop_hook_active loop guard" 0 $? "" "$OUT"
 OUT=$(stdin_json "$FIX/missing.jsonl" "t6-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: missing transcript -> silent" 0 $? "" "$OUT"
 OUT=$(stdin_json "$FIX/sidechain.jsonl" "t7-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: sidechain usage ignored" 0 $? "" "$OUT"
-OUT=$(stdin_json "$FIX/soft.jsonl" "t8-$RUN" | AUTOWRAP_WINDOW=2000000 bash "$AUTOWRAP" 2>&1); check "autowrap: env window override (160k of 2M = 8%)" 0 $? "" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "t8-$RUN" | AUTOWRAP_WINDOW=2000000 bash "$AUTOWRAP" 2>&1); check "autowrap: env window override (210k of 2M = 10%)" 0 $? "" "$OUT"
+# the rungs must ask for DIFFERENT things: soft persists state, hard ends the session
+OUT=$(stdin_json "$FIX/soft.jsonl" "t9-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: soft asks for /handoff docs" 2 $? "/handoff docs" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "t10-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: soft does not end the session" 2 $? "Do NOT end the session" "$OUT"
+OUT=$(stdin_json "$FIX/hard.jsonl" "t11-$RUN" | bash "$AUTOWRAP" 2>&1); check "autowrap: hard asks for the full wrap" 2 $? "full /handoff wrap flow" "$OUT"
 
 # --- context-warn.sh ---
 OUT=$(stdin_json "$FIX/low.jsonl" "w1-$RUN" | bash "$CTXWARN" 2>&1); check "ctxwarn: below soft -> silent" 0 $? "" "$OUT"
 [ -z "$OUT" ] && { PASS=$((PASS+1)); echo "PASS  ctxwarn: below soft -> empty stdout"; } || { FAIL=$((FAIL+1)); echo "FAIL  ctxwarn: expected empty stdout, got: $OUT"; }
-OUT=$(stdin_json "$FIX/soft.jsonl" "w2-$RUN" | bash "$CTXWARN" 2>&1); check "ctxwarn: soft -> advisory line" 0 $? "Context at 16%" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "w2-$RUN" | bash "$CTXWARN" 2>&1); check "ctxwarn: soft -> advisory line" 0 $? "Context at 21%" "$OUT"
+OUT=$(stdin_json "$FIX/soft.jsonl" "w5-$RUN" | bash "$CTXWARN" 2>&1); check "ctxwarn: soft -> points at the checkpoint, not the wrap" 0 $? "/handoff docs" "$OUT"
 OUT=$(stdin_json "$FIX/hard.jsonl" "w3-$RUN" | bash "$CTXWARN" 2>&1); check "ctxwarn: hard -> hard-limit line" 0 $? "hard limit" "$OUT"
 OUT=$(stdin_json "$FIX/sidechain.jsonl" "w4-$RUN" | bash "$CTXWARN" 2>&1)
 [ -z "$OUT" ] && { PASS=$((PASS+1)); echo "PASS  ctxwarn: sidechain usage ignored"; } || { FAIL=$((FAIL+1)); echo "FAIL  ctxwarn: sidechain not ignored: $OUT"; }
