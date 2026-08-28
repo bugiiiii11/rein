@@ -95,10 +95,17 @@ const shutdown = async (signal: string): Promise<void> => {
     await world.close();
     clearTimeout(abandon);
     console.log('[rein] store drained, exiting cleanly');
-    process.exit(0);
+    // Deliberately NOT process.exit() here. stdout to a container's log pipe is
+    // async, and exiting immediately truncates the line above — the only
+    // evidence the drain ran at all. The server and store are closed, so let
+    // the loop end on its own; the unref'd timer is a backstop for a stray
+    // handle and never keeps the process alive by itself.
+    process.exitCode = 0;
+    setTimeout(() => process.exit(0), 2000).unref();
   } catch (err) {
     console.error('[rein] drain failed (unflushed telemetry may be lost):', err);
-    process.exit(1);
+    process.exitCode = 1;
+    setTimeout(() => process.exit(1), 2000).unref();
   }
 };
 
