@@ -118,3 +118,24 @@ curl -s https://app.reinconsole.com/api/state | jq '.stats'
 
 `decisions` and `chainLinks` come from the same signed chain and cannot drift. If
 they disagree, something is wrong with the store, not the projection.
+
+### Proving persistence without log access
+
+The counters CANNOT prove it. The boot seed is deterministic, so a world that
+reseeded from scratch reports exactly the same 11 decisions / 8-3-0 / $0.07 / 9
+subjects as one that resumed. Two deploys in a row showing identical numbers is
+not evidence of anything.
+
+The engine's ed25519 signing key is the honest signal: it is generated once and
+persisted (`engine_keys`), so it is STABLE across restarts when the volume works
+and REGENERATED every boot when it does not.
+
+```
+curl -s https://app.reinconsole.com/api/state \
+  | jq -r .publicKey | sha256sum | cut -c1-16
+```
+
+Record it, redeploy, run it again. Same fingerprint means the store really
+resumed. A different one means the service is writing to disposable disk no
+matter what the counters say.
+
