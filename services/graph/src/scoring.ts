@@ -90,8 +90,21 @@ export function reliabilityComponent(ev: SubjectEvidence): number {
  * Confidence is first-class (see core ReputationScore): a thin or brand-new
  * history yields LOW confidence rather than a misleading score, so consumers
  * (engine sync, gate screening) can refuse to act on it. Depth of evidence
- * saturates around 10 observations; age discounts same-day evidence to 40%
- * and stops mattering after a week.
+ * saturates around 10 observations; age stops mattering after a week.
+ *
+ * The 0.1 age floor is load-bearing for fairness. Both consumers act at a 0.3
+ * confidence floor (`syncVendors`, `payerCheck`), so capping a day-0 subject at
+ * 0.1 makes first-day enforcement impossible BY CONSTRUCTION rather than by
+ * arithmetic luck. It used to be 0.4, which left day-0 subjects enforceable
+ * after only 14 observations — `depth` saturates so fast that a busy vendor
+ * cleared that in seconds, and the console's own vendor sat at 0.30136 against
+ * the 0.3 floor, i.e. inside the newcomer grace period by 0.0014. Enforcement
+ * now needs roughly 1.6 days (high volume) to 2.3 days (moderate) of history:
+ * a grace period measured in time, which is what "newcomer" means.
+ *
+ * Note the constant only ever applies to subjects younger than a week — past
+ * 7 days `min(1, d/7)` saturates and age is 1.0 under any floor — so lowering
+ * it leaves every mature score bit-for-bit unchanged.
  */
 export function confidence(ev: SubjectEvidence, nowMs: number): number {
   const { replays, others } = refusalCounts(ev);
@@ -99,7 +112,7 @@ export function confidence(ev: SubjectEvidence, nowMs: number): number {
     ev.attempts + ev.disputes + ev.endorsements + ev.shadowSpends + replays + others;
   const depth = 1 - Math.exp(-observations / 10);
   const knownDays = Math.max(0, nowMs - ev.firstSeenMs) / DAY_MS;
-  const age = 0.4 + 0.6 * Math.min(1, knownDays / 7);
+  const age = 0.1 + 0.9 * Math.min(1, knownDays / 7);
   return clamp(depth * age, 0, 1);
 }
 

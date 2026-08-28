@@ -121,19 +121,21 @@ describe('boot scenario fingerprint', () => {
     expect(good!.synced).toBe(true);
     expect(shady!.synced).toBe(true);
     // The world's own vendor is born on boot day, so `age` caps its confidence
-    // at 0.4 x depth no matter how busy the scenario is — that age ceiling is
-    // the fairness mechanism, and it is what this pins.
+    // at 0.1 x depth however busy the scenario gets — structurally under the
+    // 0.3 push floor, so it CANNOT be synced into enforcement on day one no
+    // matter when the debounced sync happens to fire. Pin the ceiling first,
+    // then the consequence: the guarantee is the mechanism, not the outcome.
     //
-    // `synced` is deliberately NOT asserted: the vendor lands on 14 same-day
-    // observations = confidence 0.30136 against a 0.3 floor, so it is barely
-    // ELIGIBLE, and scheduleSync() debounces the push by 250ms — whether the
-    // last sync fired before or after the final beat is machine speed. It held
-    // on ubuntu and flipped on windows CI (run 32165285924). Pin the mechanism,
-    // not a boundary outcome.
+    // This assertion was briefly a race. Under the old 0.4 age floor the
+    // vendor landed on confidence 0.30136 against the same 0.3 floor — inside
+    // its own grace period by 0.0014 — so whether scheduleSync()'s 250ms
+    // debounce fired before or after the final beat decided the result. It
+    // held on ubuntu and flipped on windows CI (run 32165285924).
     const own = vendor('api.data.test');
     expect(own).toBeDefined();
     expect(Date.parse(own!.firstSeen)).toBeGreaterThan(Date.now() - 60 * 60 * 1000);
-    expect(own!.confidence).toBeLessThan(0.41);
+    expect(own!.confidence).toBeLessThan(0.1);
+    expect(own!.synced).toBe(false);
     expect(good!.confidence).toBeGreaterThan(own!.confidence + 0.3);
     const offender = boot.graph.agents.find(
       (a) => a.id === '0xdefec7ed0000000000000000000000000000d00d',
