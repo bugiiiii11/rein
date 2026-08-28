@@ -16,6 +16,19 @@ RUN pnpm install --frozen-lockfile \
  && pnpm rebuild esbuild \
  && pnpm exec turbo run build --filter=@reinconsole/console
 
+# NOTE: this must stay AFTER the install above. Setting it earlier makes pnpm skip
+# devDependencies, and tsx — which the start command below runs — is one of them.
 ENV NODE_ENV=production
+
 # standalone.ts serves apps/console/dist + the console API/SSE on $PORT (Railway injects PORT).
-CMD ["pnpm", "--filter", "@reinconsole/console", "start"]
+#
+# Exec form, invoking node DIRECTLY rather than `pnpm ... start`, so node is PID 1.
+# Under a package-manager wrapper node runs as a CHILD, and the wrapper does not
+# reliably forward SIGTERM: the graceful drain in standalone.ts never runs, the
+# runtime SIGKILLs after the grace period, and the container exits non-zero (which
+# a platform reports as "crashed" on every ordinary redeploy). Signals must reach
+# node itself or the write-behind tail is never flushed.
+#
+# Keep railway.json free of a `startCommand` — it would override this and reintroduce
+# a shell in front of node.
+CMD ["node", "apps/console/node_modules/tsx/dist/cli.mjs", "apps/console/server/standalone.ts"]

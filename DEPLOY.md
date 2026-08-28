@@ -93,6 +93,30 @@ next to non-zero gate revenue is correct, not a bug.
 Session-agent private keys are never persisted: the world rotates them at boot by
 design, and identity linking keeps one reputation across the rotation.
 
+## Node must be PID 1
+
+The Dockerfile `CMD` invokes node directly, in exec form, rather than going through
+`pnpm ... start`. This is not style. Under a package-manager wrapper node runs as a
+CHILD process, and the wrapper does not reliably forward SIGTERM, so:
+
+- the graceful drain below never runs, however correct its code is;
+- the runtime SIGKILLs after the grace period;
+- the container exits non-zero, which the dashboard reports as **"crashed"** on every
+  ordinary redeploy -- alarming, and easy to dismiss as cosmetic when it is the
+  visible symptom of skipped flushes.
+
+`railway.json` deliberately has NO `startCommand`: it would override the Dockerfile
+`CMD` and put a shell back in front of node. If one is ever needed, it must `exec`.
+
+The boot line reports the pid for exactly this reason:
+
+```
+[rein] console on http://localhost:8080 (pid 1)
+```
+
+**`pid 1` is the healthy reading.** Anything else means signals are landing on a
+wrapper and the drain is dead code.
+
 ## Shutdown
 
 `standalone.ts` handles SIGTERM/SIGINT and drains the store before exiting, because

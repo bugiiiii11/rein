@@ -5,7 +5,6 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @reinconsole/console start",
     "healthcheckPath": "/api/state",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",

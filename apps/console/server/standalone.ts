@@ -60,7 +60,14 @@ const server = createServer(async (req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4173);
-server.listen(port, () => console.log(`[rein] console on http://localhost:${port}`));
+server.listen(port, () =>
+  // pid is here to be diagnostic, not decorative: the graceful drain below only
+  // ever runs if THIS process is the one the runtime signals. Started via a
+  // package-manager wrapper, node is a child and the wrapper does not reliably
+  // forward SIGTERM — the drain silently never happens and the container is
+  // SIGKILLed instead. In a container this should read `pid 1`.
+  console.log(`[rein] console on http://localhost:${port} (pid ${process.pid})`),
+);
 
 /**
  * Graceful shutdown. Container runtimes (Railway included) stop a deploy with
