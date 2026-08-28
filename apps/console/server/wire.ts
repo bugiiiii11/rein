@@ -85,22 +85,41 @@ export interface PolicyView {
   rules: PolicyRuleView[];
 }
 
+/**
+ * The headline counters. They come in two windows, and the split is REAL, not
+ * cosmetic: on a persistent world (`REIN_CONSOLE_DATA_DIR`) the all-time group
+ * is rebuilt from durable state and survives a restart, while the since-boot
+ * group is derived from the feed and the mock ledger, which are this process's
+ * telemetry. Rendering them side by side unlabelled is what made a resumed
+ * console read "0 decisions" next to "11 chain links"; anything added here
+ * belongs in one group or the other, deliberately.
+ *
+ * Not every counter has a durable reading to restore. `avgLatencyMs` measures
+ * calls this process made. Shadow spends are detected by reconciling against
+ * the mock ledger, which is rebuilt empty each boot. Signer refusals are
+ * events, not state. Those are since-boot by nature, not by omission.
+ */
 export interface Stats {
+  // ── all-time: rebuilt from durable state, survives a restart ──────────────
+  /** From the signed decision chain — the same source as `chainLinks`. */
   decisions: number;
   allow: number;
   deny: number;
   escalate: number;
-  settled: number;
-  shadow: number;
-  settledValue: string;
-  shadowValue: string;
   agents: number;
   chainLinks: number;
-  avgLatencyMs: number;
-  // vendor side (the gate fronting the world's API)
+  // vendor side (the gate fronting the world's API), from persisted receipts
   revenue: string; // decimal USDC the gate has settled
   quoted: number;
   gateRefused: number;
+
+  // ── since this process booted: feed- and mock-ledger-derived ──────────────
+  /** Payer-side settlements the indexer confirmed against the mock ledger. */
+  settled: number;
+  settledValue: string;
+  shadow: number;
+  shadowValue: string;
+  avgLatencyMs: number;
   // custody tier
   sigReleased: number;
   sigRefused: number;

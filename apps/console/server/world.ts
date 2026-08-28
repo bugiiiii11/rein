@@ -611,29 +611,38 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   }
 
   function computeStats(): Stats {
-    const decisions = feed.filter((f) => f.kind === 'decision');
+    // All-time counters read the DURABLE audit chain, not the feed. The feed is
+    // this process's telemetry, so deriving decision counts from it made a
+    // resumed world report 0 decisions beside 11 chain links — the same
+    // number, from the same events, disagreeing with itself. One source.
+    const chain = engine.decisions();
+    const outcomes = (o: Decision['outcome']) => chain.filter((d) => d.outcome === o).length;
+    // Since-boot counters stay on the feed: these have no durable reading to
+    // restore (see Stats). Latency is this process's calls by definition.
+    const decisionItems = feed.filter((f) => f.kind === 'decision');
     const settled = feed.filter((f) => f.kind === 'settled');
     const shadow = feed.filter((f) => f.kind === 'shadow');
-    const latencies = decisions
+    const latencies = decisionItems
       .map((d) => d.latencyMs)
       .filter((n): n is number => typeof n === 'number');
     const avg = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0;
     const gateStats = gate.stats();
     return {
-      decisions: decisions.length,
-      allow: decisions.filter((d) => d.outcome === 'allow').length,
-      deny: decisions.filter((d) => d.outcome === 'deny').length,
-      escalate: decisions.filter((d) => d.outcome === 'escalate').length,
-      settled: settled.length,
-      shadow: shadow.length,
-      settledValue: sumDecimal(settled.map((s) => s.amount ?? '0')),
-      shadowValue: sumDecimal(shadow.map((s) => s.amount ?? '0')),
+      decisions: chain.length,
+      allow: outcomes('allow'),
+      deny: outcomes('deny'),
+      escalate: outcomes('escalate'),
       agents: engine.agents.list().length,
-      chainLinks: engine.decisions().length,
-      avgLatencyMs: Math.round(avg * 1000) / 1000,
+      chainLinks: chain.length,
       revenue: sumDecimal(Object.values(gateStats.revenue)),
       quoted: gateStats.quoted,
       gateRefused: gateStats.refused,
+
+      settled: settled.length,
+      settledValue: sumDecimal(settled.map((s) => s.amount ?? '0')),
+      shadow: shadow.length,
+      shadowValue: sumDecimal(shadow.map((s) => s.amount ?? '0')),
+      avgLatencyMs: Math.round(avg * 1000) / 1000,
       sigReleased: feed.filter((f) => f.kind === 'signature').length,
       sigRefused: feed.filter((f) => f.kind === 'sig-refused').length,
     };

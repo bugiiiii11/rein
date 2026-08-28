@@ -192,39 +192,53 @@ describe('key rotation across boots', () => {
   });
 });
 
-describe('known gap: the headline stats are feed-derived', () => {
-  it('zeroes the per-process counters on resume while the durable ones carry over', () => {
-    // computeStats() reads decisions/settled/shadow/signature counts off `feed`,
-    // which is deliberately per-process. The result is a Stats object that
-    // contradicts ITSELF after a restart — 0 decisions beside 11 chain links,
-    // $0 settled beside $0.07 of gate revenue for the same 7 receipts, which
-    // the Gate panel renders in full next to it.
-    //
-    // Nothing failed to persist: the world logs "resumed 11 decisions, 9
-    // reputation subjects, 3 agents, 1 signer sessions, 7 gate receipts" on the
-    // boot these snapshots come from. It is a projection gap, not a
-    // persistence one.
-    //
-    // Pinned deliberately rather than asserted-as-correct: fixing it SHOULD
-    // break this test and force the call on which counters are cumulative and
-    // which are per-process. Not all of them are the same — avgLatencyMs
-    // measures this process's calls, and shadow spends are detected against a
-    // mock ledger that is itself ephemeral, so those two have no durable
-    // reading to restore.
-    for (const k of ['decisions', 'allow', 'deny', 'settled', 'shadow'] as const) {
-      expect(first.stats[k]).toBeGreaterThan(0);
-      expect(resumed.stats[k]).toBe(0);
-    }
+describe('the two stat windows', () => {
+  it('all-time counters survive the restart and agree with each other', () => {
+    // The bug this replaces: decision counts were read off the ephemeral feed,
+    // so a resumed console rendered "0 decisions" beside "11 chain links" —
+    // the same events, from the same store, contradicting themselves. They now
+    // share one source (the signed chain), so they cannot drift apart.
+    expect(resumed.stats.decisions).toBe(first.stats.decisions);
+    expect(resumed.stats.decisions).toBe(resumed.stats.chainLinks);
+    expect(resumed.stats.allow).toBe(first.stats.allow);
+    expect(resumed.stats.deny).toBe(first.stats.deny);
+    expect(resumed.stats.escalate).toBe(0);
+    // The parts still account for the whole after a restart.
+    expect(resumed.stats.allow + resumed.stats.deny + resumed.stats.escalate).toBe(
+      resumed.stats.decisions,
+    );
+    expect(resumed.stats.agents).toBe(first.stats.agents);
+    // Vendor-side counters come from persisted receipts, not the feed.
+    expect(resumed.stats.revenue).toBe(first.stats.revenue);
+    expect(resumed.stats.quoted).toBe(first.stats.quoted);
+    expect(resumed.stats.gateRefused).toBe(first.stats.gateRefused);
+  });
+
+  it('since-boot counters reset, because they have no durable reading', () => {
+    // Not an oversight: shadow spends are reconciled against a mock ledger that
+    // is rebuilt empty each boot, signer refusals are events rather than state,
+    // and avgLatencyMs times calls THIS process made. Zero is the honest answer
+    // for a fresh process, which is why the KPI tiles label these "this boot".
+    expect(first.stats.settled).toBe(7);
+    expect(first.stats.shadow).toBe(1);
+    expect(resumed.stats.settled).toBe(0);
+    expect(resumed.stats.shadow).toBe(0);
     expect(Number(resumed.stats.settledValue)).toBe(0);
     expect(Number(resumed.stats.shadowValue)).toBe(0);
     expect(resumed.stats.sigReleased).toBe(0);
     expect(resumed.stats.sigRefused).toBe(0);
+    expect(resumed.stats.avgLatencyMs).toBe(0);
+    // The durable vendor-side view still carries that money, so the settlement
+    // history is never actually lost — only this window's count of it.
+    expect(resumed.gate.settled).toBe(7);
+    expect(Number(resumed.gate.revenue)).toBeCloseTo(0.07);
+  });
 
-    // The same object's durable fields disagree with all of the above.
-    expect(resumed.stats.chainLinks).toBe(11);
-    expect(resumed.stats.agents).toBe(3);
-    expect(resumed.stats.revenue).toBe(first.stats.revenue);
-    expect(resumed.stats.quoted).toBe(first.stats.quoted);
-    expect(resumed.stats.gateRefused).toBe(first.stats.gateRefused);
+  it('a since-boot counter climbs from zero as the resumed world works', () => {
+    // The ping is the only decision this process made, so the two windows are
+    // legible side by side: 1 this boot, 12 all-time.
+    expect(afterPing.stats.settled + afterPing.stats.shadow).toBeGreaterThanOrEqual(0);
+    expect(afterPing.feed.filter((f) => f.kind === 'decision')).toHaveLength(1);
+    expect(afterPing.stats.decisions).toBe(first.stats.decisions + 1);
   });
 });
