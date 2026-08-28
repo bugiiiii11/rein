@@ -61,3 +61,46 @@ const server = createServer(async (req, res) => {
 
 const port = Number(process.env.PORT ?? 4173);
 server.listen(port, () => console.log(`[rein] console on http://localhost:${port}`));
+
+/**
+ * Graceful shutdown. Container runtimes (Railway included) stop a deploy with
+ * SIGTERM, and `world.close()` is the only thing that drains the write-behind
+ * tail. Persist-then-cache state — signer sessions, spend, revocations, gate
+ * replay slots — is already acknowledged on disk and safe either way; what
+ * dies with an un-drained process is up to 30s of gate receipts and reputation
+ * evidence, everything since the last maintenance flush. Ephemerally that is
+ * invisible. On a volume it is permanent, silent data loss on every redeploy.
+ *
+ * Order matters: `server.close()` alone would HANG here, because it waits for
+ * open connections to end and the console's SSE streams never do. Stop
+ * accepting, cut the streams, and only then drain the store.
+ */
+let closing = false;
+const shutdown = async (signal: string): Promise<void> => {
+  if (closing) return; // a second signal must not race the first drain
+  closing = true;
+  console.log(`[rein] ${signal} received — draining the store`);
+
+  // Backstop: never let a wedged store hold the container open past the
+  // runtime's kill deadline, which would turn a flush into a SIGKILL anyway.
+  const abandon = setTimeout(() => {
+    console.error('[rein] drain timed out after 10s — exiting with data possibly unflushed');
+    process.exit(1);
+  }, 10_000);
+  abandon.unref();
+
+  try {
+    server.close();
+    server.closeAllConnections();
+    await world.close();
+    clearTimeout(abandon);
+    console.log('[rein] store drained, exiting cleanly');
+    process.exit(0);
+  } catch (err) {
+    console.error('[rein] drain failed (unflushed telemetry may be lost):', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 
 /**
@@ -143,8 +144,17 @@ ALTER TABLE gate_replays
   ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
 `;
 
-/** Open (or create) the PGlite database and ensure the schema exists. */
+/**
+ * Open (or create) the PGlite database and ensure the schema exists.
+ *
+ * The parent directories are created first because PGlite's own `mkdirSync` is
+ * NOT recursive: it creates the leaf and throws ENOENT if the parent is
+ * missing. That turns an ordinary deploy setting — a data dir nested more than
+ * one level below a mounted volume — into a boot crash, and under a container
+ * restart policy into a crash-loop whose cause is buried in the logs.
+ */
 export async function openDb(dir?: string): Promise<PGlite> {
+  if (dir) await mkdir(dir, { recursive: true });
   const db = dir ? new PGlite(dir) : new PGlite();
   await db.waitReady;
   await db.exec(SCHEMA);

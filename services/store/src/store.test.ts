@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
@@ -52,6 +52,22 @@ afterAll(async () => {
 });
 
 describe('openReinStore', () => {
+  it('creates the data directory, parents included', async () => {
+    // The deploy shape this guards: a data dir nested more than one level
+    // below a mounted volume. PGlite's own mkdir is not recursive, so without
+    // this the store throws ENOENT on boot — which under a container restart
+    // policy is a crash-loop, not a readable error.
+    const nested = join(tempDir(), 'volume', 'rein', 'console');
+    const store = await open(nested);
+    expect(store.fresh).toBe(true);
+    expect(existsSync(nested)).toBe(true);
+
+    // And it is a real database, not just a directory that got made.
+    await store.close();
+    const resumed = await open(nested);
+    expect(resumed.fresh).toBe(false);
+  });
+
   it('is fresh exactly once per data directory', async () => {
     const dir = tempDir();
     const first = await open(dir);
