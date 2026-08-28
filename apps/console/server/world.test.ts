@@ -120,11 +120,21 @@ describe('boot scenario fingerprint', () => {
     expect(shady!.score).toBeLessThan(40);
     expect(good!.synced).toBe(true);
     expect(shady!.synced).toBe(true);
-    // The world's own vendor only has same-day evidence — confidence-discounted,
-    // so its score is never pushed into enforcement on boot day.
+    // The world's own vendor is born on boot day, so `age` caps its confidence
+    // at 0.4 x depth no matter how busy the scenario is — that age ceiling is
+    // the fairness mechanism, and it is what this pins.
+    //
+    // `synced` is deliberately NOT asserted: the vendor lands on 14 same-day
+    // observations = confidence 0.30136 against a 0.3 floor, so it is barely
+    // ELIGIBLE, and scheduleSync() debounces the push by 250ms — whether the
+    // last sync fired before or after the final beat is machine speed. It held
+    // on ubuntu and flipped on windows CI (run 32165285924). Pin the mechanism,
+    // not a boundary outcome.
     const own = vendor('api.data.test');
     expect(own).toBeDefined();
-    expect(own!.synced).toBe(false);
+    expect(Date.parse(own!.firstSeen)).toBeGreaterThan(Date.now() - 60 * 60 * 1000);
+    expect(own!.confidence).toBeLessThan(0.41);
+    expect(good!.confidence).toBeGreaterThan(own!.confidence + 0.3);
     const offender = boot.graph.agents.find(
       (a) => a.id === '0xdefec7ed0000000000000000000000000000d00d',
     );
