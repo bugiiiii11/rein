@@ -9,6 +9,7 @@ import {
   sumDecimal,
   mulDecimal,
   globMatchAny,
+  resourcePathOf,
 } from '@reinconsole/core';
 
 /**
@@ -76,6 +77,12 @@ export function conditionMatches(
   }
 
   if (cond.vendorHostIn && !globMatchAny(cond.vendorHostIn, intent.vendor.host)) return false;
+
+  // Patterns are path globs; a vendor-declared full-URL resource is reduced
+  // to its pathname first so both shapes match identically.
+  if (cond.resourceIn && !globMatchAny(cond.resourceIn, resourcePathOf(intent.resource))) {
+    return false;
+  }
 
   if (
     cond.vendorFirstSeen !== undefined &&

@@ -26,6 +26,14 @@ export const Condition = z
     txCount: z.object({ window: Window, gt: z.number().int().nonnegative() }).optional(),
     /** Vendor host matches one of these patterns (supports `*` globs). */
     vendorHostIn: z.array(z.string()).optional(),
+    /**
+     * Resource PATH matches one of these patterns (supports `*` globs, e.g.
+     * "/v1/reports/*"). A full-URL resource is reduced to its pathname before
+     * matching (see `resourcePathOf`), so the same pattern works whether the
+     * vendor declares "https://api.x.com/v1/answer" or "/v1/answer". Pair
+     * with `vendorHostIn` to scope a path rule to specific vendors.
+     */
+    resourceIn: z.array(z.string()).optional(),
     /** First time Rein has seen this vendor for the agent. */
     vendorFirstSeen: z.boolean().optional(),
     /** Vendor reputation score is below this threshold (Phase 3 hook). */

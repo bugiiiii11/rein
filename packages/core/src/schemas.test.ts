@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { newId } from './ulid.js';
 import { Agent } from './agent.js';
-import { PaymentIntent } from './intent.js';
+import { PaymentIntent, resourcePathOf } from './intent.js';
 import { Decision } from './decision.js';
 import { ReinEvent } from './events.js';
 
@@ -64,6 +64,21 @@ describe('PaymentIntent schema', () => {
       createdAt: new Date(),
     };
     expect(PaymentIntent.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe('resourcePathOf', () => {
+  it('reduces a vendor-declared full URL to its pathname, dropping the query', () => {
+    expect(resourcePathOf('https://api.vendor.com/v1/answer?q=x')).toBe('/v1/answer');
+    expect(resourcePathOf('http://api.vendor.com/v1/answer')).toBe('/v1/answer');
+  });
+
+  it('passes bare paths and non-http shapes through untouched', () => {
+    expect(resourcePathOf('/v1/answer')).toBe('/v1/answer');
+    expect(resourcePathOf('v1/answer')).toBe('v1/answer');
+    // A parseable non-http scheme is NOT reduced — only http(s) URLs carry
+    // the full-URL resource shape the x402 spec describes.
+    expect(resourcePathOf('urn:isbn:0451450523')).toBe('urn:isbn:0451450523');
   });
 });
 

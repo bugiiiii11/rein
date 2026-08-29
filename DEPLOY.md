@@ -159,6 +159,11 @@ Those last two lines are the proof the drain ran. **They appear in the OUTGOING
 deployment's log, never the incoming one** — Railway logs each deployment separately,
 so looking at the Active deployment for shutdown evidence always comes up empty.
 
+**Confirmed in production 2026-08-29:** a Railway redeploy's outgoing log showed the
+full sequence — boot, `resumed ... 7 gate receipts`, both drain lines, `Stopping
+Container` — with no "crashed" status. The local container matrix above matches the
+real deploy exactly.
+
 Ordering matters and is easy to get wrong: `server.close()` on its own waits for open
 connections to end, and the console's SSE streams never do, so it must be paired with
 `closeAllConnections()` before draining. A 10s backstop force-exits rather than let a

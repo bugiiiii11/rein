@@ -18,9 +18,20 @@ export const transferWithAuthorizationTypes = {
   ],
 } as const;
 
+/**
+ * The slice of a wallet the payer needs: an address plus EIP-712 typed-data
+ * signing. Any viem local account satisfies it — including hosted wallet
+ * providers bridged through viem's `toAccount` (Coinbase CDP server wallets,
+ * Privy, Turnkey, ...), which keeps custody with the provider while the
+ * payer never sees a key.
+ */
+export type PayerAccount = Pick<LocalAccount, 'address' | 'signTypedData'>;
+
 export interface X402PayerOptions {
-  /** The agent wallet's private key (a local account; never leaves the process). */
-  privateKey: Hex;
+  /** The agent wallet's private key (a local account; never leaves the process). Exactly one of privateKey/account. */
+  privateKey?: Hex;
+  /** An already-constructed signer, e.g. `toAccount(cdpAccount)`. Exactly one of privateKey/account. */
+  account?: PayerAccount;
   /** How far into the past validAfter reaches, absorbing clock skew. */
   validAfterSkewSeconds?: number;
   /** validBefore window when the requirement omits maxTimeoutSeconds. */
@@ -34,12 +45,21 @@ export interface X402PayerOptions {
  * requirement's token (EIP-712, fully offline — no RPC) and returns the v1
  * X-PAYMENT header. Gasless for the agent: the facilitator submits the tx.
  *
+ * The wallet is either a raw private key (local custody) or an injected
+ * `PayerAccount` (provider custody — CDP, Privy, Turnkey via `toAccount`);
+ * the envelope is identical either way.
+ *
  * The authorization nonce is derived from the intent id, which is what lets
  * the on-chain indexer reconcile the settlement back to the decision that
  * allowed it (see nonce.ts).
  */
 export function createX402Payer(options: X402PayerOptions): Payer {
-  const account: LocalAccount = privateKeyToAccount(options.privateKey);
+  if (options.account !== undefined && options.privateKey !== undefined) {
+    throw new TypeError('createX402Payer takes privateKey or account, not both');
+  }
+  const account: PayerAccount =
+    options.account ??
+    (options.privateKey !== undefined ? privateKeyToAccount(options.privateKey) : missingWallet());
   const skew = options.validAfterSkewSeconds ?? 600;
   const defaultTimeout = options.defaultTimeoutSeconds ?? 300;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
@@ -89,6 +109,11 @@ export function createX402Payer(options: X402PayerOptions): Payer {
       payload: { signature, authorization },
     });
   };
+}
+
+/** A payer without a wallet cannot exist — surface it at construction, not first payment. */
+function missingWallet(): never {
+  throw new TypeError('createX402Payer needs a wallet: pass privateKey or account');
 }
 
 /** EIP-712 domain name/version travel in requirement.extra (per the v1 spec). */

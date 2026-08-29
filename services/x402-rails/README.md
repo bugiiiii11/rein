@@ -28,6 +28,22 @@ import {
 - **The hosted facilitator, for free.** `FacilitatorClient` speaks the x402.org dialect (`DEFAULT_FACILITATOR_URL`, no API key). The same client powers [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate)'s real-rails settlement via `facilitatorClientRails`.
 - **Wire schemas included** — payment payloads, verify/settle responses, header codecs; all zod-validated.
 
+## Bring your own wallet (Coinbase CDP, Privy, Turnkey, ...)
+
+`createX402Payer` takes either a raw `privateKey` (local custody) or an injected `account` — anything with a viem account's `address` + `signTypedData`, which every major wallet provider produces via viem's `toAccount` bridge. Custody stays with the provider; the payer never sees a key, and the signed envelope is byte-identical to the local-custody path.
+
+```ts
+import { CdpClient } from '@coinbase/cdp-sdk';
+import { toAccount } from 'viem/accounts';
+import { createX402Payer } from '@reinconsole/x402-rails';
+
+const cdp = new CdpClient(); // reads CDP_API_KEY_ID / CDP_API_KEY_SECRET / CDP_WALLET_SECRET
+const wallet = await cdp.evm.getOrCreateAccount({ name: 'my-agent' });
+
+const payer = createX402Payer({ account: toAccount(wallet) });
+// createGuard({ ..., payer }) — every payment now signs inside CDP, governed by Rein policy.
+```
+
 Behind a TLS-intercepting proxy or antivirus, point Node at your local root CA (`NODE_EXTRA_CA_CERTS`) before any live run.
 
 The [monorepo](https://github.com/bugiiiii11/rein)'s Sepolia demos run this end to end — a guarded $0.01 payment settled on-chain, then a guard-bypassing payment caught by the indexer.

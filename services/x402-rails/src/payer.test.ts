@@ -126,4 +126,30 @@ describe('createX402Payer', () => {
       RailsError,
     );
   });
+
+  it('produces the identical envelope through an injected account', async () => {
+    // The provider-custody path (CDP/Privy/Turnkey via toAccount) must be
+    // byte-identical to local custody — same key, same intent, same header.
+    const viemAccount = privateKeyToAccount(KEY);
+    // Structural, not instanceof: mimic a provider bridge that only offers
+    // the two members the payer is allowed to depend on.
+    const injected = createX402Payer({
+      account: {
+        address: viemAccount.address,
+        signTypedData: (params) => viemAccount.signTypedData(params),
+      },
+      now: () => NOW,
+    });
+    const paid = intent();
+    expect(await injected(requirement(), paid, decision)).toBe(
+      await payer(requirement(), paid, decision),
+    );
+  });
+
+  it('rejects a wallet-less or doubly-walleted construction upfront', () => {
+    expect(() => createX402Payer({ now: () => NOW })).toThrowError(TypeError);
+    expect(() =>
+      createX402Payer({ privateKey: KEY, account: privateKeyToAccount(KEY), now: () => NOW }),
+    ).toThrowError(TypeError);
+  });
 });

@@ -175,6 +175,50 @@ describe('policyApplies', () => {
   });
 });
 
+describe('evaluate — per-URL (resourceIn) targeting', () => {
+  const pathPolicy = Policy.parse({
+    policyId: 'pol_paths',
+    rules: [
+      // The docs' motivating case: same vendor, one expensive endpoint gated.
+      { id: 'expensive-endpoint', escalate: { resourceIn: ['/v1/reports/*'], amountGt: '0.50' } },
+      { id: 'cheap-endpoints', allow: { resourceIn: ['/v1/*'] } },
+    ],
+    default: 'deny',
+  });
+
+  it('discriminates endpoints on the same vendor host', () => {
+    const cheap = evaluate(intent({ resource: '/v1/answer' }), [pathPolicy], ctx());
+    expect(cheap.outcome).toBe('allow');
+    expect(cheap.matchedRules).toEqual(['cheap-endpoints']);
+
+    const expensive = evaluate(
+      intent({ resource: '/v1/reports/annual', amount: '0.75' }),
+      [pathPolicy],
+      ctx(),
+    );
+    expect(expensive.outcome).toBe('escalate');
+    expect(expensive.matchedRules).toEqual(['expensive-endpoint']);
+  });
+
+  it('matches a vendor-declared full-URL resource with the same path pattern', () => {
+    // x402 vendors put a full URL in requirement.resource; the guard falls
+    // back to the pathname. Both shapes must hit the same rule.
+    const r = evaluate(
+      intent({ resource: 'https://api.example.com/v1/reports/annual?year=2026', amount: '0.75' }),
+      [pathPolicy],
+      ctx(),
+    );
+    expect(r.outcome).toBe('escalate');
+    expect(r.matchedRules).toEqual(['expensive-endpoint']);
+  });
+
+  it('falls through to the policy default off the matched paths', () => {
+    const r = evaluate(intent({ resource: '/v2/other' }), [pathPolicy], ctx());
+    expect(r.outcome).toBe('deny');
+    expect(r.matchedRules).toEqual([]);
+  });
+});
+
 describe('evaluate with label targeting', () => {
   const labelPolicy = Policy.parse({
     policyId: 'p_research',

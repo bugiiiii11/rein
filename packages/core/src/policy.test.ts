@@ -52,6 +52,10 @@ describe('Condition schema', () => {
     expect(Condition.safeParse({}).success).toBe(false);
   });
 
+  it('accepts resourceIn as a condition\'s only predicate', () => {
+    expect(Condition.safeParse({ resourceIn: ['/v1/reports/*'] }).success).toBe(true);
+  });
+
   it('validates window and multiplier formats', () => {
     expect(Condition.safeParse({ rollingSum: { window: '24h', gt: '5' } }).success).toBe(true);
     expect(Condition.safeParse({ rollingSum: { window: '24', gt: '5' } }).success).toBe(false);

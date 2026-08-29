@@ -38,3 +38,22 @@ export const PaymentIntent = z.object({
   createdAt: z.coerce.date(),
 });
 export type PaymentIntent = z.infer<typeof PaymentIntent>;
+
+/**
+ * Reduce an intent's `resource` to its path for policy matching. The value is
+ * vendor-declared and shape-varies: the x402 spec puts a full URL in
+ * `requirement.resource`, while the guard falls back to the request pathname
+ * when the vendor omits it. Policies match on the PATH so authors never need
+ * to know which shape a vendor emits; host targeting stays with
+ * `vendorHostIn`, which is derived from the real request URL rather than the
+ * vendor's own claim. Query strings do not survive the reduction.
+ */
+export function resourcePathOf(resource: string): string {
+  try {
+    const url = new URL(resource);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.pathname;
+  } catch {
+    // Not a URL — already a bare path.
+  }
+  return resource;
+}

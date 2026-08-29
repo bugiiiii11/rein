@@ -28,6 +28,7 @@ export {
   createX402Payer,
   transferWithAuthorizationTypes,
   type X402PayerOptions,
+  type PayerAccount,
 } from './payer.js';
 export {
   FacilitatorClient,
