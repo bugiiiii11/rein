@@ -16,6 +16,22 @@ RUN pnpm install --frozen-lockfile \
  && pnpm rebuild esbuild \
  && pnpm exec turbo run build --filter=@reinconsole/console
 
+# Must stay AFTER the install above: set earlier, pnpm skips devDependencies and tsx —
+# which the start command runs — is not in the image.
 ENV NODE_ENV=production
+
 # standalone.ts serves apps/console/dist + the console API/SSE on $PORT (Railway injects PORT).
-CMD ["pnpm", "--filter", "@reinconsole/console", "start"]
+#
+# Invokes node directly instead of `pnpm --filter ... start`. That is the whole shutdown
+# fix: pnpm does not forward SIGTERM to the node it spawns, so the graceful drain in
+# standalone.ts never ran, however correct its code was. Verified in this image — the
+# pnpm form is SIGKILLed (exit 137, no drain lines), this form exits 0 after draining.
+#
+# Keep it in exec (JSON) form and do NOT prefix it with `exec`. Railway runs a start
+# command as argv, not through a shell, so a leading `exec` is looked up as a BINARY and
+# the container never starts — an outage, versus a lost flush.
+#
+# railway.json MUST keep an equivalent `startCommand`. Removing it does NOT fall back to
+# this CMD — Railway substituted its own inferred pnpm command, which is what took the
+# site down for ~15 min in S36 (`No projects matched the filters in "/app"`).
+CMD ["node", "apps/console/node_modules/tsx/dist/cli.mjs", "apps/console/server/standalone.ts"]

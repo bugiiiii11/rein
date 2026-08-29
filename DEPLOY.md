@@ -93,6 +93,27 @@ next to non-zero gate revenue is correct, not a bug.
 Session-agent private keys are never persisted: the world rotates them at boot by
 design, and identity linking keeps one reputation across the rotation.
 
+## The start command is load-bearing (read before editing `railway.json`)
+
+Two facts about how Railway starts this container, both learned the expensive way:
+
+**1. The start command is run as argv, NOT through a shell.** For Dockerfile/image
+deploys Railway execs it directly and it overrides the image's `ENTRYPOINT`. So it
+must not be prefixed with `exec` — there is no shell to replace, `exec` is looked up
+as a binary, and the container never starts. (Railway's own escape hatch for env-var
+expansion is to write the whole thing as `/bin/sh -c "exec ..."`, which we do not
+need: `standalone.ts` reads `PORT` from the environment itself.)
+
+**2. Deleting `startCommand` does NOT fall back to the Dockerfile `CMD`.** Railway
+substitutes its own inferred pnpm command instead. That is what caused the S36
+outage: the deploy log was one line, `No projects matched the filters in "/app"`,
+the container never started, and app.reinconsole.com returned 502 for ~15 minutes.
+Keep `startCommand` set, and keep it equal to the Dockerfile `CMD`.
+
+Note also that **every push to `main` auto-deploys**, and with a volume attached
+Railway stops the old container before starting the new one — so a bad start command
+is real downtime, not a failed deploy that quietly rolls back.
+
 ## Shutdown
 
 `standalone.ts` handles SIGTERM/SIGINT and drains the store before exiting, because
@@ -100,6 +121,43 @@ design, and identity linking keeps one reputation across the rotation.
 cache state (signer sessions, spend, revocations, gate replay slots) is acknowledged
 on disk and safe regardless; what an un-drained exit loses is up to 30 seconds of
 gate receipts and reputation evidence — everything since the last maintenance flush.
+
+### Why it must not start via pnpm
+
+Through S36 the drain never actually ran in production, and the cause was upstream of
+its code: the container started via `pnpm --filter @reinconsole/console start`, which
+makes **pnpm** the signalled process and node its child. pnpm does not forward
+SIGTERM, so node never saw it and was SIGKILLed after the grace period. One cause,
+three symptoms: no drain lines in any deployment's log, a brief **"crashed"** status
+on every ordinary redeploy (non-zero exit), and a healthy new container seconds later.
+
+The start command therefore invokes node directly. Measured in the real image
+(S37, `docker build` + `docker stop`):
+
+| Start command | Exit | Drain |
+|---------------|------|-------|
+| `pnpm --filter @reinconsole/console start` | non-zero (1, or 137 once SIGKILLed) | none |
+| `node apps/console/node_modules/tsx/dist/cli.mjs apps/console/server/standalone.ts` | 0 | drained in <1s |
+
+Either non-zero exit is what a platform reports as "crashed"; neither writes a drain
+line. Both forms serve traffic identically, which is why this hid for so long.
+
+Note that the app is still not literally PID 1: **tsx re-spawns it as a child**, so
+the boot line reports something like `pid 17`. That is expected and fine — tsx does
+forward the signal. "Is the app PID 1?" is the wrong question; the right one is
+whether anything in the chain swallows SIGTERM. pnpm does, tsx does not.
+
+The boot line prints the pid for exactly this reason:
+
+```
+[rein] console on http://localhost:8080 (pid 17)
+[rein] SIGTERM received — draining the store
+[rein] store drained, exiting cleanly
+```
+
+Those last two lines are the proof the drain ran. **They appear in the OUTGOING
+deployment's log, never the incoming one** — Railway logs each deployment separately,
+so looking at the Active deployment for shutdown evidence always comes up empty.
 
 Ordering matters and is easy to get wrong: `server.close()` on its own waits for open
 connections to end, and the console's SSE streams never do, so it must be paired with

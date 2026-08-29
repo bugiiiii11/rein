@@ -60,7 +60,18 @@ const server = createServer(async (req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4173);
-server.listen(port, () => console.log(`[rein] console on http://localhost:${port}`));
+server.listen(port, () =>
+  // The pid is diagnostic, not decorative: the drain below only ever runs if the
+  // signal actually reaches THIS process. Started via `pnpm ... start`, node is a
+  // child, pnpm does not forward SIGTERM, and the drain is dead code — which is
+  // exactly what happened in production until S37.
+  //
+  // Do NOT read this as "must be pid 1". tsx re-spawns the app in a child of its
+  // own, so a correct container still reports something like pid 17. The question
+  // is never who is pid 1, it is whether anything in the chain swallows SIGTERM.
+  // The honest check is the pair of drain lines in the shutdown handler below.
+  console.log(`[rein] console on http://localhost:${port} (pid ${process.pid})`),
+);
 
 /**
  * Graceful shutdown. Container runtimes (Railway included) stop a deploy with
