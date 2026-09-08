@@ -3,6 +3,7 @@ import {
   AgentId,
   Receipt,
   newId,
+  type ApprovalRequest,
   type Asset,
   type Decision,
   type PaymentIntent,
@@ -40,6 +41,11 @@ export type Payer = (
 export interface GuardOptions {
   /** Policy engine base URL, e.g. "http://localhost:8787". */
   engineUrl: string;
+  /**
+   * API-key secret for the engine. Required by any engine started with one;
+   * without it every call comes back 401 as an EngineError.
+   */
+  apiKey?: string;
   /** The agent this guard speaks for (must be registered with the engine). */
   agentId: string;
   /** Base fetch the guard wraps by default (vendor-facing). Defaults to global fetch. */
@@ -60,6 +66,23 @@ export interface GuardOptions {
   assetAddresses?: Record<string, Asset>;
   /** Called once per receipt, as it is recorded. */
   onReceipt?: (receipt: Receipt) => void;
+  /**
+   * What to do when policy escalates: by default nothing — the payment blocks
+   * immediately, exactly as a deny does, and a human can still approve it out
+   * of band. Set `await: true` and the guard holds the request open while it
+   * waits for a signed verdict, then proceeds on an approval or blocks on a
+   * rejection/expiry. Only ever wait where a stalled request is acceptable.
+   */
+  escalation?: EscalationOptions;
+}
+
+export interface EscalationOptions {
+  /** Hold the request open until the escalation resolves. Default: false. */
+  await?: boolean;
+  /** Stop waiting after this long, leaving the request pending. Default 5 min. */
+  timeoutMs?: number;
+  /** How often to re-read the parked request. Default 1s. */
+  pollMs?: number;
 }
 
 /**
@@ -87,7 +110,11 @@ export class Guard {
     this.options = options;
     const f = options.fetch ?? globalThis.fetch;
     this.baseFetch = (input, init) => f(input, init);
-    this.client = new EngineClient({ baseUrl: options.engineUrl, fetch: options.engineFetch });
+    this.client = new EngineClient({
+      baseUrl: options.engineUrl,
+      ...(options.apiKey ? { apiKey: options.apiKey } : {}),
+      ...(options.engineFetch ? { fetch: options.engineFetch } : {}),
+    });
   }
 
   /** Every receipt this guard has recorded, oldest first. */
@@ -133,12 +160,25 @@ export class Guard {
 
       const taskContext = this.task.getStore() ?? this.options.taskContext;
       const submission = toIntentSubmission(resolved, url, this.options.agentId, taskContext);
-      const { intent, decision } = await this.client.evaluate(submission);
+      const evaluated = await this.client.evaluate(submission);
+      const intent = evaluated.intent;
+      let decision = evaluated.decision;
+      let approval = evaluated.approval;
+
+      // An escalation is a question, not yet an answer. When the caller has
+      // opted into waiting, hold here until a signed verdict lands — the
+      // decision we continue with is then the engine's FOLLOW-UP decision, the
+      // one a signer will accept as a voucher.
+      if (decision.outcome === 'escalate' && approval && this.options.escalation?.await) {
+        const settled = await this.awaitEscalation(approval);
+        approval = settled.request;
+        if (settled.decision) decision = settled.decision;
+      }
 
       if (decision.outcome !== 'allow') {
         const receipt = this.record(intent, decision, url, init);
-        if (this.options.onBlocked === 'respond') return blockedResponse(receipt);
-        throw new PaymentBlockedError(intent, decision, receipt);
+        if (this.options.onBlocked === 'respond') return blockedResponse(receipt, approval);
+        throw new PaymentBlockedError(intent, decision, receipt, approval);
       }
 
       if (!this.options.payer) {
@@ -198,6 +238,21 @@ export class Guard {
     return receipt;
   }
 
+  /**
+   * Wait out a parked escalation. Never waits past the request's own TTL:
+   * after that instant the engine can only deny it, so continuing to poll
+   * would just be a slower block.
+   */
+  private async awaitEscalation(request: ApprovalRequest): Promise<ApprovalOutcome> {
+    const options = this.options.escalation ?? {};
+    const untilExpiry = Math.max(0, request.expiresAt.getTime() - Date.now()) + 1_000;
+    const view = await this.client.awaitApproval(request.decisionId, {
+      timeoutMs: Math.min(options.timeoutMs ?? 300_000, untilExpiry),
+      ...(options.pollMs !== undefined ? { pollMs: options.pollMs } : {}),
+    });
+    return { request: view.request, ...(view.decision ? { decision: view.decision } : {}) };
+  }
+
   private settlePending(url: string, res: Response): void {
     const receipt = this.pendingByUrl.get(url);
     if (!receipt || !res.ok) return;
@@ -205,6 +260,13 @@ export class Guard {
     if (settlement) receipt.settlement = settlement;
     this.pendingByUrl.delete(url);
   }
+}
+
+/** How a waited-on escalation came out. */
+interface ApprovalOutcome {
+  request: ApprovalRequest;
+  /** The follow-up allow/deny decision, absent while still pending. */
+  decision?: Decision;
 }
 
 /** Convenience factory mirroring the docs: `const guard = createGuard({...})`. */
@@ -317,7 +379,7 @@ function parseSettlement(res: Response): ReceiptSettlement | undefined {
   };
 }
 
-function blockedResponse(receipt: Receipt): Response {
+function blockedResponse(receipt: Receipt, approval?: ApprovalRequest): Response {
   return new Response(
     JSON.stringify({
       error: 'payment_blocked_by_rein',
@@ -326,6 +388,17 @@ function blockedResponse(receipt: Receipt): Response {
       intentId: receipt.intentId,
       decisionId: receipt.decisionId,
       receiptId: receipt.id,
+      // `pending` here means a signed verdict could still release this
+      // payment; anything else is final.
+      ...(approval
+        ? {
+            approval: {
+              status: approval.status,
+              decisionId: approval.decisionId,
+              expiresAt: approval.expiresAt.toISOString(),
+            },
+          }
+        : {}),
     }),
     {
       status: 402,

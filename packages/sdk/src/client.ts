@@ -1,20 +1,72 @@
 import { z } from 'zod';
-import { Agent, Decision, PaymentIntent, Policy } from '@reinconsole/core';
+import {
+  Agent,
+  ApiKey,
+  ApprovalChallenges,
+  ApprovalGrant,
+  ApprovalRequest,
+  ApproverKey,
+  Decision,
+  PaymentIntent,
+  Policy,
+  type ApiKeyScope,
+} from '@reinconsole/core';
 import { EngineError } from './errors.js';
 import type { IntentSubmission } from './x402.js';
 
 /** Any fetch-compatible function (global fetch, undici, or a test double). */
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-const Health = z.object({ status: z.string(), publicKey: z.string() });
-const EvaluateResponse = z.object({ intent: PaymentIntent, decision: Decision });
+const Health = z.object({
+  status: z.string(),
+  publicKey: z.string(),
+  /** "api-key" once the engine demands a credential; "none" while it does not. */
+  auth: z.string().optional(),
+  approvals: z.string().optional(),
+});
+
+const EvaluateResponse = z.object({
+  intent: PaymentIntent,
+  decision: Decision,
+  /** Present when an escalation was parked for a signed verdict. */
+  approval: ApprovalRequest.optional(),
+});
 export type EvaluateResponse = z.infer<typeof EvaluateResponse>;
+
+/** A parked escalation plus the bytes to sign and, once resolved, its decision. */
+const ApprovalView = z.object({
+  request: ApprovalRequest,
+  challenges: ApprovalChallenges,
+  /** The follow-up allow/deny decision, once the request has resolved. */
+  decision: Decision.optional(),
+});
+export type ApprovalView = z.infer<typeof ApprovalView>;
+
+const ResolveResponse = z.object({ request: ApprovalRequest, decision: Decision });
+export type ResolveResponse = z.infer<typeof ResolveResponse>;
+
+const IssuedApiKey = z.object({ key: ApiKey, secret: z.string() });
+export type IssuedApiKey = z.infer<typeof IssuedApiKey>;
 
 export interface EngineClientOptions {
   /** Base URL of the policy engine, e.g. "http://localhost:8787". */
   baseUrl: string;
+  /**
+   * API-key secret, sent as `Authorization: Bearer`. Required by any engine
+   * started with one; omit only for a local engine running without auth.
+   */
+  apiKey?: string;
   /** Override the transport (tests, custom agents). Defaults to global fetch. */
   fetch?: FetchLike;
+}
+
+export interface AwaitApprovalOptions {
+  /** Give up after this long and return the still-pending view. */
+  timeoutMs?: number;
+  /** How often to re-read the request. */
+  pollMs?: number;
+  /** Abort the wait early (an agent loop shutting down). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -24,11 +76,13 @@ export interface EngineClientOptions {
 export class EngineClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly apiKey: string | undefined;
 
   constructor(options: EngineClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     const f = options.fetch ?? globalThis.fetch;
     this.fetchImpl = (input, init) => f(input, init);
+    this.apiKey = options.apiKey;
   }
 
   private async request<T>(
@@ -37,10 +91,13 @@ export class EngineClient {
     schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     body?: unknown,
   ): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (!res.ok) {
       const payload = await res
@@ -96,4 +153,93 @@ export class EngineClient {
   decisions(): Promise<Decision[]> {
     return this.request('GET', '/v1/decisions', z.array(Decision));
   }
+
+  // --- API keys (admin scope) ---
+
+  /** Mint a key. The secret in the response is the only copy that will exist. */
+  issueApiKey(input: { name: string; scopes: ApiKeyScope[] }): Promise<IssuedApiKey> {
+    return this.request('POST', '/v1/keys', IssuedApiKey, input);
+  }
+
+  listApiKeys(): Promise<ApiKey[]> {
+    return this.request('GET', '/v1/keys', z.array(ApiKey));
+  }
+
+  /**
+   * Mint a replacement secret. The outgoing one keeps working for `graceMs`
+   * (engine default: 1h) so callers can be redeployed one at a time; pass 0
+   * when the old secret is compromised and must die now.
+   */
+  rotateApiKey(keyId: string, options: { graceMs?: number } = {}): Promise<IssuedApiKey> {
+    return this.request('POST', `/v1/keys/${keyId}/rotate`, IssuedApiKey, options);
+  }
+
+  revokeApiKey(keyId: string): Promise<ApiKey> {
+    return this.request('POST', `/v1/keys/${keyId}/revoke`, ApiKey);
+  }
+
+  // --- Approvals ---
+
+  /** Register the PUBLIC half of an approver key. The private half never travels. */
+  registerApprover(input: { orgId: string; name: string; publicKey: string }): Promise<ApproverKey> {
+    return this.request('POST', '/v1/approvers', ApproverKey, input);
+  }
+
+  listApprovers(): Promise<ApproverKey[]> {
+    return this.request('GET', '/v1/approvers', z.array(ApproverKey));
+  }
+
+  revokeApprover(keyId: string): Promise<ApproverKey> {
+    return this.request('POST', `/v1/approvers/${keyId}/revoke`, ApproverKey);
+  }
+
+  /** Every escalation still answerable right now. */
+  pendingApprovals(): Promise<ApprovalRequest[]> {
+    return this.request('GET', '/v1/approvals', z.array(ApprovalRequest));
+  }
+
+  /** One escalation, with the exact bytes to sign for each verdict. */
+  approval(decisionId: string): Promise<ApprovalView> {
+    return this.request('GET', `/v1/approvals/${decisionId}`, ApprovalView);
+  }
+
+  /**
+   * Submit a signed verdict. The signature is the authority — this call can be
+   * made by anyone, from anywhere, including a relay that never sees a key.
+   */
+  resolveApproval(grant: ApprovalGrant): Promise<ResolveResponse> {
+    const { decisionId, ...body } = ApprovalGrant.parse(grant);
+    return this.request('POST', `/v1/approvals/${decisionId}/resolve`, ResolveResponse, body);
+  }
+
+  /**
+   * Poll until an escalation resolves, times out, or the caller aborts. The
+   * returned view is whatever was true when polling stopped — a caller must
+   * check `request.status` rather than assume it resolved.
+   */
+  async awaitApproval(
+    decisionId: string,
+    options: AwaitApprovalOptions = {},
+  ): Promise<ApprovalView> {
+    const pollMs = options.pollMs ?? 1_000;
+    const deadline = Date.now() + (options.timeoutMs ?? 300_000);
+    for (;;) {
+      const view = await this.approval(decisionId);
+      if (view.request.status !== 'pending') return view;
+      if (options.signal?.aborted || Date.now() + pollMs > deadline) return view;
+      await sleep(pollMs, options.signal);
+    }
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, ms);
+    function done(): void {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    }
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }

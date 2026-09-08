@@ -1,4 +1,10 @@
-export { PolicyEngine, IntentInput, type EvaluateOutput, type EngineStores } from './engine.js';
+export {
+  PolicyEngine,
+  IntentInput,
+  type EvaluateOutput,
+  type ResolveOutput,
+  type EngineStores,
+} from './engine.js';
 export {
   evaluate,
   conditionMatches,
@@ -26,4 +32,44 @@ export {
 } from './stores.js';
 // Re-exported from @reinconsole/core (moved there so @reinconsole/gate shares the matcher).
 export { globMatch, globMatchAny } from '@reinconsole/core';
-export { buildServer } from './server.js';
+export {
+  buildServer,
+  requiredScope,
+  authFromEnv,
+  approvalsFromEnv,
+  resolveHost,
+  type ServerOptions,
+} from './server.js';
+export {
+  ApiKeyAuth,
+  AuthError,
+  InMemoryApiKeyStore,
+  hashSecret,
+  mintSecret,
+  readCredential,
+  DEFAULT_ROTATION_GRACE_MS,
+  type ApiKeyStorePort,
+  type AuthFailureCode,
+  type IssuedApiKey,
+  type ApiKeyAuthOptions,
+} from './auth.js';
+export {
+  ApprovalService,
+  ApprovalError,
+  InMemoryApprovalStore,
+  signApproval,
+  verifyApproval,
+  DEFAULT_ESCALATION_TTL_MS,
+  type ApprovalChannel,
+  type ApprovalStorePort,
+  type ApprovalFailureCode,
+  type ApprovalServiceOptions,
+  type VerifiedGrant,
+} from './approvals.js';
+export {
+  LoggingApprovalChannel,
+  TelegramApprovalChannel,
+  formatChallenge,
+  type LoggingChannelOptions,
+  type TelegramChannelOptions,
+} from './channels.js';

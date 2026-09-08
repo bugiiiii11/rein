@@ -1,4 +1,4 @@
-import type { Decision, PaymentIntent, Receipt } from '@reinconsole/core';
+import type { ApprovalRequest, Decision, PaymentIntent, Receipt } from '@reinconsole/core';
 
 /** Base class for everything the SDK throws, so callers can catch broadly. */
 export class ReinError extends Error {
@@ -20,19 +20,27 @@ export class EngineError extends ReinError {
 }
 
 /**
- * The engine evaluated the intent and did NOT allow it (deny or escalate —
- * v0.1 blocks both; escalation approval flows land later). The payment was
- * never constructed, so no funds moved. Carries the full evidence trail.
+ * The engine evaluated the intent and did NOT allow it. The payment was never
+ * constructed, so no funds moved. Carries the full evidence trail.
+ *
+ * When the outcome was `escalate`, `approval` carries the parked request — and
+ * its `status` says which kind of block this is: `pending` means a signed
+ * verdict could still release it (the guard stopped waiting, or was never
+ * asked to), while `rejected`/`expired` are final. An absent `approval` on an
+ * escalation means the engine has no approval tier at all: nothing can
+ * release it.
  */
 export class PaymentBlockedError extends ReinError {
   constructor(
     readonly intent: PaymentIntent,
     readonly decision: Decision,
     readonly receipt: Receipt,
+    readonly approval?: ApprovalRequest,
   ) {
     super(
       `rein blocked payment of ${intent.amount} ${intent.asset} to ${intent.vendor.host}: ` +
-        `${decision.outcome}${decision.reason ? ` (${decision.reason})` : ''}`,
+        `${decision.outcome}${decision.reason ? ` (${decision.reason})` : ''}` +
+        (approval ? ` [approval ${approval.status}]` : ''),
     );
   }
 }

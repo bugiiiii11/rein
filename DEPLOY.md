@@ -173,6 +173,32 @@ An unclean kill is still recoverable — PGlite resumes cleanly from a hard `Sto
 (verified locally, S36); the graceful path exists to save the last flush window, not to
 protect the database.
 
+## Access control (S40)
+
+The console's mutating routes -- `POST /api/agents/:id/(freeze|unfreeze|ping)` and
+`POST /api/demo/run` -- change the state of a live policy engine. As of S40 they are gated,
+and the posture is decided by the environment alone (`resolveConsolePosture`, tested):
+
+| Environment | Result |
+|---|---|
+| `REIN_CONSOLE_API_KEY=<secret>` | Writable; mutations need `Authorization: Bearer <secret>` |
+| `REIN_CONSOLE_READONLY=1` | Read-only, whatever else is set |
+| `REIN_CONSOLE_HOST=127.0.0.1` | Writable and open (local use) |
+| none of the above (a public bind) | **READ-ONLY**, with a startup warning |
+
+**What this means for the current Railway deploy:** nothing set, so the next deploy serves
+the dashboard exactly as before and answers `403 read_only` to freeze/unfreeze/ping/demo.
+The bind is unchanged (`0.0.0.0`), so healthchecks and the UI are unaffected. To restore the
+controls, set `REIN_CONSOLE_API_KEY` -- but note the console UI has no way to send it yet
+(roadmap A1b), so today that only helps a scripted caller. Read-only is the intended public
+posture anyway (roadmap E2).
+
+`GET /api/control` reports `{ writable, auth }` so a client can tell which it is talking to.
+
+The policy engine's standalone server has the stricter rule -- no `REIN_ENGINE_API_KEY` means
+it binds loopback only, and asking for a public bind without one is a startup error. It is not
+deployed on Railway today; if it ever is, it needs the key first.
+
 ## Verifying a deploy
 
 ```

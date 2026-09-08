@@ -8,11 +8,21 @@
  *   const fetch = guard.wrap();
  */
 
-export { Guard, createGuard, type GuardOptions, type Payer } from './guard.js';
+export {
+  Guard,
+  createGuard,
+  type GuardOptions,
+  type EscalationOptions,
+  type Payer,
+} from './guard.js';
 export {
   EngineClient,
   type EngineClientOptions,
   type EvaluateResponse,
+  type ApprovalView,
+  type ResolveResponse,
+  type IssuedApiKey,
+  type AwaitApprovalOptions,
   type FetchLike,
 } from './client.js';
 export {
@@ -49,4 +59,16 @@ export {
 } from './errors.js';
 
 // Re-exported for convenience so SDK users rarely need @reinconsole/core directly.
-export type { Receipt, ReceiptSettlement, Decision, PaymentIntent, TaskContext } from '@reinconsole/core';
+export type {
+  Receipt,
+  ReceiptSettlement,
+  Decision,
+  PaymentIntent,
+  TaskContext,
+  ApprovalRequest,
+  ApprovalGrant,
+  ApprovalVerdict,
+  ApproverKey,
+  ApiKey,
+  ApiKeyScope,
+} from '@reinconsole/core';

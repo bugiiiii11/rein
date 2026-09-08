@@ -6,6 +6,7 @@ import { PaymentIntent } from './intent.js';
 import { Decision } from './decision.js';
 import { SettledPayment } from './payment.js';
 import { GateReceipt } from './gate-receipt.js';
+import { ApprovalRequest } from './approval.js';
 
 /**
  * The canonical event envelope published on the bus (NATS in production).
@@ -16,6 +17,8 @@ import { GateReceipt } from './gate-receipt.js';
  * time the signer does or does not put a key to work, the bus knows why.
  * `gate.*` is the vendor side of the wire: every quote a Gate issues, every
  * payment it accepts, every payment it turns away.
+ * `approval.*` is the human-in-the-loop tier: an escalated intent parked for a
+ * signature, and the signed (or lapsed) verdict that closed it.
  */
 export const ReinEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('intent.created'), at: z.coerce.date(), intent: PaymentIntent }),
@@ -58,6 +61,18 @@ export const ReinEvent = z.discriminatedUnion('type', [
     network: z.string(),
   }),
   z.object({ type: z.literal('gate.settled'), at: z.coerce.date(), receipt: GateReceipt }),
+  z.object({
+    type: z.literal('approval.requested'),
+    at: z.coerce.date(),
+    request: ApprovalRequest,
+  }),
+  z.object({
+    type: z.literal('approval.resolved'),
+    at: z.coerce.date(),
+    request: ApprovalRequest,
+    /** The follow-up allow/deny decision this resolution appended. */
+    decision: Decision,
+  }),
   z.object({
     type: z.literal('gate.refused'),
     at: z.coerce.date(),

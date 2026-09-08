@@ -15,6 +15,8 @@ import {
   DecimalString,
   Agent,
   Policy,
+  type ApprovalGrant,
+  type ApprovalRequest,
   type Decision,
   type ReinEvent,
 } from '@reinconsole/core';
@@ -28,6 +30,7 @@ import {
   type AgentRegistryPort,
 } from './stores.js';
 import { DecisionLog } from './decision-log.js';
+import { ApprovalService } from './approvals.js';
 
 /** The shape an SDK/client submits. Server-assigned fields are optional. */
 export const IntentInput = z.object({
@@ -47,6 +50,19 @@ export type IntentInput = z.input<typeof IntentInput>;
 export interface EvaluateOutput {
   intent: PaymentIntent;
   decision: Decision;
+  /**
+   * Present only when the decision escalated AND an approval service is
+   * configured: the parked request a signed verdict can resolve. Its absence
+   * on an `escalate` outcome means nothing can approve this payment — the
+   * caller is blocked, full stop.
+   */
+  approval?: ApprovalRequest;
+}
+
+/** What a resolved escalation produced: the terminal record and its decision. */
+export interface ResolveOutput {
+  request: ApprovalRequest;
+  decision: Decision;
 }
 
 /** The persistence seams the engine composes over (in-memory when omitted). */
@@ -56,6 +72,11 @@ export interface EngineStores {
   agents?: AgentRegistryPort;
   /** Pre-built decision log (e.g. persistent key + resumed chain from @reinconsole/store). */
   log?: DecisionLog;
+  /**
+   * Human-in-the-loop approvals. Omit and `escalate` stays a hard block: the
+   * SDK raises, nothing is parked, and no signature can change the outcome.
+   */
+  approvals?: ApprovalService;
 }
 
 /**
@@ -70,6 +91,8 @@ export class PolicyEngine {
   readonly spend: SpendStorePort;
   readonly policies: PolicyStorePort;
   readonly agents: AgentRegistryPort;
+  /** Undefined when no approval tier is configured (see EngineStores.approvals). */
+  readonly approvals: ApprovalService | undefined;
   private readonly log: DecisionLog;
   private readonly bus = new EventEmitter();
   private tail: Promise<unknown> = Promise.resolve();
@@ -79,6 +102,7 @@ export class PolicyEngine {
     this.policies = stores.policies ?? new InMemoryPolicyStore();
     this.agents = stores.agents ?? new InMemoryAgentRegistry();
     this.log = stores.log ?? new DecisionLog();
+    this.approvals = stores.approvals;
   }
 
   get publicKeyPem(): string {
@@ -166,17 +190,161 @@ export class PolicyEngine {
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
     if (decision.outcome === 'allow') {
-      // Optimistically count the spend; the indexer confirms settlement later.
-      await this.spend.record({
-        agentId: intent.agentId,
-        host: intent.vendor.host,
-        resource: intent.resource,
-        amount: intent.amount,
-        at: intent.createdAt.getTime(),
-      });
+      await this.recordSpend(
+        {
+          agentId: intent.agentId,
+          host: intent.vendor.host,
+          resource: intent.resource,
+          amount: intent.amount,
+        },
+        intent.createdAt.getTime(),
+      );
+    }
+
+    if (decision.outcome === 'escalate' && this.approvals) {
+      const request = await this.approvals.open(intent, decision);
+      this.emit({ type: 'approval.requested', at: new Date(), request });
+      return { intent, decision, approval: request };
     }
 
     return { intent, decision };
+  }
+
+  /** Optimistically count the spend; the indexer confirms settlement later. */
+  private async recordSpend(
+    facts: { agentId: string; host: string; resource: string; amount: string },
+    at: number,
+  ): Promise<void> {
+    await this.spend.record({
+      agentId: facts.agentId,
+      host: facts.host,
+      resource: facts.resource,
+      amount: facts.amount,
+      at,
+    });
+  }
+
+  /**
+   * Apply a signed verdict to a parked escalation.
+   *
+   * The escalating decision is never rewritten — the log is append-only and
+   * hash-chained, and a rewritten decision would break every verifier. The
+   * resolution appends a NEW decision for the same intent, and THAT decision
+   * is the voucher a signer accepts: it carries the same `intentHash`, so the
+   * {intent, decision} pair still verifies offline as a self-contained
+   * authorization of exactly this transfer.
+   *
+   * Runs on the same serialization queue as evaluation, so an approval that
+   * converts to an allow records its spend before any later intent reads a
+   * rolling budget — and two grants racing on one request cannot both win.
+   */
+  resolveEscalation(grant: ApprovalGrant): Promise<ResolveOutput> {
+    const run = this.tail.then(() => this.resolveSerialized(grant));
+    this.tail = run.catch(() => undefined);
+    return run;
+  }
+
+  private async resolveSerialized(grant: ApprovalGrant): Promise<ResolveOutput> {
+    const approvals = this.requireApprovals();
+    const start = performance.now();
+    const { request, approver, verdict } = approvals.verify(grant);
+    const approved = verdict === 'approve';
+
+    const decision = await this.log.append({
+      intentId: request.intentId,
+      intentHash: request.intentHash,
+      outcome: approved ? 'allow' : 'deny',
+      matchedRules: [`approver:${approver.id}`],
+      reason: `${approved ? 'approved' : 'rejected'} by ${approver.name} (${approver.id}); escalation ${request.decisionId}`,
+      policyId: 'approval',
+      policyVersion: '1',
+      latencyMs: performance.now() - start,
+    });
+    this.emit({ type: 'decision.made', at: new Date(), decision });
+
+    if (approved) {
+      // Counted at approval time, not at park time: an escalation may have sat
+      // for most of its TTL, and the money moves now — so this is the instant
+      // the rolling windows should age from.
+      await this.recordSpend(
+        {
+          agentId: request.agentId,
+          host: request.vendorHost,
+          resource: request.resource,
+          amount: request.amount,
+        },
+        Date.now(),
+      );
+    }
+
+    const settled = await approvals.settle(request.decisionId, {
+      status: approved ? 'approved' : 'rejected',
+      finalDecisionId: decision.id,
+      approverKeyId: approver.id,
+    });
+    this.emit({ type: 'approval.resolved', at: new Date(), request: settled, decision });
+    return { request: settled, decision };
+  }
+
+  /**
+   * Convert every lapsed escalation into a deny. Expiry is a denial, not a
+   * quiet drop: the deny lands on the chain so the audit shows what happened
+   * to a payment nobody answered for.
+   *
+   * Correctness does not depend on this running — a lapsed request refuses
+   * every signature on its own. The sweep is what makes the denial VISIBLE
+   * promptly; the standalone server runs it on an interval.
+   */
+  sweepEscalations(now?: number): Promise<ResolveOutput[]> {
+    const run = this.tail.then(() => this.sweepSerialized(now));
+    this.tail = run.catch(() => undefined);
+    return run;
+  }
+
+  private async sweepSerialized(now?: number): Promise<ResolveOutput[]> {
+    const approvals = this.approvals;
+    if (!approvals) return [];
+    const out: ResolveOutput[] = [];
+    for (const request of approvals.lapsed(now)) {
+      const start = performance.now();
+      const decision = await this.log.append({
+        intentId: request.intentId,
+        intentHash: request.intentHash,
+        outcome: 'deny',
+        matchedRules: ['escalation-expired'],
+        reason: `escalation ${request.decisionId} expired unanswered; denied (fail closed)`,
+        policyId: 'approval',
+        policyVersion: '1',
+        latencyMs: performance.now() - start,
+      });
+      this.emit({ type: 'decision.made', at: new Date(), decision });
+      const settled = await approvals.settle(request.decisionId, {
+        status: 'expired',
+        finalDecisionId: decision.id,
+      });
+      this.emit({ type: 'approval.resolved', at: new Date(), request: settled, decision });
+      out.push({ request: settled, decision });
+    }
+    return out;
+  }
+
+  /**
+   * Run {@link sweepEscalations} on an interval. Returns the stopper; the
+   * timer is unref'd so it never holds a process open.
+   */
+  startExpirySweeper(intervalMs = 15_000): () => void {
+    const timer = setInterval(() => {
+      void this.sweepEscalations().catch(() => undefined);
+    }, intervalMs);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  }
+
+  private requireApprovals(): ApprovalService {
+    if (!this.approvals) {
+      throw new TypeError('this engine has no approval service; escalations cannot be resolved');
+    }
+    return this.approvals;
   }
 
   decisions(): readonly Decision[] {

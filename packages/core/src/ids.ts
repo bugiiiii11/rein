@@ -22,6 +22,8 @@ export const DecisionId = prefixedId('dec');
 export const ReceiptId = prefixedId('rcp');
 export const SessionId = prefixedId('ses');
 export const GateReceiptId = prefixedId('grc');
+export const ApiKeyId = prefixedId('key');
+export const ApproverKeyId = prefixedId('apk');
 
 export type OrgId = z.infer<typeof OrgId>;
 export type AgentId = z.infer<typeof AgentId>;
@@ -31,3 +33,5 @@ export type DecisionId = z.infer<typeof DecisionId>;
 export type ReceiptId = z.infer<typeof ReceiptId>;
 export type SessionId = z.infer<typeof SessionId>;
 export type GateReceiptId = z.infer<typeof GateReceiptId>;
+export type ApiKeyId = z.infer<typeof ApiKeyId>;
+export type ApproverKeyId = z.infer<typeof ApproverKeyId>;

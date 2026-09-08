@@ -1,5 +1,6 @@
 import type { PaymentIntent } from './intent.js';
 import type { DecisionOutcome } from './decision.js';
+import type { ApprovalVerdict } from './approval.js';
 
 /**
  * Canonical byte forms shared by the policy engine (which hashes and signs
@@ -59,5 +60,32 @@ export function canonicalDecision(d: DecisionContent): string {
     policyVersion: d.policyVersion,
     prevHash: d.prevHash,
     decidedAt: d.decidedAt.toISOString(),
+  });
+}
+
+/** The fields an approval signature commits to. */
+export interface ApprovalContent {
+  decisionId: string;
+  intentHash: string;
+  verdict: ApprovalVerdict;
+}
+
+/**
+ * Canonical form of an approval — the exact bytes an approver signs.
+ *
+ * Three properties are deliberate. The leading `rein` domain tag separates
+ * this signature space from the decision log's, so a decision signature can
+ * never be replayed as an approval or the reverse. `decisionId` makes each
+ * challenge single-use: one escalation, one decision id, one signature that
+ * means anything. And `verdict` is INSIDE the signed bytes — without it, a
+ * captured approval could be resubmitted as a rejection (or vice versa) by
+ * anyone who saw it in flight.
+ */
+export function canonicalApproval(a: ApprovalContent): string {
+  return JSON.stringify({
+    rein: 'approval/v1',
+    decisionId: a.decisionId,
+    intentHash: a.intentHash,
+    verdict: a.verdict,
   });
 }

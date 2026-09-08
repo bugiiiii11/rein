@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorld } from './world';
-import { createApiHandler } from './api';
+import { createApiHandler, resolveConsolePosture } from './api';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -25,7 +25,13 @@ const MIME: Record<string, string> = {
 // Set REIN_CONSOLE_DATA_DIR to run the console on @reinconsole/store: engine state
 // and reputation evidence survive restarts (the boot seed runs once per dir).
 const world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
-const handle = createApiHandler(world);
+
+// A1: the console's mutating routes (freeze, unfreeze, ping, demo) are state
+// changes on a live policy engine. Unconfigured public deployments serve the
+// dashboard read-only rather than offering those to anyone who finds the URL.
+const posture = resolveConsolePosture(process.env);
+if (posture.warning) console.warn(`[rein] WARNING: ${posture.warning}`);
+const handle = createApiHandler(world, posture);
 
 async function serveFile(path: string): Promise<{ body: Buffer; type: string } | null> {
   try {
@@ -60,7 +66,7 @@ const server = createServer(async (req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4173);
-server.listen(port, () =>
+server.listen(port, posture.host, () =>
   // The pid is diagnostic, not decorative: the drain below only ever runs if the
   // signal actually reaches THIS process. Started via `pnpm ... start`, node is a
   // child, pnpm does not forward SIGTERM, and the drain is dead code — which is
@@ -70,7 +76,10 @@ server.listen(port, () =>
   // own, so a correct container still reports something like pid 17. The question
   // is never who is pid 1, it is whether anything in the chain swallows SIGTERM.
   // The honest check is the pair of drain lines in the shutdown handler below.
-  console.log(`[rein] console on http://localhost:${port} (pid ${process.pid})`),
+  console.log(
+    `[rein] console on http://${posture.host}:${port} (pid ${process.pid}, ` +
+      `${posture.readOnly ? 'read-only' : 'writable'}, auth: ${posture.apiKey ? 'bearer' : 'none'})`,
+  ),
 );
 
 /**

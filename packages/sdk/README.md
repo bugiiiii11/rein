@@ -20,6 +20,7 @@ import { createGuard } from '@reinconsole/sdk';
 const guard = createGuard({
   engineUrl: 'http://localhost:8787', // @reinconsole/policy-engine (or the durable variant)
   agentId,                            // registered with the engine
+  apiKey,                             // required by any engine started with one
 });
 
 const fetch = guard.wrap();
@@ -37,6 +38,7 @@ const res = await fetch('https://api.vendor.example/answer');
 - **402 intercept.** The guard wraps the *base* fetch, underneath any x402 payment library. A blocked paywall never reaches the payment layer; an allowed one flows through, and the payment layer's `X-PAYMENT` retry is attached to the same receipt.
 - **Or let it pay.** Pass a `payer` (e.g. the EIP-3009 payer from [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails)) and the guard settles allowed payments itself — evaluate → pay → retry, one call.
 - **Blocked, your way.** `onBlocked: 'throw'` (default) raises `PaymentBlockedError`; `'respond'` returns a synthetic 402 JSON response for agent loops that inspect instead of catch.
+- **Escalation, waited out.** When policy escalates, the engine parks the payment for a human to sign off on. By default the guard blocks immediately and `error.approval.status` tells you it is still `pending` — a signed verdict can still release it out of band. Pass `escalation: { await: true }` and the guard holds the request open until a signature lands, then pays against the engine's follow-up **allow** decision; a rejection or an expiry blocks with the deny. Only wait where a stalled request is acceptable.
 - **Task context.** Attach `taskContext` (or scope it per call with `withTask()`) so every decision and receipt says *why* the agent was spending.
 - **Receipts either way.** Every paywall encounter — allowed, denied, settled — becomes a `Receipt`; stream them out with `onReceipt`.
 - **x402 v1 wire + CAIP-2 ids.** Speaks the hosted-facilitator dialect that [x402.org](https://www.x402.org) still fully supports; network ids accept CAIP-2 forms.

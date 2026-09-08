@@ -109,6 +109,15 @@ $env:PORT="8787"; node services/policy-engine/dist/server.js
 PORT=8787 node services/policy-engine/dist/server.js
 ```
 
+With no `REIN_ENGINE_API_KEY` the engine binds **127.0.0.1 only**, and refuses
+to start on a public interface — an unauthenticated engine cannot be exposed by
+accident. To expose it, set a key (`REIN_ENGINE_API_KEY=rk_...` plus
+`HOST=0.0.0.0`) and pass the same secret to the SDK as `apiKey`;
+`REIN_ENGINE_AUTH=off` is the deliberate override. The standalone console
+follows the same rule: without `REIN_CONSOLE_API_KEY` it serves the dashboard
+**read-only** on a public bind (`REIN_CONSOLE_HOST=127.0.0.1` for local use with
+the controls live).
+
 ## Persistence: an engine that survives restarts
 
 The in-memory engine is great for demos; `@reinconsole/store` makes it durable. It implements the engine's store ports on embedded Postgres ([PGlite](https://pglite.dev) — real Postgres compiled to WASM, running in-process against a data directory; no Docker, no daemon, and the SQL carries straight over to hosted Postgres later). Writes are awaited to disk before the engine acts on them; reads stay synchronous from a hydrated working set.
