@@ -1,11 +1,14 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { Agent, Policy } from '@reinconsole/core';
+import { Agent, LivenessExpectation, Policy, type LivenessSource } from '@reinconsole/core';
 import {
   InMemoryAgentRegistry,
+  InMemoryLivenessStore,
   InMemoryPolicyStore,
   InMemorySettlementStore,
   InMemorySpendStore,
   type AgentRegistryPort,
+  type LivenessRecord,
+  type LivenessStorePort,
   type PolicyStorePort,
   type SettlementRecord,
   type SettlementStorePort,
@@ -268,5 +271,113 @@ export class PgSettlementStore implements SettlementStorePort {
 
   count(): number {
     return this.mem.count();
+  }
+}
+
+/**
+ * Dead-man state (B2). Durable for the same reason the breaker floors are, and
+ * then some: a restart that forgot the SIGHTINGS would read every live agent
+ * as silent since boot and alarm about the deployment rather than the agents,
+ * while one that forgot `alerted_at` would re-announce every death an operator
+ * has already been told about. (The engine's witness floor keeps the first
+ * failure from paging anyone, but the panel would still be wrong.)
+ *
+ * Sightings are LATEST-wins — `GREATEST` in SQL — the opposite of a
+ * settlement's first-report-wins rule: a settlement is one event that happened
+ * once, while a sighting is evidence of ongoing life.
+ */
+export class PgLivenessStore implements LivenessStorePort {
+  private readonly mem = new InMemoryLivenessStore();
+
+  private constructor(private readonly db: PGlite) {}
+
+  static async open(db: PGlite): Promise<PgLivenessStore> {
+    const store = new PgLivenessStore(db);
+    const rows = await db.query<{
+      agent_id: string;
+      interval_str: string;
+      grace_ms: number | string;
+      since_ms: number | string;
+      note: string | null;
+      last_seen_at: number | string | null;
+      last_source: string | null;
+      alerted_at: number | string | null;
+    }>(
+      'SELECT agent_id, interval_str, grace_ms, since_ms, note, last_seen_at, last_source, ' +
+        'alerted_at FROM agent_liveness',
+    );
+    for (const row of rows.rows) {
+      store.mem.watch(
+        LivenessExpectation.parse({
+          agentId: row.agent_id,
+          interval: row.interval_str,
+          graceMs: Number(row.grace_ms),
+          since: new Date(Number(row.since_ms)),
+          ...(row.note ? { note: row.note } : {}),
+        }),
+      );
+      if (row.last_seen_at !== null) {
+        store.mem.seen(
+          row.agent_id,
+          Number(row.last_seen_at),
+          row.last_source === 'intent' ? 'intent' : 'heartbeat',
+        );
+      }
+      if (row.alerted_at !== null) store.mem.setAlerted(row.agent_id, Number(row.alerted_at));
+    }
+    return store;
+  }
+
+  async watch(expectation: LivenessExpectation): Promise<void> {
+    // The sighting columns are untouched by an upsert: editing an interval is
+    // a config change, not a claim that the agent just checked in.
+    await this.db.query(
+      `INSERT INTO agent_liveness (agent_id, interval_str, grace_ms, since_ms, note)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (agent_id) DO UPDATE SET
+         interval_str = EXCLUDED.interval_str,
+         grace_ms = EXCLUDED.grace_ms,
+         note = EXCLUDED.note`,
+      [
+        expectation.agentId,
+        expectation.interval,
+        expectation.graceMs,
+        expectation.since.getTime(),
+        expectation.note ?? null,
+      ],
+    );
+    this.mem.watch(expectation);
+  }
+
+  async unwatch(agentId: string): Promise<void> {
+    await this.db.query('DELETE FROM agent_liveness WHERE agent_id = $1', [agentId]);
+    this.mem.unwatch(agentId);
+  }
+
+  get(agentId: string): LivenessRecord | undefined {
+    return this.mem.get(agentId);
+  }
+
+  list(): LivenessRecord[] {
+    return this.mem.list();
+  }
+
+  async seen(agentId: string, at: number, source: LivenessSource): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_liveness
+          SET last_seen_at = GREATEST(COALESCE(last_seen_at, 0), $2),
+              last_source = CASE WHEN COALESCE(last_seen_at, 0) < $2 THEN $3 ELSE last_source END
+        WHERE agent_id = $1`,
+      [agentId, at, source],
+    );
+    this.mem.seen(agentId, at, source);
+  }
+
+  async setAlerted(agentId: string, at: number | undefined): Promise<void> {
+    await this.db.query('UPDATE agent_liveness SET alerted_at = $2 WHERE agent_id = $1', [
+      agentId,
+      at ?? null,
+    ]);
+    this.mem.setAlerted(agentId, at);
   }
 }

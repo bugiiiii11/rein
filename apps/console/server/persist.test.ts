@@ -120,6 +120,23 @@ describe('resume', () => {
     );
   });
 
+  it('carries the dead-man watch AND its last sighting across the restart', () => {
+    const before = agent(first, 'research-agent-1')!.liveness!;
+    const after = agent(resumed, 'research-agent-1')!.liveness!;
+    // The expectation is config and the sighting is evidence; both are durable.
+    // A restart that forgot the sighting would read every live agent as silent
+    // since boot and raise an alarm about the deployment, not about the agents.
+    expect(after.interval).toBe(before.interval);
+    expect(after.lastSeenAt).toBe(before.lastSeenAt);
+    expect(after.lastSource).toBe('intent');
+    // ...and the silence is measured from the sighting, not from this boot.
+    expect(after.silentMs).toBeGreaterThanOrEqual(before.silentMs);
+    // Still only the research poller: a resume must not widen the watch list.
+    expect(resumed.agents.filter((a) => a.liveness).map((a) => a.name)).toEqual([
+      'research-agent-1',
+    ]);
+  });
+
   it('drops the feed: telemetry is this process’s, not the world’s state', () => {
     expect(resumed.feed).toEqual([]);
     // Audit surface is rebuilt, not resumed: same pinned engine key, fresh clock.

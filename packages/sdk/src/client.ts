@@ -8,6 +8,9 @@ import {
   ApproverKey,
   Breaker,
   Decision,
+  LivenessExpectation,
+  LivenessSource,
+  LivenessStatus,
   PaymentIntent,
   Policy,
   SettlementReport,
@@ -35,6 +38,26 @@ export const BreakerState = z.object({
   reason: z.string().optional(),
 });
 export type BreakerState = z.infer<typeof BreakerState>;
+
+/**
+ * Where one watched agent stands against its expectation (B2). Mirrors the
+ * engine's `LivenessState`; note `unknown`, which is not an alarm — it means
+ * the engine has not been up long enough to have witnessed the silence, and a
+ * caller that treats it as `missing` would page someone about a restart.
+ */
+export const LivenessState = z.object({
+  agentId: z.string(),
+  expectation: LivenessExpectation,
+  lastSeenAt: z.number().optional(),
+  lastSource: LivenessSource.optional(),
+  silentSince: z.number(),
+  silentMs: z.number(),
+  dueAt: z.number(),
+  overdueAt: z.number(),
+  status: LivenessStatus,
+  alertedAt: z.number().optional(),
+});
+export type LivenessState = z.infer<typeof LivenessState>;
 
 const Health = z.object({
   status: z.string(),
@@ -257,6 +280,44 @@ export class EngineClient {
       `/v1/reconciliation${qs ? `?${qs}` : ''}`,
       ReconciliationReport,
     );
+  }
+
+  // --- Dead-man monitoring (B2) ---
+
+  /**
+   * Expect this agent to be active at least every `interval`. Watching is
+   * declared, never inferred: an agent nobody watches has no liveness state,
+   * because silence is only evidence about an agent somebody said should be
+   * periodic.
+   */
+  watchLiveness(
+    agentId: string,
+    expectation: { interval: string; graceMs?: number; note?: string },
+  ): Promise<LivenessExpectation> {
+    return this.request('PUT', `/v1/agents/${agentId}/liveness`, LivenessExpectation, expectation);
+  }
+
+  unwatchLiveness(agentId: string): Promise<void> {
+    return this.request('DELETE', `/v1/agents/${agentId}/liveness`, z.void());
+  }
+
+  /**
+   * "I am alive, I just have nothing to buy."
+   *
+   * Only needed by an agent that goes quiet on purpose — every intent is
+   * already a sighting, whatever the engine decided about it. It authorizes
+   * nothing: the only thing it can change is a row in the liveness report.
+   */
+  heartbeat(agentId: string, input: { at?: Date; note?: string } = {}): Promise<LivenessState> {
+    return this.request('POST', `/v1/agents/${agentId}/heartbeat`, LivenessState, {
+      ...(input.at ? { at: input.at.toISOString() } : {}),
+      ...(input.note ? { note: input.note } : {}),
+    });
+  }
+
+  /** Where every watched agent stands. Worst first. */
+  liveness(): Promise<LivenessState[]> {
+    return this.request('GET', '/v1/liveness', z.array(LivenessState));
   }
 
   // --- API keys (admin scope) ---

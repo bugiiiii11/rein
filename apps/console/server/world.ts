@@ -44,7 +44,12 @@ import {
   linkVendorFromRegistry,
   readSummary,
 } from '@reinconsole/erc8004';
-import { PolicyEngine, buildServer, parseWindowMs } from '@reinconsole/policy-engine';
+import {
+  LivenessMonitor,
+  PolicyEngine,
+  buildServer,
+  parseWindowMs,
+} from '@reinconsole/policy-engine';
 import {
   createGuard,
   PaymentBlockedError,
@@ -83,6 +88,7 @@ import {
   PaymentPayload,
 } from '@reinconsole/x402-rails';
 import type {
+  AgentLivenessView,
   AgentView,
   AllowanceGapView,
   BreakerView,
@@ -170,6 +176,29 @@ const RECONCILE_GRACE_MS = Number(process.env['REIN_RECONCILE_GRACE_MS'] ?? 60_0
 const RECONCILE_SWEEP_MS = Number(process.env['REIN_RECONCILE_SWEEP_MS'] ?? 30_000);
 /** The trailing span of allowances the panel covers. */
 const RECONCILE_WINDOW = '24h' as const;
+
+/**
+ * Dead-man monitoring (B2), and which agents get watched at all.
+ *
+ * Only the RESEARCH agents. That is the whole design decision: an expectation
+ * is declared, never inferred, and most agents here are episodic — the session
+ * agent exists to demonstrate custody and the procurement agent to demonstrate
+ * reputation, and neither promised anyone a cadence. A research poller did.
+ * Watching all three would put three permanent alarms on a console whose
+ * scenario ends by design, which teaches an operator to ignore the panel.
+ *
+ * The interval is short enough that a visitor watching a fresh boot sees the
+ * transition happen (and the alarm land in the feed), and the console is
+ * honest about the result: after the scenario the research agent really has
+ * stopped. Pressing Ping on it is a real recovery, not a reset button — the
+ * ping submits an intent, and an intent is a sighting whatever the policy
+ * decides about it.
+ */
+const LIVENESS_LABEL = 'research';
+const LIVENESS_INTERVAL = (process.env['REIN_LIVENESS_INTERVAL'] ?? '5m') as `${number}m`;
+const LIVENESS_GRACE_MS = Number(process.env['REIN_LIVENESS_GRACE_MS'] ?? 60_000);
+const LIVENESS_SWEEP_MS = Number(process.env['REIN_LIVENESS_SWEEP_MS'] ?? 15_000);
+const LIVENESS_NOTE = 'polls the vendor feed on a schedule';
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -261,7 +290,18 @@ export interface WorldOptions {
 
 export async function createWorld(options: WorldOptions = {}): Promise<World> {
   const store = options.dataDir ? await openReinStore({ dir: options.dataDir }) : undefined;
-  const engine = store ? new PolicyEngine(store) : new PolicyEngine();
+  // The monitor is composed here rather than handed over by the store: the
+  // durable half is only the expectations and sightings, while the alarm's
+  // channels and its once-per-silence bookkeeping are this world's to choose.
+  // The console's channel is the feed itself (see sweepLiveness).
+  const liveness = new LivenessMonitor({
+    ...(store ? { store: store.livenessStore } : {}),
+    onSightingError: (agentId, err) =>
+      console.error(`[console] liveness sighting for ${agentId} was not recorded:`, err),
+  });
+  const engine = store
+    ? new PolicyEngine({ ...store, liveness })
+    : new PolicyEngine({ liveness });
   const app = buildServer(engine);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -498,10 +538,35 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     emit({ type: 'stats', stats: computeStats() });
   }
 
+  /**
+   * Where one agent stands against its cadence (B2), or nothing at all when
+   * nobody watches it. Absence is meaningful here: it means unwatched, not
+   * healthy, which is why the card renders no liveness chip rather than a
+   * green one.
+   */
+  function viewLiveness(agentId: string, now: number): AgentLivenessView | undefined {
+    const state = liveness.state(agentId, now);
+    if (!state) return undefined;
+    return {
+      interval: state.expectation.interval,
+      status: state.status,
+      silentMs: state.silentMs,
+      ...(state.lastSeenAt !== undefined
+        ? { lastSeenAt: new Date(state.lastSeenAt).toISOString() }
+        : {}),
+      ...(state.lastSource !== undefined ? { lastSource: state.lastSource } : {}),
+      ...(state.expectation.note !== undefined ? { note: state.expectation.note } : {}),
+    };
+  }
+
   function viewAgents(): AgentView[] {
+    // One clock for the whole render, as in viewBreakers: two agents in the
+    // same frame must not disagree about what time it is.
+    const now = Date.now();
     return engine.agents.list().map((a: Agent): AgentView => {
       const amounts = spend.get(a.id) ?? [];
       const wallet = a.wallets[0];
+      const live = viewLiveness(a.id, now);
       return {
         id: a.id,
         name: a.name,
@@ -513,6 +578,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         spent: sumDecimal(amounts),
         calls: amounts.length,
         createdAt: a.createdAt.toISOString(),
+        ...(live ? { liveness: live } : {}),
       };
     });
   }
@@ -784,6 +850,34 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     emit({ type: 'reconciliation', reconciliation: view });
   }
 
+  /**
+   * The alert half of B2, and the console's alert CHANNEL.
+   *
+   * `engine.sweepLiveness` raises each newly-missing agent exactly once and
+   * emits the event; this turns that into a feed row and re-renders the agent
+   * cards, which is what the console has instead of Telegram. Like the
+   * reconciliation sweep it exists because nothing else will ever call: an
+   * agent that stopped raises no intent to trigger a render.
+   */
+  async function sweepLiveness(): Promise<void> {
+    const raised = await engine.sweepLiveness();
+    for (const alert of raised) {
+      pushFeed({
+        seq: ++seq,
+        at: new Date(alert.at).toISOString(),
+        kind: 'missing',
+        agentId: alert.agentId,
+        agentName: agentName(alert.agentId) ?? alert.agentId,
+        silentMs: alert.silentMs,
+        interval: alert.expectation.interval,
+        ...(alert.expectation.note !== undefined ? { reason: alert.expectation.note } : {}),
+      });
+    }
+    // Even with nothing raised, the cards age: `alive` becomes `late` with no
+    // event behind it, so the render has to be driven by the clock too.
+    emit({ type: 'agents', agents: viewAgents() });
+  }
+
   function computeStats(): Stats {
     // All-time counters read the DURABLE audit chain, not the feed. The feed is
     // this process's telemetry, so deriving decision counts from it made a
@@ -827,6 +921,19 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (ev.type === 'intent.created') {
       intents.set(ev.intent.id, ev.intent);
       intentIdOfNonce.set(intentNonce(ev.intent.id).toLowerCase(), ev.intent.id);
+      return;
+    }
+    if (ev.type === 'liveness.recovered') {
+      // The all-clear, and only for a silence somebody was told about — the
+      // engine reports no recovery for an alarm it never raised.
+      pushFeed({
+        seq: ++seq,
+        at: ev.at.toISOString(),
+        kind: 'recovered',
+        agentId: ev.agentId,
+        agentName: agentName(ev.agentId) ?? ev.agentId,
+        silentMs: ev.silentMs,
+      });
       return;
     }
     if (ev.type === 'decision.made') {
@@ -1037,6 +1144,15 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (p.breakers.length === 0) await engine.addPolicy({ ...p, breakers: [...AGENT_BREAKERS] });
   }
 
+  // Same story for the dead-man watches (B2): agents provisioned before B2
+  // existed carry no expectation, so a resumed deployment would show liveness
+  // on nobody. `watchLiveness` upserts and keeps the original `since`, so
+  // re-running it every boot neither duplicates a watch nor hands a silent
+  // agent a fresh clock.
+  for (const agent of engine.agents.list()) {
+    if (agent.labels.includes(LIVENESS_LABEL)) await watchAgentLiveness(agent.id);
+  }
+
   /**
    * REAL-registry mode (env-gated): `REIN_CONSOLE_REGISTRY=sepolia` provisions
    * a "live identity" agent whose erc8004Id is the REAL Base Sepolia
@@ -1242,9 +1358,20 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       breakers: [...AGENT_BREAKERS],
       default: 'allow',
     });
+    // Dead-man watch (B2), for the research pollers only — see LIVENESS_LABEL.
+    if (agent.labels.includes(LIVENESS_LABEL)) await watchAgentLiveness(agentId);
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'policies', policies: viewPolicies() });
     emit({ type: 'breakers', breakers: viewBreakers() });
+  }
+
+  function watchAgentLiveness(agentId: string): Promise<unknown> {
+    return engine.watchLiveness({
+      agentId,
+      interval: LIVENESS_INTERVAL,
+      graceMs: LIVENESS_GRACE_MS,
+      note: LIVENESS_NOTE,
+    });
   }
 
   function registerRuntime(agentId: string, wallet: string, wrapped: FetchLike): FetchLike {
@@ -1547,6 +1674,15 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   const reconcileTimer: NodeJS.Timeout = setInterval(sweepReconciliation, RECONCILE_SWEEP_MS);
   reconcileTimer.unref?.();
 
+  // The dead-man clock (B2) — the same reason as the reconciliation one, for
+  // the same kind of event: something that has to AGE into existence.
+  const livenessTimer: NodeJS.Timeout = setInterval(() => {
+    void sweepLiveness().catch((err: unknown) =>
+      console.error('[console] liveness sweep failed:', err),
+    );
+  }, LIVENESS_SWEEP_MS);
+  livenessTimer.unref?.();
+
   let maintenanceTimer: NodeJS.Timeout | undefined;
   if (store) {
     maintenanceTimer = setInterval(() => {
@@ -1567,6 +1703,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (syncTimer) clearTimeout(syncTimer);
     if (maintenanceTimer) clearInterval(maintenanceTimer);
     clearInterval(reconcileTimer);
+    clearInterval(livenessTimer);
     await app.close();
     // Flush write-behind reputation evidence before the handle goes away. A
     // failure here means some evidence was NOT persisted — log it loudly, but

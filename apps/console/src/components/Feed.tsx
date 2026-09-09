@@ -1,11 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import type { FeedItem } from '../../server/wire';
-import { clockTime, latency, midHash, usd } from '../format';
+import { clockTime, duration, latency, midHash, usd } from '../format';
 
 function verbOf(f: FeedItem): { text: string; cls: string } {
   if (f.kind === 'settled') return { text: 'SETTLED', cls: 'settled' };
   if (f.kind === 'shadow') return { text: 'SHADOW SPEND', cls: 'shadow' };
   if (f.kind === 'unsettled') return { text: 'UNSETTLED', cls: 'shadow' };
+  if (f.kind === 'missing') return { text: 'AGENT MISSING', cls: 'shadow' };
+  if (f.kind === 'recovered') return { text: 'AGENT BACK', cls: 'allow' };
   if (f.kind === 'quote') return { text: 'QUOTED', cls: 'quote' };
   if (f.kind === 'revenue') return { text: 'REVENUE', cls: 'revenue' };
   if (f.kind === 'gate-refused') return { text: 'TURNED AWAY', cls: 'deny' };
@@ -35,6 +37,21 @@ function Sub({ f }: { f: FeedItem }) {
       <div className="feed-sub">
         allowed, never settled · <span className="who">{who}</span> · decision{' '}
         {midHash(f.decisionId, 6, 4)}
+      </div>
+    );
+  }
+  if (f.kind === 'missing') {
+    return (
+      <div className="feed-sub">
+        silent {duration(f.silentMs)} · expected every {f.interval} ·{' '}
+        <span className="who">{who}</span>
+      </div>
+    );
+  }
+  if (f.kind === 'recovered') {
+    return (
+      <div className="feed-sub">
+        seen again after {duration(f.silentMs)} · <span className="who">{who}</span>
       </div>
     );
   }
@@ -92,6 +109,8 @@ function Right({ f }: { f: FeedItem }) {
   if (f.kind === 'decision') return <span className="mono">{latency(f.latencyMs)}</span>;
   if (f.kind === 'settled') return <span className="feed-badge">on-chain</span>;
   if (f.kind === 'unsettled') return <span className="feed-badge bad">reconciliation</span>;
+  if (f.kind === 'missing') return <span className="feed-badge bad">dead man</span>;
+  if (f.kind === 'recovered') return <span className="feed-badge ok">dead man</span>;
   if (f.kind === 'quote') return <span className="feed-badge dim">402</span>;
   if (f.kind === 'revenue') return <span className="feed-badge ok">vendor receipt</span>;
   if (f.kind === 'gate-refused') return <span className="feed-badge bad">gate</span>;

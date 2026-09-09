@@ -1,7 +1,7 @@
 /**
  * Rein v0.1 — End-to-End Demo
  *
- * Eight scenarios in one in-process run (<1s):
+ * Nine scenarios in one in-process run (<1s):
  *   1. Normal calls allowed within rolling budget
  *   2. Rolling-budget cap enforcement (deny before payment exists)
  *   3. Single-transaction cap
@@ -10,6 +10,7 @@
  *   6. Behavioral breaker: trips, escalates, cleared by a SIGNED approval
  *   7. Per-task budget: a runaway task escalates while other tasks run on
  *   8. Reconciliation — an allowed payment that never settled (the mirror of 5)
+ *   9. Dead man — a watched agent goes quiet, and Rein says so
  *
  * Run: pnpm --filter @reinconsole/demo demo
  */
@@ -19,6 +20,8 @@ import type { AddressInfo } from 'node:net';
 import { newId } from '@reinconsole/core';
 import {
   ApprovalService,
+  LivenessMonitor,
+  LoggingChannel,
   PolicyEngine,
   buildServer,
   signApproval,
@@ -62,7 +65,15 @@ async function main() {
   // An approval tier makes `escalate` answerable: without one it is a hard
   // block, and scenarios 6-7 would have nowhere to go.
   const approvals = new ApprovalService();
-  const engine = new PolicyEngine({ approvals });
+  // The dead-man tier (B2). Its alarms go to the same channel the approval
+  // tier uses — the human who cares that a payment needs signing is the human
+  // who cares that an agent stopped. `write` is captured so scenario 9 can
+  // show the message an operator would actually receive.
+  const alarms: string[] = [];
+  const liveness = new LivenessMonitor({
+    channels: [new LoggingChannel({ write: (m) => alarms.push(m) })],
+  });
+  const engine = new PolicyEngine({ approvals, liveness });
   const app = buildServer(engine);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const port = (app.server.address() as AddressInfo).port;
@@ -461,6 +472,77 @@ async function main() {
   console.log(
     '\n  The budget stays charged for it, deliberately: an allowance that is' +
       '\n  refunded when it fails to settle would be a self-service reset.',
+  );
+
+  // -- Scenario 9: Dead man ---------------------------------------------------
+  console.log(section('Scenario 9  ·  Dead man (the agent that simply stopped)'));
+  console.log('  Every other control here answers "should this payment happen?". This');
+  console.log('  one answers the question nothing else asks: an agent that stops raises');
+  console.log('  no intent, breaks no budget and trips no breaker. It just disappears,');
+  console.log('  and the month reads perfectly clean while the work is not being done.\n');
+
+  const dmWallet = '0xDeadMan01';
+  const dmAgentId = newId('agt');
+  await engine.registerAgent({
+    id: dmAgentId,
+    orgId: newId('org'),
+    name: 'poller-agent',
+    wallets: [{ chain: 'base', address: dmWallet, mode: 'sdk' }],
+    status: 'active',
+    createdAt: new Date(),
+  });
+  const dmGuard = createGuard({
+    engineUrl,
+    agentId: dmAgentId,
+    fetch: vendor.fetch,
+    payer: facilitator.payerFor(dmWallet),
+  });
+  await dmGuard.client.addPolicy({
+    policyId: 'poller-policy',
+    appliesTo: { agents: [dmAgentId] },
+    default: 'allow',
+  });
+
+  // Watching is DECLARED. Every other agent in this demo is episodic, and an
+  // alarm on one of those would be noise: silence is only evidence about an
+  // agent somebody said should be periodic.
+  await engine.watchLiveness({
+    agentId: dmAgentId,
+    interval: '15m',
+    graceMs: 60_000,
+    note: 'polls the vendor feed every 15m',
+  });
+  await dmGuard.wrap()(VENDOR_URL);
+  outcome('allow', 'poll  $0.01', 'a paid call is also a sighting — no heartbeat needed');
+  // The clock runs from the SIGHTING the engine recorded, not from wall time:
+  // the intent's own timestamp is what every deadline below is measured off.
+  const seenAt = engine.livenessStates()[0]?.lastSeenAt ?? Date.now();
+
+  // ...and then it dies. The clock is injected rather than waited on: what is
+  // being demonstrated is silence, and silence takes as long as it takes.
+  const later = seenAt + 20 * 60_000;
+  const status = (s: string | undefined) => (s ?? '').toUpperCase().padEnd(9);
+  const late = engine.livenessStates(seenAt + 15.5 * 60_000)[0];
+  console.log(`  ${'+15m30s'.padEnd(24)} ${status(late?.status)}past the interval, inside the grace`);
+  const alarm = await engine.sweepLiveness(later);
+  const dead = engine.livenessStates(later)[0];
+  console.log(`  ${'+20m'.padEnd(24)} ${status(dead?.status)}raised once, to the channel:\n`);
+  console.log(
+    (alarms[alarms.length - 1] ?? '')
+      .split('\n')
+      .map((l) => `    ${l}`)
+      .join('\n'),
+  );
+  // Once per silence, not once per sweep: an alarm that repeats is one an
+  // operator learns to filter, which loses the next detector.
+  const again = await engine.sweepLiveness(later + 5 * 60_000);
+  console.log(`\n  Sweeps again at +25m:   ${again.length} new alarms`);
+  console.log(`  Alarms raised so far:   ${alarm.length}`);
+  const back = await engine.heartbeat({ agentId: dmAgentId, at: new Date(later + 6 * 60_000) });
+  console.log(
+    `  The agent checks in:    ${back?.status.toUpperCase()} again — and a second death would` +
+      '\n                          be news again. Nothing was ever blocked: a dead-man' +
+      '\n                          alarm is about work that is NOT happening.',
   );
 
   // ── Summary ────────────────────────────────────────────────────────────────

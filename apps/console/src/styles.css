@@ -450,6 +450,39 @@ a.pill:hover {
   color: var(--ink-dim);
   border-style: dashed;
 }
+/* Dead-man chip (B2). It sits in the meta row rather than in a panel of its
+   own: liveness is a property of an agent, and every fixed panel is paid for
+   out of its column's scroll lists (S43/S44, measured). */
+.tag.liveness::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+  background: currentColor;
+}
+.tag.liveness.alive {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.35);
+}
+.tag.liveness.late {
+  color: var(--warn);
+  border-color: rgba(245, 196, 81, 0.4);
+}
+.tag.liveness.missing {
+  color: var(--alarm);
+  border-color: rgba(255, 77, 77, 0.45);
+  background: var(--alarm-soft);
+}
+.tag.liveness.unknown {
+  color: var(--ink-faint);
+  border-style: dashed;
+}
+.panel-count.bad {
+  color: var(--alarm);
+}
 .agent-figures {
   display: flex;
   gap: 18px;

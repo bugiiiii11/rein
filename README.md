@@ -322,6 +322,9 @@ The guard layers _underneath_ any x402 payment library: the first unpaid request
 | GET    | `/v1/agents/:id/breakers`    | Where the agent's behavioral breakers stand   |
 | POST   | `/v1/settlements`            | Report that an allowed payment landed         |
 | GET    | `/v1/reconciliation`         | Allowances with no settlement behind them     |
+| PUT    | `/v1/agents/:id/liveness`    | Expect this agent to be active every `interval` |
+| POST   | `/v1/agents/:id/heartbeat`   | "I am alive, I just have nothing to buy"      |
+| GET    | `/v1/liveness`               | Where every watched agent stands (worst first) |
 
 A policy is declarative — for example, a $0.50 per-transaction cap plus a rolling $0.04/hour budget, defaulting to allow:
 
@@ -402,6 +405,36 @@ is the stronger reporter, and `reportSettlement: false` hands the job over to it
   the wiring than about the payments. The console renders that case differently.
 - Reconciliation is observability, never authority: it cannot deny, cannot alter a
   decision, and a settlement report authorizes nothing.
+
+### Dead man: the agent that simply stopped
+
+Every control above answers "should this payment happen?". This one answers the
+question nothing else in the stack asks. An agent that dies raises no intent, breaks
+no budget and trips no breaker — it disappears, and a control plane watching only for
+bad payments reports a perfectly clean month while the work quietly stops.
+
+```ts
+await client.watchLiveness(agentId, { interval: '15m', note: 'polls the vendor feed' });
+await client.heartbeat(agentId);        // only for an agent with nothing to buy
+const states = await client.liveness(); // → [{ status: 'missing', silentMs, ... }]
+```
+
+- An expectation is **declared, never inferred**. Most agents are episodic, so silence is
+  only evidence about one somebody said should be periodic; an unwatched agent has no
+  liveness state, and a heartbeat for one is refused rather than swallowed.
+- **Any intent is a sighting**, including a denied one. An agent hammering a wall is
+  alive — that is a different alarm, with a different remedy — so a spending agent needs
+  no heartbeat at all.
+- Silence has an **age**: `alive` -> `late` (inside the grace) -> `missing`. An alarm that
+  cries at every wobble is one an operator learns to ignore, which loses the next agent.
+- The alarm fires **once per silence**, not once per sweep, and the bookkeeping is durable
+  — a restart does not re-announce a death that has already been read.
+- The engine **never alarms about silence it did not witness**. An engine that was down
+  cannot tell a dead agent from its own outage, so a silence older than the process reads
+  `unknown` until it has been up long enough to certify it.
+- Like reconciliation, it carries no authority: an alarm is news for a human, never an
+  input to a decision. Alarms ride the same one-way channels as approvals — and there is
+  nothing to acknowledge, because only the agent being seen again ends one.
 
 ## Design principles
 

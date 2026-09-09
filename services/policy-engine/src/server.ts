@@ -13,6 +13,8 @@ import {
   Policy,
   OrgId,
   SettlementReport,
+  Heartbeat,
+  LivenessWatchInput,
   Window,
   newId,
   type Decision,
@@ -26,7 +28,8 @@ import {
   DEFAULT_ESCALATION_TTL_MS,
   type ApprovalChannel,
 } from './approvals.js';
-import { LoggingApprovalChannel, TelegramApprovalChannel } from './channels.js';
+import { LoggingChannel, TelegramChannel } from './channels.js';
+import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
 /** Input to register an agent (server fills id/createdAt/status). */
 const AgentInput = z.object({
@@ -85,6 +88,12 @@ export function requiredScope(method: string, pathname: string): ApiKeyScope {
   // worst a stolen evaluate key does here is hide gaps it created, and a key
   // that can spend can already do far worse.
   if (method === 'POST' && pathname === '/v1/settlements') return 'evaluate';
+  // A heartbeat rides `evaluate` for the same reason, and with even less at
+  // stake: the agent that would spend is the natural reporter of its own
+  // liveness, and every intent it submits is already a sighting. The worst a
+  // stolen evaluate key does here is keep a dead agent looking alive — and a
+  // key that can spend can simply spend, which looks alive too.
+  if (method === 'POST' && /^\/v1\/agents\/[^/]+\/heartbeat$/.test(pathname)) return 'evaluate';
   if (method === 'POST' && /^\/v1\/approvals\/[^/]+\/resolve$/.test(pathname)) return 'approve';
   return 'admin';
 }
@@ -127,6 +136,9 @@ export function buildServer(
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (err instanceof ApprovalError) {
+      return reply.status(err.status).send({ error: err.code, message: err.message });
+    }
+    if (err instanceof LivenessError) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -194,6 +206,37 @@ export function buildServer(
   app.get('/v1/agents/:id/breakers', (req) =>
     engine.breakerStates((req.params as { id: string }).id),
   );
+
+  // --- Dead-man monitoring (B2) ---
+  // Declaring an expectation is configuration, so it sits at `admin`; the
+  // heartbeat that answers it does not (see requiredScope).
+  app.put('/v1/agents/:id/liveness', async (req, reply) => {
+    const input = LivenessWatchInput.parse({
+      ...(req.body as object | null ?? {}),
+      agentId: (req.params as { id: string }).id,
+    });
+    return reply.status(201).send(await requireLiveness(engine).watch(input));
+  });
+
+  app.delete('/v1/agents/:id/liveness', async (req, reply) => {
+    const removed = await requireLiveness(engine).unwatch((req.params as { id: string }).id);
+    return removed ? reply.status(204).send() : reply.status(404).send({ error: 'not_watched' });
+  });
+
+  app.post('/v1/agents/:id/heartbeat', async (req, reply) => {
+    requireLiveness(engine);
+    const beat = Heartbeat.parse({
+      ...(req.body as object | null ?? {}),
+      agentId: (req.params as { id: string }).id,
+    });
+    const state = await engine.heartbeat(beat);
+    // 404 rather than a silent 202: an agent nobody watches has nowhere to
+    // record a heartbeat, and a reporter that believes it is being monitored
+    // when it is not is the exact failure this feature exists to prevent.
+    return state ? reply.status(202).send(state) : reply.status(404).send({ error: 'not_watched' });
+  });
+
+  app.get('/v1/liveness', () => engine.livenessStates());
 
   // --- Policies ---
   app.post('/v1/policies', (req) => engine.addPolicy(Policy.parse(req.body)));
@@ -284,6 +327,17 @@ function requireAuth(auth: ApiKeyAuth | undefined): ApiKeyAuth {
   return auth;
 }
 
+function requireLiveness(engine: PolicyEngine): LivenessMonitor {
+  if (!engine.liveness) {
+    throw new LivenessError(
+      404,
+      'liveness_disabled',
+      'this engine has no liveness monitor; nothing is being watched',
+    );
+  }
+  return engine.liveness;
+}
+
 function requireApprovals(engine: PolicyEngine): ApprovalService {
   if (!engine.approvals) {
     throw new ApprovalError(404, 'unknown_request', 'this engine has no approval service');
@@ -324,12 +378,35 @@ export async function authFromEnv(env: NodeJS.ProcessEnv): Promise<ApiKeyAuth | 
   return auth.hasKeys() ? auth : undefined;
 }
 
-/** The approval tier the standalone server runs with. */
-export function approvalsFromEnv(env: NodeJS.ProcessEnv): ApprovalService {
-  const channels: ApprovalChannel[] = [new LoggingApprovalChannel()];
+/** Delivery channels shared by the approval tier and the dead-man alarms. */
+function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & AlertChannel)[] {
+  const channels: (ApprovalChannel & AlertChannel)[] = [new LoggingChannel()];
   const botToken = env['REIN_TELEGRAM_BOT_TOKEN']?.trim();
   const chatId = env['REIN_TELEGRAM_CHAT_ID']?.trim();
-  if (botToken && chatId) channels.push(new TelegramApprovalChannel({ botToken, chatId }));
+  if (botToken && chatId) channels.push(new TelegramChannel({ botToken, chatId }));
+  return channels;
+}
+
+/**
+ * The dead-man monitor the standalone server runs with (B2).
+ *
+ * It watches nobody until an expectation is declared — the alarms go to the
+ * same channels the approval tier uses, because a human who cares that a
+ * payment needs signing is the human who cares that an agent stopped.
+ */
+export function livenessFromEnv(env: NodeJS.ProcessEnv): LivenessMonitor {
+  return new LivenessMonitor({
+    channels: channelsFromEnv(env),
+    onAlertError: (channel, error) =>
+      console.error(`[rein] liveness channel "${channel}" failed:`, error),
+    onSightingError: (agentId, error) =>
+      console.error(`[rein] liveness sighting for ${agentId} was not recorded:`, error),
+  });
+}
+
+/** The approval tier the standalone server runs with. */
+export function approvalsFromEnv(env: NodeJS.ProcessEnv): ApprovalService {
+  const channels: ApprovalChannel[] = channelsFromEnv(env);
   const ttl = Number(env['REIN_ESCALATION_TTL_MS'] ?? DEFAULT_ESCALATION_TTL_MS);
   return new ApprovalService({
     channels,
@@ -402,8 +479,13 @@ if (isMainModule()) {
     process.exit(1);
   }
 
-  const engine = new PolicyEngine({ approvals: approvalsFromEnv(process.env) });
+  const engine = new PolicyEngine({
+    approvals: approvalsFromEnv(process.env),
+    liveness: livenessFromEnv(process.env),
+  });
   engine.startExpirySweeper();
+  // Nothing else will ever call the engine about an agent that stopped.
+  engine.startLivenessSweeper();
   const app = buildServer(engine, { ...(auth ? { auth } : {}) });
   app
     .listen({ port, host })

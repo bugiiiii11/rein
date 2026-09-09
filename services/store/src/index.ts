@@ -3,12 +3,24 @@ import { Decision } from '@reinconsole/core';
 import { DecisionLog } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
-import { PgAgentRegistry, PgPolicyStore, PgSettlementStore, PgSpendStore } from './stores.js';
+import {
+  PgAgentRegistry,
+  PgLivenessStore,
+  PgPolicyStore,
+  PgSettlementStore,
+  PgSpendStore,
+} from './stores.js';
 import { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 import { PgSessionStore } from './signer-stores.js';
 import { PgGateStore } from './gate-stores.js';
 
-export { PgAgentRegistry, PgPolicyStore, PgSettlementStore, PgSpendStore } from './stores.js';
+export {
+  PgAgentRegistry,
+  PgLivenessStore,
+  PgPolicyStore,
+  PgSettlementStore,
+  PgSpendStore,
+} from './stores.js';
 export { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 export { PgSessionStore } from './signer-stores.js';
 export { PgGateStore } from './gate-stores.js';
@@ -32,6 +44,15 @@ export interface ReinStore {
   agents: PgAgentRegistry;
   /** Settlement facts behind `engine.reconcile()` — see PgSettlementStore. */
   settlements: PgSettlementStore;
+  /**
+   * Dead-man expectations and sightings (B2). Deliberately NOT named
+   * `liveness`: what the engine takes under that key is a `LivenessMonitor`,
+   * and this is only its durable half. Compose it —
+   * `new LivenessMonitor({ store: s.livenessStore })` — because the alarm's
+   * channels and its once-per-silence bookkeeping are not persistence
+   * concerns, and a store that guessed at them would pick the wrong ones.
+   */
+  livenessStore: PgLivenessStore;
   log: DecisionLog;
   /** Reputation evidence ledger — pass to `new ReputationGraph({ ledger })`. */
   ledger: PgEvidenceLedger;
@@ -85,6 +106,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const policies = await PgPolicyStore.open(db);
     const spend = await PgSpendStore.open(db);
     const settlements = await PgSettlementStore.open(db);
+    const liveness = await PgLivenessStore.open(db);
     const ledger = await PgEvidenceLedger.open(db);
     const intents = await PgIntentStore.open(db);
     const sessions = await PgSessionStore.open(db);
@@ -125,6 +147,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       policies,
       agents,
       settlements,
+      livenessStore: liveness,
       log,
       ledger,
       intents,

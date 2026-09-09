@@ -35,6 +35,11 @@ import { PGlite } from '@electric-sql/pglite';
  *   settlement settles it). It must be durable for the same reason the breaker
  *   floors are: without it every allowance resumed from disk would read
  *   unsettled, and the restart itself would raise the alarm.
+ * - `agent_liveness` is the B2 dead-man state, one row per WATCHED agent: the
+ *   expectation, the last sighting, and `alerted_at`. All three must be
+ *   durable for the same reason the breaker floors are — a restart that forgot
+ *   the sighting would call every live agent dead, and one that forgot
+ *   `alerted_at` would re-announce every alarm an operator has already read.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -149,6 +154,17 @@ CREATE TABLE IF NOT EXISTS gate_counters (
   id      TEXT PRIMARY KEY,
   quoted  BIGINT NOT NULL,
   refused BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_liveness (
+  agent_id     TEXT PRIMARY KEY,
+  interval_str TEXT NOT NULL,
+  grace_ms     BIGINT NOT NULL,
+  since_ms     BIGINT NOT NULL,
+  note         TEXT,
+  last_seen_at BIGINT,
+  last_source  TEXT,
+  alerted_at   BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS settlements (

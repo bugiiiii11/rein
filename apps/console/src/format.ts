@@ -31,6 +31,18 @@ export function relTime(iso: string | undefined, now: number): string {
   return `${Math.floor(mins / 60)}h ago`;
 }
 
+/** Coarse elapsed span for the dead-man chips: "45s", "12m", "3h 10m", "4d". */
+export function duration(ms: number | undefined): string {
+  if (ms === undefined) return '—';
+  const secs = Math.max(0, Math.round(ms / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
 export function latency(ms: number | undefined): string {
   if (ms === undefined) return '—';
   return ms < 1 ? `${(ms * 1000).toFixed(0)}µs` : `${ms.toFixed(2)}ms`;

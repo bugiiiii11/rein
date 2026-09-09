@@ -124,6 +124,14 @@ describe('engine API auth', () => {
     // can only close a reconciliation gap — it authorizes nothing.
     expect(requiredScope('POST', '/v1/settlements')).toBe('evaluate');
     expect(requiredScope('GET', '/v1/reconciliation')).toBe('read');
+    // A heartbeat rides the spender's scope too, and for a stronger reason:
+    // every intent is already a sighting, so a key that can evaluate can
+    // already make an agent look alive by simply spending.
+    expect(requiredScope('POST', '/v1/agents/agt_1/heartbeat')).toBe('evaluate');
+    // Declaring the expectation is configuration, and stays admin.
+    expect(requiredScope('PUT', '/v1/agents/agt_1/liveness')).toBe('admin');
+    expect(requiredScope('DELETE', '/v1/agents/agt_1/liveness')).toBe('admin');
+    expect(requiredScope('GET', '/v1/liveness')).toBe('read');
     expect(requiredScope('POST', '/v1/approvals/dec_1/resolve')).toBe('approve');
     expect(requiredScope('POST', '/v1/policies')).toBe('admin');
     expect(requiredScope('POST', '/v1/something-invented-next-year')).toBe('admin');

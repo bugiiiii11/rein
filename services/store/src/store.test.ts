@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { newId } from '@reinconsole/core';
-import { PolicyEngine, verifyDecisionChain } from '@reinconsole/policy-engine';
+import { LivenessMonitor, PolicyEngine, verifyDecisionChain } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 
 function intent(agentId: string, amount: string) {
@@ -155,6 +155,46 @@ describe('openReinStore', () => {
     const report = new PolicyEngine(b).reconcile({ graceMs: 0 });
     expect(report).toMatchObject({ unattributed: 1, allowed: 0, unsettled: 0 });
     expect(report.gaps).toEqual([]);
+  });
+
+  it('persists the dead-man watch, its sighting and its alarm (B2)', async () => {
+    const dir = tempDir();
+    const agentId = newId('agt');
+    const t0 = Date.now() - 86_400_000;
+
+    const a = await open(dir);
+    const monitorA = new LivenessMonitor({ store: a.livenessStore, startedAt: t0, now: () => t0 });
+    const engineA = new PolicyEngine({ ...a, liveness: monitorA });
+    await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+    await engineA.watchLiveness({ agentId, interval: '15m', graceMs: 0, note: 'price poller' });
+    await engineA.evaluateIntent({ ...intent(agentId, '1.00'), createdAt: new Date(t0) });
+    expect(await monitorA.sweep(t0 + 3_600_000)).toHaveLength(1);
+    await a.close();
+
+    const b = await open(dir);
+    // The engine's witness floor keeps a restart from ALARMING about silence
+    // it did not see, but the panel would still be wrong if the sighting were
+    // lost: every live agent would read as silent since boot.
+    const bootedAt = t0 + 7_200_000;
+    const monitorB = new LivenessMonitor({
+      store: b.livenessStore,
+      startedAt: bootedAt,
+      now: () => bootedAt,
+    });
+    const state = monitorB.state(agentId, bootedAt);
+    expect(state?.expectation.note).toBe('price poller');
+    expect(state?.expectation.since.getTime()).toBe(t0);
+    expect(state?.lastSeenAt).toBe(t0);
+    expect(state?.lastSource).toBe('intent');
+    // And the alarm stays raised, so the operator is not told twice about a
+    // death they have already read (the breaker-floor lesson, A3).
+    expect(state?.alertedAt).toBeDefined();
+    expect(await monitorB.sweep(bootedAt + 86_400_000)).toHaveLength(0);
+
+    // A sighting after the restart clears it, and the next death is news again.
+    const recovery = await monitorB.seen(agentId, 'heartbeat', bootedAt + 60_000);
+    expect(recovery?.silentMs).toBe(7_260_000);
+    expect(monitorB.state(agentId, bootedAt + 60_000)?.alertedAt).toBeUndefined();
   });
 
   it('runs fully in-memory when no dir is given', async () => {

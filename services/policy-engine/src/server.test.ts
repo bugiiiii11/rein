@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { newId } from '@reinconsole/core';
 import { buildServer } from './server.js';
+import { PolicyEngine } from './engine.js';
+import { LivenessMonitor } from './liveness.js';
 
 describe('policy-engine HTTP API', () => {
   it('serves health with the decision-log public key', async () => {
@@ -62,6 +64,59 @@ describe('policy-engine HTTP API', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('validation_error');
+    await app.close();
+  });
+
+  it('answers 404 for every liveness route when no monitor is configured', async () => {
+    const app = buildServer();
+    const agentId = newId('agt');
+    for (const [method, url] of [
+      ['PUT', `/v1/agents/${agentId}/liveness`],
+      ['POST', `/v1/agents/${agentId}/heartbeat`],
+    ] as const) {
+      const res = await app.inject({ method, url, payload: { interval: '15m' } });
+      // A deployment with no monitor is a configuration, not a fault — and a
+      // caller must never read a 500 as "watched".
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe('liveness_disabled');
+    }
+    await app.close();
+  });
+
+  it('watches, heartbeats, and refuses a heartbeat for an unwatched agent', async () => {
+    const app = buildServer(new PolicyEngine({ liveness: new LivenessMonitor() }));
+    const agentId = newId('agt');
+
+    const watched = await app.inject({
+      method: 'PUT',
+      url: `/v1/agents/${agentId}/liveness`,
+      payload: { interval: '15m', graceMs: 1000, note: 'price poller' },
+    });
+    expect(watched.statusCode).toBe(201);
+    expect(watched.json()).toMatchObject({ agentId, interval: '15m', note: 'price poller' });
+
+    // 202: the engine is accepting a claim about the world, exactly like a
+    // settlement report. It authorizes nothing.
+    const beat = await app.inject({ method: 'POST', url: `/v1/agents/${agentId}/heartbeat` });
+    expect(beat.statusCode).toBe(202);
+    expect(beat.json()).toMatchObject({ status: 'alive', lastSource: 'heartbeat' });
+
+    const listed = await app.inject({ method: 'GET', url: '/v1/liveness' });
+    expect(listed.json()).toHaveLength(1);
+
+    // An agent nobody watches is told so, rather than reporting into a void:
+    // believing you are monitored when you are not is the failure B2 exists
+    // to prevent.
+    const orphan = await app.inject({
+      method: 'POST',
+      url: `/v1/agents/${newId('agt')}/heartbeat`,
+    });
+    expect(orphan.statusCode).toBe(404);
+    expect(orphan.json().error).toBe('not_watched');
+
+    const removed = await app.inject({ method: 'DELETE', url: `/v1/agents/${agentId}/liveness` });
+    expect(removed.statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: '/v1/liveness' })).json()).toEqual([]);
     await app.close();
   });
 

@@ -8,6 +8,18 @@ export {
   type BreakerStateOptions,
 } from './engine.js';
 export {
+  LivenessMonitor,
+  LivenessError,
+  InMemoryLivenessStore,
+  type AlertChannel,
+  type LivenessAlert,
+  type LivenessMonitorOptions,
+  type LivenessRecord,
+  type LivenessRecovery,
+  type LivenessState,
+  type LivenessStorePort,
+} from './liveness.js';
+export {
   evaluate,
   conditionMatches,
   breakerTrips,
@@ -54,6 +66,7 @@ export {
   reconcileOptionsFromQuery,
   authFromEnv,
   approvalsFromEnv,
+  livenessFromEnv,
   resolveHost,
   type ServerOptions,
 } from './server.js';
@@ -84,9 +97,15 @@ export {
   type VerifiedGrant,
 } from './approvals.js';
 export {
+  LoggingChannel,
+  TelegramChannel,
+  // Pre-B2 names, kept as aliases of the same classes.
   LoggingApprovalChannel,
   TelegramApprovalChannel,
   formatChallenge,
+  formatAlert,
+  formatSilence,
+  type NotifyChannel,
   type LoggingChannelOptions,
   type TelegramChannelOptions,
 } from './channels.js';

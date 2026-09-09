@@ -19,7 +19,10 @@ import {
   type ApprovalGrant,
   type ApprovalRequest,
   SettlementReport,
+  Heartbeat,
   type Decision,
+  type LivenessExpectation,
+  type LivenessWatchInput,
   type ReinEvent,
 } from '@reinconsole/core';
 import {
@@ -40,6 +43,7 @@ import {
   type SettlementStorePort,
 } from './stores.js';
 import { reconcile, type ReconcileOptions, type ReconciliationReport } from './reconciliation.js';
+import type { LivenessAlert, LivenessMonitor, LivenessState } from './liveness.js';
 import { DecisionLog } from './decision-log.js';
 import { ApprovalService } from './approvals.js';
 
@@ -119,6 +123,12 @@ export interface EngineStores {
    * SDK raises, nothing is parked, and no signature can change the outcome.
    */
   approvals?: ApprovalService;
+  /**
+   * Dead-man monitoring (B2). Omit and the engine watches nobody: no sighting
+   * is written on the evaluate path, and `watchLiveness` refuses. Present, it
+   * still governs nothing — an alarm is news, never an input to a decision.
+   */
+  liveness?: LivenessMonitor;
 }
 
 /**
@@ -136,6 +146,8 @@ export class PolicyEngine {
   readonly settlements: SettlementStorePort;
   /** Undefined when no approval tier is configured (see EngineStores.approvals). */
   readonly approvals: ApprovalService | undefined;
+  /** Undefined when nothing is watching for silence (see EngineStores.liveness). */
+  readonly liveness: LivenessMonitor | undefined;
   private readonly log: DecisionLog;
   private readonly bus = new EventEmitter();
   private tail: Promise<unknown> = Promise.resolve();
@@ -147,6 +159,7 @@ export class PolicyEngine {
     this.settlements = stores.settlements ?? new InMemorySettlementStore();
     this.log = stores.log ?? new DecisionLog();
     this.approvals = stores.approvals;
+    this.liveness = stores.liveness;
   }
 
   get publicKeyPem(): string {
@@ -247,6 +260,12 @@ export class PolicyEngine {
         intent.createdAt.getTime(),
       );
     }
+
+    // The dead-man sighting (B2), recorded for EVERY outcome — a denied intent
+    // is an agent that is alive and blocked, which is a different alarm with a
+    // different remedy. Folding denials out would make a policy change double
+    // as a liveness alarm, and would report a hard-blocked agent as dead.
+    await this.sight(intent.agentId, 'intent', intent.createdAt.getTime());
 
     if (decision.outcome === 'escalate' && this.approvals) {
       const request = await this.approvals.open(intent, decision, {
@@ -460,6 +479,106 @@ export class PolicyEngine {
       throw new TypeError('this engine has no approval service; escalations cannot be resolved');
     }
     return this.approvals;
+  }
+
+  // --- Dead-man monitoring (B2) ---
+
+  /**
+   * Expect this agent to be active at least every `interval`.
+   *
+   * Watching is DECLARED, never inferred: most agents are episodic, and
+   * silence is only evidence about one somebody said should be periodic. An
+   * unwatched agent has no liveness state at all — the same shape of rule as
+   * a `taskBudget`, which never fires on an intent carrying no task id.
+   */
+  async watchLiveness(input: LivenessWatchInput): Promise<LivenessExpectation> {
+    return this.requireLiveness().watch(input);
+  }
+
+  async unwatchLiveness(agentId: string): Promise<boolean> {
+    return this.requireLiveness().unwatch(agentId);
+  }
+
+  /**
+   * Record an out-of-band sighting: the agent is alive and simply has nothing
+   * to buy. Every intent is already a sighting, so a spending agent needs none
+   * of this; without it, though, a dead-man alarm would really be a no-spend
+   * alarm and would page a human over a quiet afternoon.
+   *
+   * It authorizes nothing. The only thing a heartbeat can change is a row in
+   * the liveness report — it cannot lift a breaker, a budget, or a freeze.
+   */
+  async heartbeat(input: z.input<typeof Heartbeat>): Promise<LivenessState | undefined> {
+    const beat = Heartbeat.parse(input);
+    const monitor = this.requireLiveness();
+    await this.sight(beat.agentId, 'heartbeat', beat.at?.getTime() ?? Date.now());
+    return monitor.state(beat.agentId);
+  }
+
+  /** Where every watched agent stands right now. Worst first. */
+  livenessStates(now?: number): LivenessState[] {
+    return this.liveness?.states(now) ?? [];
+  }
+
+  /**
+   * Raise every newly-missing agent, once each, and emit the events.
+   *
+   * The only control in Rein driven by something NOT happening, which is why
+   * it needs a clock at all: no intent will ever arrive to trigger it. The
+   * report from {@link livenessStates} is correct at any instant regardless —
+   * the sweep is what makes an alarm ARRIVE.
+   */
+  async sweepLiveness(now?: number): Promise<LivenessAlert[]> {
+    const monitor = this.liveness;
+    if (!monitor) return [];
+    const raised = await monitor.sweep(now);
+    for (const alert of raised) {
+      this.emit({
+        type: 'liveness.missing',
+        at: new Date(alert.at),
+        agentId: alert.agentId,
+        expectation: alert.expectation,
+        silentMs: alert.silentMs,
+        ...(alert.lastSeenAt !== undefined ? { lastSeenAt: new Date(alert.lastSeenAt) } : {}),
+      });
+    }
+    return raised;
+  }
+
+  /**
+   * Run {@link sweepLiveness} on an interval. Returns the stopper; the timer is
+   * unref'd so it never holds a process open.
+   */
+  startLivenessSweeper(intervalMs = 30_000): () => void {
+    const timer = setInterval(() => {
+      void this.sweepLiveness().catch(() => undefined);
+    }, intervalMs);
+    timer.unref?.();
+    return () => clearInterval(timer);
+  }
+
+  /** Write a sighting if anyone is watching. Never throws — see the monitor. */
+  private async sight(
+    agentId: string,
+    source: 'intent' | 'heartbeat',
+    at: number,
+  ): Promise<void> {
+    const recovery = await this.liveness?.seen(agentId, source, at);
+    if (!recovery) return;
+    this.emit({
+      type: 'liveness.recovered',
+      at: new Date(recovery.at),
+      agentId: recovery.agentId,
+      silentMs: recovery.silentMs,
+      source: recovery.source,
+    });
+  }
+
+  private requireLiveness(): LivenessMonitor {
+    if (!this.liveness) {
+      throw new TypeError('this engine has no liveness monitor; nothing is being watched');
+    }
+    return this.liveness;
   }
 
   /**

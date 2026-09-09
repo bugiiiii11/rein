@@ -216,6 +216,47 @@ describe('reconciliation (B1)', () => {
   });
 });
 
+describe('dead-man monitoring (B2)', () => {
+  it('watches the research poller and NOBODY else', () => {
+    const byName = Object.fromEntries(boot.agents.map((a) => [a.name, a]));
+    // Declared, never inferred: the session agent demonstrates custody and the
+    // procurement agent demonstrates reputation. Neither promised a cadence,
+    // and watching them would put two permanent alarms on a console whose
+    // scenario ends by design — which teaches an operator to ignore the panel.
+    expect(byName['session-agent-1']?.liveness).toBeUndefined();
+    expect(byName['procurement-agent-1']?.liveness).toBeUndefined();
+
+    const research = byName['research-agent-1']?.liveness;
+    expect(research?.interval).toBe('5m');
+    // It just ran the scenario, so it is alive and its last sighting is an
+    // INTENT — the engine needs no separate heartbeat from a spending agent.
+    expect(research?.status).toBe('alive');
+    expect(research?.lastSource).toBe('intent');
+    expect(research?.note).toBeTruthy();
+  });
+
+  it('adds no decision and changes no count — an alarm is not a gate', () => {
+    // Liveness is observability: watching an agent must not move a single
+    // number in the pinned boot fingerprint above.
+    expect(boot.stats.decisions).toBe(11);
+    expect(boot.stats.escalate).toBe(0);
+    expect(boot.feed.some((f) => f.kind === 'missing')).toBe(false);
+  });
+
+  it('counts a DENIED ping as a sighting — a blocked agent is alive', async () => {
+    const agent = world.getState().agents.find((a) => a.name === 'research-agent-1')!;
+    // The hour budget has long been spent by the scenario, so this ping is
+    // denied. It is still proof of life, and the freshest sighting wins.
+    const before = world.getState().agents.find((a) => a.id === agent.id)!.liveness!;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(await world.pingAgent(agent.id)).toBe(true);
+    const after = world.getState().agents.find((a) => a.id === agent.id)!.liveness!;
+    expect(Date.parse(after.lastSeenAt!)).toBeGreaterThan(Date.parse(before.lastSeenAt!));
+    expect(after.lastSource).toBe('intent');
+    expect(after.status).toBe('alive');
+  });
+});
+
 describe('world methods', () => {
   it('freeze/unfreeze flip agent status and reject unknown ids', async () => {
     const agent = world.getState().agents.find((a) => a.name === 'research-agent-1')!;

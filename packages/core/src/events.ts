@@ -7,6 +7,7 @@ import { Decision } from './decision.js';
 import { SettledPayment } from './payment.js';
 import { GateReceipt } from './gate-receipt.js';
 import { ApprovalRequest } from './approval.js';
+import { LivenessExpectation, LivenessSource } from './liveness.js';
 
 /**
  * The canonical event envelope published on the bus (NATS in production).
@@ -19,6 +20,9 @@ import { ApprovalRequest } from './approval.js';
  * payment it accepts, every payment it turns away.
  * `approval.*` is the human-in-the-loop tier: an escalated intent parked for a
  * signature, and the signed (or lapsed) verdict that closed it.
+ * `liveness.*` is the dead-man tier (B2), and the only pair here emitted by
+ * something NOT happening: a watched agent that went quiet past its expected
+ * interval, and the sighting that ended the silence.
  */
 export const ReinEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('intent.created'), at: z.coerce.date(), intent: PaymentIntent }),
@@ -72,6 +76,24 @@ export const ReinEvent = z.discriminatedUnion('type', [
     request: ApprovalRequest,
     /** The follow-up allow/deny decision this resolution appended. */
     decision: Decision,
+  }),
+  z.object({
+    type: z.literal('liveness.missing'),
+    at: z.coerce.date(),
+    agentId: AgentId,
+    expectation: LivenessExpectation,
+    /** How long the agent has been silent when the alarm was raised. */
+    silentMs: z.number().int().nonnegative(),
+    /** Last sighting, absent when the agent was never seen at all. */
+    lastSeenAt: z.coerce.date().optional(),
+  }),
+  z.object({
+    type: z.literal('liveness.recovered'),
+    at: z.coerce.date(),
+    agentId: AgentId,
+    /** How long the silence lasted, measured to this sighting. */
+    silentMs: z.number().int().nonnegative(),
+    source: LivenessSource,
   }),
   z.object({
     type: z.literal('gate.refused'),

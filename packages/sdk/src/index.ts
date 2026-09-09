@@ -18,6 +18,10 @@ export {
 export {
   EngineClient,
   BreakerState,
+  LivenessState,
+  AllowanceGap,
+  ReconciliationReport,
+  type ReconciliationQuery,
   type EngineClientOptions,
   type EvaluateResponse,
   type ApprovalView,

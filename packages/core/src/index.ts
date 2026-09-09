@@ -21,6 +21,7 @@ export * from './payment.js';
 export * from './receipt.js';
 export * from './gate-receipt.js';
 export * from './policy.js';
+export * from './liveness.js';
 export * from './api-key.js';
 export * from './approval.js';
 export * from './reputation.js';

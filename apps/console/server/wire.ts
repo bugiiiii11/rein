@@ -13,6 +13,9 @@ export type FeedKind =
   | 'shadow'
   // the mirror of a shadow spend: an allowance whose money never moved
   | 'unsettled'
+  // dead-man (B2): a watched agent went quiet, and the sighting that ended it
+  | 'missing'
+  | 'recovered'
   // vendor side (gate.*): a quote issued, revenue earned, a payment turned away
   | 'quote'
   | 'revenue'
@@ -55,6 +58,38 @@ export interface FeedItem {
   code?: string;
   // signer
   sessionId?: string;
+  // dead-man (B2): how long the agent had been silent, and what it owes
+  silentMs?: number;
+  interval?: string;
+}
+
+/**
+ * Where one agent stands against its expected cadence (B2), flattened onto the
+ * agent it describes.
+ *
+ * It rides {@link AgentView} rather than a panel of its own, for two reasons.
+ * Liveness is a property OF an agent — a second top-level list would be a
+ * second source of truth for one fact — and the dashboard has no spare
+ * vertical space: every fixed panel is paid for out of its column's scroll
+ * lists (S43/S44, both measured). An agent nobody watches has no value here
+ * at all, which is the "declared, never inferred" rule showing through to the
+ * UI: absence means unwatched, not healthy.
+ */
+export interface AgentLivenessView {
+  /** The declared cadence, e.g. '5m'. */
+  interval: string;
+  /**
+   * `alive` | `late` | `missing` | `unknown`. `unknown` is NOT an alarm: the
+   * console restarted and has not been up long enough to have witnessed the
+   * silence it can see.
+   */
+  status: 'alive' | 'late' | 'missing' | 'unknown';
+  silentMs: number;
+  /** ISO; absent when the agent has not been seen once since watching began. */
+  lastSeenAt?: string;
+  lastSource?: 'intent' | 'heartbeat';
+  /** What the agent is supposed to be doing — the alarm's only human context. */
+  note?: string;
 }
 
 export interface AgentView {
@@ -69,6 +104,8 @@ export interface AgentView {
   spent: string; // session allowed spend (decimal)
   calls: number; // allowed calls this session
   createdAt: string;
+  /** Dead-man state (B2). Absent when nobody is watching this agent. */
+  liveness?: AgentLivenessView;
 }
 
 export interface PolicyRuleView {

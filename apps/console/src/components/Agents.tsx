@@ -1,10 +1,48 @@
-import type { AgentView } from '../../server/wire';
+import type { AgentLivenessView, AgentView } from '../../server/wire';
 import { api } from '../api';
-import { usd } from '../format';
+import { duration, usd } from '../format';
 
 function shortAddr(a: string): string {
   if (a.length <= 12) return a;
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+/**
+ * The dead-man chip (B2), rendered ON the agent it describes.
+ *
+ * An agent with no chip is one nobody watches — absence means unwatched, not
+ * healthy, because an expectation is declared rather than inferred. `unknown`
+ * gets its own wording for the same reason it gets its own state: the console
+ * restarted and cannot vouch for the silence it can see, and dressing that up
+ * as an alarm would be a claim it has no evidence for.
+ */
+function LivenessChip({ live }: { live: AgentLivenessView }) {
+  const seen = live.lastSeenAt
+    ? `last seen ${new Date(live.lastSeenAt).toLocaleTimeString('en-GB', { hour12: false })} (${live.lastSource ?? 'seen'})`
+    : 'never seen since watching began';
+  const title = [
+    live.note ?? 'expected to be active on a schedule',
+    `expects activity every ${live.interval}`,
+    seen,
+    live.status === 'unknown'
+      ? 'the console restarted more recently than this silence — not an alarm'
+      : live.status === 'missing'
+        ? 'nothing was blocked: this is work that is NOT happening'
+        : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const text =
+    live.status === 'alive'
+      ? `live · every ${live.interval}`
+      : live.status === 'unknown'
+        ? `silent ${duration(live.silentMs)} · unwitnessed`
+        : `silent ${duration(live.silentMs)}`;
+  return (
+    <span className={`tag liveness ${live.status}`} title={title}>
+      {text}
+    </span>
+  );
 }
 
 function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
@@ -27,6 +65,7 @@ function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
             #{l}
           </span>
         ))}
+        {a.liveness && <LivenessChip live={a.liveness} />}
       </div>
 
       <div className="agent-figures">
@@ -68,12 +107,18 @@ function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
 
 export function Agents({ agents, writable }: { agents: AgentView[]; writable: boolean }) {
   const ordered = [...agents].reverse();
+  // Only a real alarm is counted here. `late` is inside its grace and
+  // `unknown` is about our own restart; neither is news, and a header that
+  // counted them would cry at every deploy.
+  const missing = agents.filter((a) => a.liveness?.status === 'missing').length;
   return (
     <section className="panel grow">
       <div className="panel-head">
         <span className="panel-tick" />
         <span className="panel-title">Agents</span>
-        <span className="panel-count">{agents.length} managed</span>
+        <span className={`panel-count ${missing > 0 ? 'bad' : ''}`}>
+          {agents.length} managed{missing > 0 ? ` · ${missing} silent` : ''}
+        </span>
       </div>
       <div className="panel-body">
         {ordered.length === 0 ? (
