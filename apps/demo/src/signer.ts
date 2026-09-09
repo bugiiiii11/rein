@@ -7,7 +7,7 @@
  * EIP-3009 signature requires an engine-signed allow voucher for the exact
  * transfer being signed — verified offline, usable once.
  *
- * Six scenarios, fully offline (every signature cryptographically verified,
+ * Seven scenarios, fully offline (every signature cryptographically verified,
  * nothing touches a real chain):
  *   1. Guarded payment — key never enters the agent process
  *   2. Forged voucher — rogue computes every hash right, cannot sign as the engine
@@ -15,6 +15,7 @@
  *   4. Replay — one voucher, one signature
  *   5. Kill switch — freeze now reaches the key itself
  *   6. Session cap — the signer's backstop under policy
+ *   7. Lifetime cap — a grant no one revokes still stops working
  *
  * Run: pnpm --filter @reinconsole/demo demo:signer
  */
@@ -38,8 +39,11 @@ import {
   type PaymentRequirement,
 } from '@reinconsole/sdk';
 import {
+  InMemorySessionStore,
+  MAX_SESSION_LIFETIME_SECONDS,
   SessionSigner,
   SignerError,
+  effectiveExpiry,
   intentHashOf,
   sessionPayerFor,
 } from '@reinconsole/signer';
@@ -77,6 +81,15 @@ const section = (label: string) => `\n${bar('─')}\n ${label}\n${bar('─')}`;
 
 function outcome(ok: boolean, label: string, detail: string) {
   const mark = ok ? '✓ SIGNED ' : '✗ REFUSED';
+  console.log(`  ${label.padEnd(26)} ${mark}  ${detail}`);
+}
+
+/**
+ * Same shape for the scenarios that never reach a signature (grants, clocks),
+ * where "signed / refused" would be a lie about what was tested.
+ */
+function verdict(ok: boolean, marks: [yes: string, no: string], label: string, detail: string) {
+  const mark = (ok ? `✓ ${marks[0]}` : `✗ ${marks[1]}`).padEnd(9);
   console.log(`  ${label.padEnd(26)} ${mark}  ${detail}`);
 }
 
@@ -374,6 +387,64 @@ async function main() {
   }
   console.log('\n  The engine said allow; the session had no room left. Stolen tokens');
   console.log('  are bounded by their cap and their clock, not by vendor goodwill.');
+
+  // ── Scenario 7: lifetime cap ───────────────────────────────────────────────
+  console.log(section('Scenario 7  ·  Lifetime cap (authority that expires by itself)'));
+  console.log(`  Caps and kill switches assume someone is paying attention. A lifetime`);
+  console.log(`  cap does not: ${MAX_SESSION_LIFETIME_SECONDS / 86400} days is the ceiling, and asking for more is refused`);
+  console.log(`  at mint time rather than quietly shortened.
+`);
+
+  try {
+    await signer.createSession({ agentId, ttlSeconds: MAX_SESSION_LIFETIME_SECONDS + 86400 });
+    throw new Error('an 11-day session was minted — this must never happen');
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    verdict(false, ['MINTED', 'REFUSED'], 'createSession  11d', why);
+  }
+  verdict(true, ['MINTED', 'REFUSED'], 'createSession  10d', 'at the ceiling');
+  await signer.createSession({ agentId, ttlSeconds: MAX_SESSION_LIFETIME_SECONDS });
+
+  // The other half: a grant that predates the cap. Expiry is DERIVED from
+  // createdAt at every read, so a record hydrated out of a durable store —
+  // written by an older build, or under a looser ceiling — is bound too.
+  const legacyStore = new InMemorySessionStore();
+  const clock = { nowMs: Date.now() };
+  const loose = new SessionSigner({
+    enginePublicKeyPem: engine.publicKeyPem,
+    maxSessionLifetimeSeconds: 30 * 86400,
+    now: () => clock.nowMs,
+    store: legacyStore,
+  });
+  const legacy = await loose.createSession({ agentId, ttlSeconds: 30 * 86400 });
+  console.log(`
+  A 30-day grant from an older deployment: ${legacy.session.id}`);
+  console.log(`  Restarting on today's build, same store, default ${MAX_SESSION_LIFETIME_SECONDS / 86400}-day cap:
+`);
+
+  const strict = new SessionSigner({
+    enginePublicKeyPem: engine.publicKeyPem,
+    now: () => clock.nowMs,
+    store: legacyStore,
+  });
+  // deleteSession refuses to drop an ACTIVE grant, so whether it succeeds is
+  // the strict signer stating, in its own voice, that the grant is dead.
+  for (const day of [9, 11]) {
+    clock.nowMs = legacy.session.createdAt.getTime() + day * 86400 * 1000;
+    const alive = await strict
+      .deleteSession(legacy.session.id)
+      .then(() => false)
+      .catch(() => true);
+    verdict(
+      alive,
+      ['LIVE', 'DEAD'],
+      `day ${String(day).padStart(2)}`,
+      alive ? 'session active' : 'dead — past the lifetime cap, nobody revoked it',
+    );
+  }
+  console.log(`
+  Stored expiry: ${legacy.session.expiresAt.toISOString().slice(0, 10)}   Real expiry: ${effectiveExpiry(legacy.session).toISOString().slice(0, 10)}`);
+  console.log('  A stolen token has a deadline whether or not anyone notices the theft.');
 
   // ── Summary ────────────────────────────────────────────────────────────────
   console.log('\n' + bar('═'));

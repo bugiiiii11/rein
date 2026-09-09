@@ -10,7 +10,13 @@ import {
 } from '@reinconsole/x402-rails';
 import { SessionSigner } from './signer.js';
 import { SignerError } from './errors.js';
-import { InMemorySessionStore, type CreateSessionInput } from './sessions.js';
+import {
+  InMemorySessionStore,
+  MAX_SESSION_LIFETIME_SECONDS,
+  effectiveExpiry,
+  sessionState,
+  type CreateSessionInput,
+} from './sessions.js';
 import { evaluateFor, makeEngine, makeRequirement, VENDOR_ADDRESS } from './testkit.js';
 
 /** Engine + signer + custodied wallet + session, with a controllable clock. */
@@ -349,6 +355,123 @@ describe('SessionSigner.deleteSession', () => {
     await signer.revokeSession(session.id);
     await expect(signer.deleteSession(session.id)).rejects.toThrow(/does not support delete/);
     expect(signer.sessions()).toHaveLength(1);
+  });
+});
+
+describe('session lifetime cap (A5)', () => {
+  it('refuses an over-long ttl at creation rather than clamping it', async () => {
+    const { engine, agentId } = await makeEngine();
+    const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+
+    await expect(
+      signer.createSession({ agentId, ttlSeconds: MAX_SESSION_LIFETIME_SECONDS + 1 }),
+    ).rejects.toThrow(/exceeds the session lifetime cap/);
+    // Refused means refused: no shortened grant was quietly minted.
+    expect(signer.sessions()).toHaveLength(0);
+  });
+
+  it('mints a grant exactly at the cap', async () => {
+    const { engine, agentId } = await makeEngine();
+    const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    const { session } = await signer.createSession({
+      agentId,
+      ttlSeconds: MAX_SESSION_LIFETIME_SECONDS,
+    });
+    expect(session.expiresAt.getTime() - session.createdAt.getTime()).toBe(
+      MAX_SESSION_LIFETIME_SECONDS * 1000,
+    );
+  });
+
+  it('defaults to ten days and honours a tighter configured cap', async () => {
+    const { engine, agentId } = await makeEngine();
+    expect(MAX_SESSION_LIFETIME_SECONDS).toBe(10 * 24 * 3600);
+    expect(new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem }).maxSessionLifetimeSeconds)
+      .toBe(MAX_SESSION_LIFETIME_SECONDS);
+
+    const strict = new SessionSigner({
+      enginePublicKeyPem: engine.publicKeyPem,
+      maxSessionLifetimeSeconds: 3600,
+    });
+    await expect(strict.createSession({ agentId, ttlSeconds: 7200 })).rejects.toThrow(
+      /lifetime cap of 3600s/,
+    );
+    await expect(strict.createSession({ agentId, ttlSeconds: 3600 })).resolves.toBeDefined();
+  });
+
+  it('cannot be switched off', async () => {
+    const { engine } = await makeEngine();
+    for (const bad of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+      expect(
+        () =>
+          new SessionSigner({
+            enginePublicKeyPem: engine.publicKeyPem,
+            maxSessionLifetimeSeconds: bad,
+          }),
+      ).toThrow(/positive finite/);
+    }
+  });
+
+  it('kills a hydrated grant that outlives the cap, however it got into the store', async () => {
+    // The hole creation-time refusal alone leaves: a durable store hands back a
+    // record minted under a looser ceiling (older build, wider config). It must
+    // still die at the cap, with no stored field and no migration.
+    const { engine, agentId } = await makeEngine();
+    const clock = { nowMs: Date.now() };
+    const store = new InMemorySessionStore();
+    const loose = new SessionSigner({
+      enginePublicKeyPem: engine.publicKeyPem,
+      maxSessionLifetimeSeconds: 30 * 24 * 3600,
+      now: () => clock.nowMs,
+      store,
+    });
+    const privateKey = generatePrivateKey();
+    loose.registerWallet(agentId, privateKey);
+    const { session, token } = await loose.createSession({ agentId, ttlSeconds: 30 * 24 * 3600 });
+
+    // Same store, same grant — a restart under the default ten-day cap.
+    const strict = new SessionSigner({
+      enginePublicKeyPem: engine.publicKeyPem,
+      // The engine stamps vouchers off the real clock while this test runs the
+      // signer days ahead, so freshness is widened out of the way — the check
+      // under test is the lifetime cap, not voucher staleness.
+      maxDecisionAgeSeconds: 60 * 24 * 3600,
+      now: () => clock.nowMs,
+      store,
+    });
+    strict.registerWallet(agentId, privateKey);
+
+    clock.nowMs += 9 * 24 * 3600 * 1000;
+    const day9 = await evaluateFor(engine, agentId);
+    await expect(
+      strict.sign({ sessionToken: token, requirement: makeRequirement(), ...day9 }),
+    ).resolves.toBeDefined();
+
+    clock.nowMs += 2 * 24 * 3600 * 1000; // day 11: past the cap, far short of the grant
+    const day11 = await evaluateFor(engine, agentId);
+    const refusal = await expectRefusal(
+      strict.sign({ sessionToken: token, requirement: makeRequirement(), ...day11 }),
+      'session_expired',
+    );
+    expect(refusal.message).toMatch(/lifetime cap/);
+    expect(session.expiresAt.getTime()).toBeGreaterThan(clock.nowMs);
+    expect(effectiveExpiry(session).getTime()).toBeLessThan(clock.nowMs);
+    expect(sessionState(session, clock.nowMs)).toBe('expired');
+    // And the dead grant is deletable without a ceremonial revocation first.
+    await expect(strict.deleteSession(session.id)).resolves.toBeUndefined();
+  });
+
+  it('reports routine expiry differently from a cap kill', async () => {
+    const w = await makeWorld({ ttlSeconds: 10 });
+    w.clock.nowMs += 11_000;
+    const refusal = await expectRefusal(
+      w.signer.sign({
+        sessionToken: w.token,
+        requirement: makeRequirement(),
+        ...(await evaluateFor(w.engine, w.agentId)),
+      }),
+      'session_expired',
+    );
+    expect(refusal.message).toBe('session has expired');
   });
 });
 

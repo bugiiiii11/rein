@@ -7,7 +7,11 @@ export interface CreateSessionInput {
   capAmount?: string;
   /** Ceiling per individual signature. Absent = uncapped. */
   maxPerPayment?: string;
-  /** Session lifetime. Defaults to one hour. */
+  /**
+   * Session lifetime. Defaults to one hour, and may never exceed the signer's
+   * max-lifetime cap ({@link MAX_SESSION_LIFETIME_SECONDS}) — createSession
+   * refuses rather than silently shortening it.
+   */
   ttlSeconds?: number;
 }
 
@@ -24,13 +28,50 @@ export function hashToken(token: string): string {
 /** A session's standing at a moment in time. */
 export type SessionState = 'active' | 'expired' | 'revoked';
 
-export function sessionState(session: Session, nowMs: number): SessionState {
+export function sessionState(
+  session: Session,
+  nowMs: number,
+  maxLifetimeSeconds: number = MAX_SESSION_LIFETIME_SECONDS,
+): SessionState {
   if (session.revokedAt !== undefined) return 'revoked';
-  if (session.expiresAt.getTime() <= nowMs) return 'expired';
+  if (effectiveExpiry(session, maxLifetimeSeconds).getTime() <= nowMs) return 'expired';
   return 'active';
 }
 
 export const DEFAULT_TTL_SECONDS = 3600;
+
+/**
+ * The hard ceiling on how long a session grant may live: ten days. A session
+ * key is delegated authority over real money, so its blast radius has to be
+ * bounded by something that is true whether or not anyone remembers to revoke
+ * it — a stolen token stops working on its own. Ten days follows Flop's
+ * protocol invariant (yellow paper 6.2); it is long enough for a long-running
+ * agent and short enough that a compromise cannot become permanent.
+ */
+export const MAX_SESSION_LIFETIME_SECONDS = 10 * 24 * 3600;
+
+/**
+ * When a grant actually dies: the EARLIER of its own expiry and the lifetime
+ * cap measured from creation. The cap is enforced twice on purpose, and the
+ * two enforcements answer different questions.
+ *
+ * createSession REFUSES an over-long ttl, so a caller learns the ceiling at
+ * the safe moment (mint time) instead of discovering it mid-payment as a
+ * mystery `session_expired`. But refusing at creation only binds grants this
+ * build minted: a durable store hydrates records written by an older
+ * deployment, or under a larger configured cap, and those would otherwise
+ * outlive the invariant a restart away. Deriving expiry from `createdAt` at
+ * every read closes that — the cap holds over the whole population of grants,
+ * including ones already on disk, with no migration and no stored field to
+ * keep in sync.
+ */
+export function effectiveExpiry(
+  session: Session,
+  maxLifetimeSeconds: number = MAX_SESSION_LIFETIME_SECONDS,
+): Date {
+  const capped = session.createdAt.getTime() + maxLifetimeSeconds * 1000;
+  return new Date(Math.min(session.expiresAt.getTime(), capped));
+}
 
 /** Sync for in-memory stores; durable stores return a promise the signer awaits. */
 export type MaybePromise<T> = T | Promise<T>;

@@ -12,6 +12,7 @@ import {
 } from '@reinconsole/x402-rails';
 import { buildSignerServer } from './server.js';
 import { SessionSigner } from './signer.js';
+import { MAX_SESSION_LIFETIME_SECONDS } from './sessions.js';
 import { SignerError } from './errors.js';
 import { createRemoteSessionPayer } from './payer.js';
 import { evaluateFor, makeRequirement, VENDOR_HOST } from './testkit.js';
@@ -128,6 +129,24 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
     expect(created.token).toMatch(/^[0-9a-f]{64}$/);
     expect(created.session['tokenHash']).toBeUndefined();
     expect(created.session['agentId']).toBe(agentId);
+    // The expiry a caller should plan rotation against travels with the grant.
+    expect(created.session['effectiveExpiresAt']).toBe(created.session['expiresAt']);
+  });
+
+  it('rejects an over-long ttl as a 400 naming the cap, and advertises it on /health', async () => {
+    const health = (await (await fetch(`${signerUrl}/health`)).json()) as {
+      maxSessionLifetimeSeconds: number;
+    };
+    expect(health.maxSessionLifetimeSeconds).toBe(MAX_SESSION_LIFETIME_SECONDS);
+
+    const res = await fetch(`${signerUrl}/v1/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentId, ttlSeconds: MAX_SESSION_LIFETIME_SECONDS + 1 }),
+    });
+    // 400, not the 500 an unmapped signer throw would have produced.
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('validation_error');
   });
 
   it('pays a vendor through guard -> engine -> remote signer, key never leaving custody', async () => {

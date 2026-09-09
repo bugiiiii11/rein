@@ -195,10 +195,16 @@ SDK mode is honest about its limit: an agent that holds its own key can bypass t
 3. **Once.** One decision releases one signature; replays are refused — including two concurrent requests racing the same voucher.
 4. **Within the session.** Per-payment and cumulative caps, expiry, and revocation are enforced at the signing boundary, _under_ whatever policy says.
 
+### Session lifetime is capped, not merely configurable
+
+A session token is delegated authority over real money, so how long one can live is a protocol invariant rather than a setting: **ten days, maximum** (`MAX_SESSION_LIFETIME_SECONDS`, tunable down via `maxSessionLifetimeSeconds`, never off — a non-positive value is a construction error). A stolen token therefore stops working on its own, whether or not anyone remembers to revoke it.
+
+Asking for more is **refused at creation, never silently shortened** — a caller that thinks it holds a 30-day grant would schedule its rotation on the wrong clock and meet the cap mid-payment as an unexplained `session_expired`. And because a grant's real expiry is derived (`min(expiresAt, createdAt + cap)`) rather than stored, the cap also binds records a durable store hydrates from an older deployment or a looser config — no migration, nothing to keep in sync. `/health` advertises the cap; every session the API returns carries the `effectiveExpiresAt` it will actually die at.
+
 Every release and refusal is emitted on the event bus (`signature.released` / `signature.refused`). The kill switch stops being advisory: freeze the agent and there is no allow, no signature, no payment.
 
 ```bash
-pnpm --filter @reinconsole/demo demo:signer   # six scenarios, fully offline, every signature verified
+pnpm --filter @reinconsole/demo demo:signer   # seven scenarios, fully offline, every signature verified
 ```
 
 Run it as a service (`buildSignerServer`) with the SDK's `createRemoteSessionPayer`, or in-process with `sessionPayerFor`. There is deliberately no HTTP endpoint that accepts a private key.

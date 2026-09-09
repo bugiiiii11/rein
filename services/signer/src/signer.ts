@@ -30,7 +30,9 @@ import {
 import { SignerError, type RefusalCode } from './errors.js';
 import {
   DEFAULT_TTL_SECONDS,
+  MAX_SESSION_LIFETIME_SECONDS,
   InMemorySessionStore,
+  effectiveExpiry,
   hashToken,
   sessionState,
   type CreateSessionInput,
@@ -50,6 +52,14 @@ export interface SessionSignerOptions {
   defaultTimeoutSeconds?: number;
   /** Extra token-address -> symbol mappings, mirroring the guard's option. */
   assetAddresses?: Record<string, Asset>;
+  /**
+   * Hard ceiling on session lifetime, in seconds. Defaults to ten days
+   * ({@link MAX_SESSION_LIFETIME_SECONDS}). There is deliberately no way to
+   * switch this off: an uncapped session key is the exact blast radius the
+   * custody tier exists to bound, so a non-finite or non-positive value is a
+   * construction error, not an "unlimited" setting.
+   */
+  maxSessionLifetimeSeconds?: number;
   /** Injectable ms clock for deterministic tests. */
   now?: () => number;
   /**
@@ -93,6 +103,8 @@ export class SessionSigner {
   private readonly defaultTimeoutSeconds: number;
   private readonly assetAddresses: Record<string, Asset>;
   private readonly now: () => number;
+  /** Hard ceiling on session lifetime — see {@link SessionSignerOptions.maxSessionLifetimeSeconds}. */
+  readonly maxSessionLifetimeSeconds: number;
   /** Serializes sign() — see {@link sign}. */
   private tail: Promise<unknown> = Promise.resolve();
 
@@ -104,6 +116,13 @@ export class SessionSigner {
     this.assetAddresses = options.assetAddresses ?? {};
     this.now = options.now ?? (() => Date.now());
     this.store = options.store ?? new InMemorySessionStore();
+    const maxLifetime = options.maxSessionLifetimeSeconds ?? MAX_SESSION_LIFETIME_SECONDS;
+    if (!Number.isFinite(maxLifetime) || maxLifetime <= 0) {
+      throw new Error(
+        `maxSessionLifetimeSeconds must be a positive finite number of seconds (got ${maxLifetime})`,
+      );
+    }
+    this.maxSessionLifetimeSeconds = maxLifetime;
   }
 
   onEvent(handler: (event: ReinEvent) => void): void {
@@ -131,9 +150,18 @@ export class SessionSigner {
    * the grant on disk before the token exists anywhere outside this return.
    */
   async createSession(input: CreateSessionInput): Promise<CreatedSession> {
+    const ttl = input.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+    // Refuse, never clamp. A caller that asked for 30 days and silently got 10
+    // believes it has 30: it schedules rotation on the wrong clock and meets
+    // the cap as an unexplained session_expired in the middle of a payment.
+    // Failing here moves that conversation to the one moment it is cheap.
+    if (ttl > this.maxSessionLifetimeSeconds) {
+      throw new Error(
+        `ttlSeconds ${ttl} exceeds the session lifetime cap of ${this.maxSessionLifetimeSeconds}s`,
+      );
+    }
     const token = randomBytes(32).toString('hex');
     const createdAt = new Date(this.now());
-    const ttl = input.ttlSeconds ?? DEFAULT_TTL_SECONDS;
     const session = Session.parse({
       id: newId('ses'),
       agentId: input.agentId,
@@ -163,7 +191,7 @@ export class SessionSigner {
   async deleteSession(id: string): Promise<void> {
     const session = this.store.get(id);
     if (!session) throw new Error(`unknown session: ${id}`);
-    if (sessionState(session, this.now()) === 'active') {
+    if (sessionState(session, this.now(), this.maxSessionLifetimeSeconds) === 'active') {
       throw new Error(`session ${id} is still active — revoke it before deleting`);
     }
     if (!this.store.delete) throw new Error('session store does not support delete');
@@ -213,9 +241,22 @@ export class SessionSigner {
     }
 
     const ctx = { sessionId: session.id, agentId: intent.agentId, intentId: intent.id };
-    const state = sessionState(session, this.now());
+    const state = sessionState(session, this.now(), this.maxSessionLifetimeSeconds);
     if (state === 'revoked') throw this.refuse('session_revoked', 'session has been revoked', ctx);
-    if (state === 'expired') throw this.refuse('session_expired', 'session has expired', ctx);
+    if (state === 'expired') {
+      // Same code either way — the remedy is identical (mint a new grant) —
+      // but the message separates routine expiry from a grant the lifetime cap
+      // killed early, which is an operational signal: the store is holding
+      // records minted under a looser ceiling than this signer enforces.
+      const cappedEarly = effectiveExpiry(session, this.maxSessionLifetimeSeconds) < session.expiresAt;
+      throw this.refuse(
+        'session_expired',
+        cappedEarly
+          ? `session exceeded the ${this.maxSessionLifetimeSeconds}s lifetime cap`
+          : 'session has expired',
+        ctx,
+      );
+    }
 
     if (intent.agentId !== session.agentId) {
       throw this.refuse(

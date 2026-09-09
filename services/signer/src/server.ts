@@ -3,15 +3,21 @@ import { z } from 'zod';
 import { AgentId, Decision, DecimalString, PaymentIntent, type Session } from '@reinconsole/core';
 import { PaymentRequirement } from '@reinconsole/sdk';
 import { SignerError } from './errors.js';
-import { sessionState } from './sessions.js';
+import { effectiveExpiry, sessionState } from './sessions.js';
 import type { SessionSigner } from './signer.js';
 
-const SessionInput = z.object({
-  agentId: AgentId,
-  capAmount: DecimalString.optional(),
-  maxPerPayment: DecimalString.optional(),
-  ttlSeconds: z.number().int().positive().optional(),
-});
+/**
+ * The ttl ceiling is built into the schema so an over-long request comes back
+ * as a 400 naming the cap, rather than a 500 from the signer's own throw.
+ */
+function sessionInputSchema(maxLifetimeSeconds: number) {
+  return z.object({
+    agentId: AgentId,
+    capAmount: DecimalString.optional(),
+    maxPerPayment: DecimalString.optional(),
+    ttlSeconds: z.number().int().positive().max(maxLifetimeSeconds).optional(),
+  });
+}
 
 const SignInput = z.object({
   sessionToken: z.string().min(1),
@@ -20,10 +26,18 @@ const SignInput = z.object({
   decision: Decision,
 });
 
-/** What the API shows of a session: everything but the token hash. */
-function redact(session: Session, spent: string) {
+/**
+ * What the API shows of a session: everything but the token hash, plus the
+ * lifetime-capped expiry it will actually die at. `expiresAt` stays the stored
+ * grant so the two never silently diverge in an operator's eyes.
+ */
+function redact(session: Session, spent: string, maxLifetimeSeconds: number) {
   const { tokenHash: _tokenHash, ...rest } = session;
-  return { ...rest, spent };
+  return {
+    ...rest,
+    spent,
+    effectiveExpiresAt: effectiveExpiry(session, maxLifetimeSeconds),
+  };
 }
 
 /**
@@ -33,6 +47,8 @@ function redact(session: Session, spent: string) {
  */
 export function buildSignerServer(signer: SessionSigner): FastifyInstance {
   const app = Fastify({ logger: false });
+  const maxLifetime = signer.maxSessionLifetimeSeconds;
+  const SessionInput = sessionInputSchema(maxLifetime);
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof z.ZodError) {
@@ -45,7 +61,7 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
     return reply.status(500).send({ error: 'internal_error', message });
   });
 
-  app.get('/health', () => ({ status: 'ok' }));
+  app.get('/health', () => ({ status: 'ok', maxSessionLifetimeSeconds: maxLifetime }));
 
   // --- Sessions ---
   // Writes are awaited: on a durable store, a 2xx means the grant (or the
@@ -53,11 +69,11 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
   app.post('/v1/sessions', async (req) => {
     const input = SessionInput.parse(req.body);
     const created = await signer.createSession(input);
-    return { session: redact(created.session, '0'), token: created.token };
+    return { session: redact(created.session, '0', maxLifetime), token: created.token };
   });
 
   app.get('/v1/sessions', () =>
-    signer.sessions().map((s) => redact(s, signer.sessionSpent(s.id))),
+    signer.sessions().map((s) => redact(s, signer.sessionSpent(s.id), maxLifetime)),
   );
 
   app.post('/v1/sessions/:id/revoke', async (req, reply) => {
@@ -79,7 +95,7 @@ export function buildSignerServer(signer: SessionSigner): FastifyInstance {
     if (!session) {
       return reply.status(404).send({ error: 'unknown_session' });
     }
-    if (sessionState(session, Date.now()) === 'active') {
+    if (sessionState(session, Date.now(), maxLifetime) === 'active') {
       return reply
         .status(409)
         .send({ error: 'session_active', reason: 'revoke the session before deleting it' });
