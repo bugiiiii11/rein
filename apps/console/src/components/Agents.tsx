@@ -7,9 +7,10 @@ function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
-function AgentCard({ a }: { a: AgentView }) {
+function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
   const frozen = a.status === 'frozen';
   const toggle = () => void (frozen ? api.unfreeze(a.id) : api.freeze(a.id));
+  const withheld = writable ? undefined : 'read-only console — controls are withheld';
   return (
     <div className={`agent ${frozen ? 'frozen' : ''}`}>
       <div className="agent-top">
@@ -39,12 +40,25 @@ function AgentCard({ a }: { a: AgentView }) {
         </div>
       </div>
 
+      {/* The kill switch stays VISIBLE when read-only — its state (frozen or
+          live) is information in its own right, and hiding it would hide that
+          too. It just cannot be thrown. */}
       <div className="agent-actions">
-        <button className="killswitch" onClick={toggle} title="Kill switch — freeze or release this agent">
+        <button
+          className="killswitch"
+          onClick={toggle}
+          disabled={!writable}
+          title={withheld ?? 'Kill switch — freeze or release this agent'}
+        >
           <span className={`switch ${frozen ? 'off' : 'on'}`} />
           {frozen ? 'Frozen' : 'Live'}
         </button>
-        <button className="mini-btn" onClick={() => void api.ping(a.id)} title="Fire one guarded $0.01 call">
+        <button
+          className="mini-btn"
+          onClick={() => void api.ping(a.id)}
+          disabled={!writable}
+          title={withheld ?? 'Fire one guarded $0.01 call'}
+        >
           Ping
         </button>
       </div>
@@ -52,7 +66,7 @@ function AgentCard({ a }: { a: AgentView }) {
   );
 }
 
-export function Agents({ agents }: { agents: AgentView[] }) {
+export function Agents({ agents, writable }: { agents: AgentView[]; writable: boolean }) {
   const ordered = [...agents].reverse();
   return (
     <section className="panel grow">
@@ -65,7 +79,7 @@ export function Agents({ agents }: { agents: AgentView[] }) {
         {ordered.length === 0 ? (
           <div className="empty">No agents yet — run a scenario.</div>
         ) : (
-          ordered.map((a) => <AgentCard key={a.id} a={a} />)
+          ordered.map((a) => <AgentCard key={a.id} a={a} writable={writable} />)
         )}
       </div>
     </section>

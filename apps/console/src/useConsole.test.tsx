@@ -17,7 +17,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AgentView,
+  BreakerView,
   ConsoleState,
+  ControlPosture,
   FeedItem,
   GateView,
   GraphView,
@@ -79,17 +81,35 @@ interface Deferred {
 
 const fetches: Deferred[] = [];
 const fetchUrls: string[] = [];
+/** What `/api/control` answers this test; `null` makes the request fail. */
+let posture: ControlPosture | null = { writable: true, auth: 'none' };
 
-/** Every /api/state call parks here until a test decides how it answers. */
-const fetchStub = (input: string): Promise<Response> =>
-  new Promise<Response>((resolve, reject) => {
-    fetchUrls.push(input);
+/**
+ * Every /api/state call parks here until a test decides how it answers.
+ *
+ * `/api/control` deliberately does NOT park: posture rides the same snapshot
+ * sync, but it is not one of the races under test, and parking it would make
+ * every `pending(n)` index mean something different depending on how many
+ * syncs had run.
+ */
+const fetchStub = (input: string): Promise<Response> => {
+  fetchUrls.push(input);
+  if (input === '/api/control') {
+    return posture === null
+      ? Promise.reject(new Error('control unreachable'))
+      : Promise.resolve({ ok: true, json: async () => posture } as unknown as Response);
+  }
+  return new Promise<Response>((resolve, reject) => {
     fetches.push({
       ok: (state) => resolve({ ok: true, json: async () => state } as unknown as Response),
       status: (code) => resolve({ ok: false, status: code } as unknown as Response),
       boom: (message) => reject(new Error(message)),
     });
   });
+};
+
+/** Snapshot fetches only — the assertions about healing count these. */
+const stateUrls = (): string[] => fetchUrls.filter((u) => u === '/api/state');
 
 const pending = (n: number): Deferred => {
   const d = fetches[n];
@@ -184,6 +204,7 @@ const snapshot = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   gate: GATE,
   signer: { sessions: [], active: 0 },
   graph: GRAPH,
+  breakers: [],
   demo: { running: false, phase: 'idle' },
   publicKey: 'pk_test',
   startedAt: '2026-08-28T00:00:00.000Z',
@@ -245,6 +266,7 @@ beforeEach(() => {
   FakeEventSource.instances.length = 0;
   fetches.length = 0;
   fetchUrls.length = 0;
+  posture = { writable: true, auth: 'none' };
   latest = null;
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.stubGlobal('fetch', fetchStub);
@@ -267,7 +289,7 @@ describe('initial load', () => {
     expect(data().stats).toBeNull();
     expect(data().demo).toEqual({ running: false, phase: 'idle' });
     expect(stream().url).toBe('/api/events');
-    expect(fetchUrls).toEqual(['/api/state']);
+    expect(stateUrls()).toEqual(['/api/state']);
 
     await flush(() =>
       pending(0).ok(snapshot({ feed: [item(1), item(2)], publicKey: 'pk_world' })),
@@ -285,7 +307,7 @@ describe('initial load', () => {
     await flush(() => pending(0).ok(snapshot()));
     await flush(() => stream().open());
 
-    expect(fetchUrls).toHaveLength(1);
+    expect(stateUrls()).toHaveLength(1);
     expect(data().connected).toBe(true);
   });
 
@@ -398,7 +420,7 @@ describe('snapshot / stream reconcile', () => {
 
     // Items 2-4 happened while disconnected; SSE will never resend them.
     await flush(() => stream().open());
-    expect(fetchUrls).toHaveLength(2);
+    expect(stateUrls()).toHaveLength(2);
     await flush(() =>
       pending(1).ok(snapshot({ feed: [item(1), item(2), item(3), item(4)] })),
     );
@@ -409,10 +431,10 @@ describe('snapshot / stream reconcile', () => {
     await mount();
     await flush(() => pending(0).ok(snapshot({ feed: [item(98), item(99), item(100)] })));
     await flush(() => stream().open()); // first open: no heal
-    expect(fetchUrls).toHaveLength(1);
+    expect(stateUrls()).toHaveLength(1);
 
     await flush(() => stream().open()); // reconnect: heal
-    expect(fetchUrls).toHaveLength(2);
+    expect(stateUrls()).toHaveLength(2);
 
     // A restarted world restarts seq with it. Merging by the old high-water
     // mark would render an empty feed and then silently swallow every live
@@ -467,5 +489,76 @@ describe('teardown', () => {
     await flush(() => pending(0).ok(snapshot({ feed: [item(1)] })));
     expect(data()).toBe(lastRender); // no further render happened
     expect(data().ready).toBe(false);
+  });
+});
+
+describe('control posture', () => {
+  it('starts read-only and only opens up when the server says so', async () => {
+    await mount();
+    // Before any answer lands the hook must not claim it can mutate: a button
+    // rendered from an optimistic default is a button that 403s.
+    expect(data().control).toEqual({ writable: false, auth: 'none' });
+
+    await flush(() => pending(0).ok(snapshot()));
+    expect(data().control).toEqual({ writable: true, auth: 'none' });
+  });
+
+  it('reads a keyed console as writable-with-bearer', async () => {
+    posture = { writable: true, auth: 'bearer' };
+    await mount();
+    await flush(() => pending(0).ok(snapshot()));
+    expect(data().control).toEqual({ writable: true, auth: 'bearer' });
+  });
+
+  it('treats an unreachable /api/control as READ-ONLY, and does not fail the snapshot', async () => {
+    posture = null; // the request itself rejects
+    await mount();
+    await flush(() => pending(0).ok(snapshot({ feed: [item(1)] })));
+
+    // Fail closed on the posture, but the dashboard still loads: a console
+    // that cannot report what it allows is still worth reading.
+    expect(data().control).toEqual({ writable: false, auth: 'none' });
+    expect(data().ready).toBe(true);
+    expect(data().error).toBeNull();
+    expect(seqs(data().feed)).toEqual([1]);
+  });
+
+  it('re-reads posture on the reconnect heal, so a restart into a new posture lands', async () => {
+    await boot();
+    expect(data().control.writable).toBe(true);
+
+    // The server came back read-only (key removed, public bind).
+    posture = { writable: false, auth: 'none' };
+    await flush(() => stream().open()); // reconnect
+    await flush(() => pending(1).ok(snapshot()));
+    expect(data().control).toEqual({ writable: false, auth: 'none' });
+  });
+});
+
+describe('breakers', () => {
+  const BREAKER: BreakerView = {
+    agentId: 'agt_1',
+    agentName: 'researcher',
+    breakerId: 'velocity',
+    policyId: 'pol_1',
+    window: '24h',
+    txCap: 6,
+    txCount: 4,
+    sum: '0.04',
+    countingFrom: '2026-09-09T00:00:00.000Z',
+    tripped: false,
+  };
+
+  it('arrives in the snapshot and is replaced wholesale by its own event', async () => {
+    await mount();
+    await flush(() => pending(0).ok(snapshot({ breakers: [BREAKER] })));
+    expect(data().breakers).toEqual([BREAKER]);
+
+    const tripped: BreakerView = { ...BREAKER, txCount: 7, tripped: true, reason: 'breaker:velocity' };
+    await flush(() => stream().open());
+    await flush(() => stream().emit({ type: 'breakers', breakers: [tripped] }));
+    expect(data().breakers).toEqual([tripped]);
+    // The panel slice is its own: nothing else moved.
+    expect(data().stats).toEqual(STATS);
   });
 });

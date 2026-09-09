@@ -83,6 +83,7 @@ import {
 } from '@reinconsole/x402-rails';
 import type {
   AgentView,
+  BreakerView,
   ConsoleState,
   DemoStatus,
   FeedItem,
@@ -120,6 +121,21 @@ const SESSION_CAP = '0.02';
  * scenario's burst buyer — can ever trip this. */
 const VELOCITY_CAP = '0.05';
 const FEED_CAP = 300;
+
+/**
+ * The behavioral breaker every managed agent carries, so the console has a
+ * live envelope to render (A3).
+ *
+ * Sized DELIBERATELY loose: six transactions a day, where the boot scenario
+ * spends four and the `hour-budget` deny rail (rollingSum > $0.04, i.e. four
+ * $0.01 calls) is far tighter. So this breaker counts, and is visibly counted
+ * against, without changing a single decision the world makes — the pinned
+ * boot fingerprint (8 allow / 3 deny / 0 escalate) is a contract this panel
+ * must not quietly rewrite. A breaker tight enough to TRIP in the console
+ * scenario is a separate, deliberate change: it would turn an allowed call
+ * into a parked escalation and rewrite that fingerprint end to end.
+ */
+const AGENT_BREAKERS = [{ id: 'velocity', window: '24h', txCount: 6 }] as const;
 
 /** The reputation cast, seeded with BACKDATED history at boot (same-day
  * evidence is confidence-discounted to 40%, by design — see @reinconsole/graph):
@@ -610,6 +626,35 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     };
   }
 
+  /**
+   * Where every agent's breakers stand (A3). One clock for the whole sweep, so
+   * two agents in the same render can never disagree about when the window
+   * starts. Selection is first-applicable, exactly as in evaluation — the
+   * console's policies are unscoped, so the default `base` probe finds them.
+   */
+  function viewBreakers(): BreakerView[] {
+    const now = Date.now();
+    return engine.agents.list().flatMap((a) =>
+      engine.breakerStates(a.id, { now }).map(
+        (s): BreakerView => ({
+          agentId: a.id,
+          agentName: a.name,
+          breakerId: s.breaker.id,
+          policyId: s.policyId,
+          window: s.breaker.window,
+          ...(s.breaker.txCount !== undefined ? { txCap: s.breaker.txCount } : {}),
+          ...(s.breaker.valueCap !== undefined ? { valueCap: s.breaker.valueCap } : {}),
+          txCount: s.txCount,
+          sum: s.sum,
+          countingFrom: new Date(s.countingFrom).toISOString(),
+          ...(s.resetAt !== undefined ? { resetAt: new Date(s.resetAt).toISOString() } : {}),
+          tripped: s.tripped,
+          ...(s.reason !== undefined ? { reason: s.reason } : {}),
+        }),
+      ),
+    );
+  }
+
   function computeStats(): Stats {
     // All-time counters read the DURABLE audit chain, not the feed. The feed is
     // this process's telemetry, so deriving decision counts from it made a
@@ -842,6 +887,15 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   });
   for (const agent of engine.agents.list()) await linkAgentIdentity(agent); // resumed agents
 
+  // Backfill breakers onto policies a durable store wrote BEFORE A3 existed.
+  // `addAgentPolicy` only ever runs for a NEW agent, so without this the
+  // breaker panel would be permanently empty on exactly the deployment that
+  // has state worth looking at (app.reinconsole.com has a volume). addPolicy
+  // upserts by policyId, so this is idempotent and needs no migration table.
+  for (const p of engine.policies.list()) {
+    if (p.breakers.length === 0) await engine.addPolicy({ ...p, breakers: [...AGENT_BREAKERS] });
+  }
+
   /**
    * REAL-registry mode (env-gated): `REIN_CONSOLE_REGISTRY=sepolia` provisions
    * a "live identity" agent whose erc8004Id is the REAL Base Sepolia
@@ -898,6 +952,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
             { id: 'hour-budget', deny: { rollingSum: { window: '1h', gt: HOUR_BUDGET } } },
             { id: 'reputation-gate', deny: { vendorReputationLt: REP_FLOOR } },
           ],
+          breakers: [...AGENT_BREAKERS],
           default: 'allow',
         });
       }
@@ -947,6 +1002,10 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (syncTimer) return;
     syncTimer = setTimeout(() => {
       syncTimer = undefined;
+      // Breaker windows move with every recorded spend, so they ride the same
+      // debounce rather than a subscription of their own. Pure read — unlike
+      // syncGraph it pushes nothing INTO the engine, so it cannot fail.
+      emit({ type: 'breakers', breakers: viewBreakers() });
       syncGraph().catch((err: unknown) =>
         console.error('[console] reputation sync failed:', err),
       );
@@ -1039,10 +1098,12 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         // scores at sync, so unknown vendors stay ungoverned by this rule.
         { id: 'reputation-gate', deny: { vendorReputationLt: REP_FLOOR } },
       ],
+      breakers: [...AGENT_BREAKERS],
       default: 'allow',
     });
     emit({ type: 'agents', agents: viewAgents() });
     emit({ type: 'policies', policies: viewPolicies() });
+    emit({ type: 'breakers', breakers: viewBreakers() });
   }
 
   function registerRuntime(agentId: string, wallet: string, wrapped: FetchLike): FetchLike {
@@ -1322,6 +1383,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       gate: viewGate(),
       signer: viewSigner(),
       graph: viewGraph(),
+      breakers: viewBreakers(),
       demo,
       publicKey: engine.publicKeyPem,
       startedAt,

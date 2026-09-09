@@ -7,6 +7,7 @@ import { Feed } from './components/Feed';
 import { GatePanel } from './components/GatePanel';
 import { SignerPanel } from './components/SignerPanel';
 import { ReputationPanel } from './components/ReputationPanel';
+import { BreakersPanel } from './components/BreakersPanel';
 import { Shadow } from './components/Shadow';
 import { AuditChain } from './components/AuditChain';
 
@@ -23,12 +24,16 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} />
+      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} writable={d.control.writable} />
       <Kpis stats={d.stats} />
       <main className="grid">
         <div className="col left">
-          <Agents agents={d.agents} />
+          <Agents agents={d.agents} writable={d.control.writable} />
           <Policies policies={d.policies} />
+          {/* Next to the policies that declare them. The row is one line
+              precisely because this column has no spare height: every pixel
+              here comes out of the agent list above it. */}
+          <BreakersPanel breakers={d.breakers} />
           <ReputationPanel graph={d.graph} />
         </div>
         <div className="col">

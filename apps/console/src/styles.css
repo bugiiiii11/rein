@@ -1213,3 +1213,109 @@ a.pill:hover {
     max-height: min(60vh, 420px);
   }
 }
+
+/* ── read-only posture ──────────────────────────────────────────────────── */
+/* Withheld controls read as withheld, not as broken or loading. */
+.pill.is-ro {
+  border-color: var(--warn-soft);
+  color: var(--warn);
+}
+.run-btn.is-ro:disabled,
+.killswitch:disabled,
+.mini-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.mini-btn:disabled:hover {
+  color: var(--ink-dim);
+  border-color: var(--line-strong);
+  background: var(--bg-2);
+}
+
+/* ── breakers ───────────────────────────────────────────────────────────── */
+/* One line per breaker: this column has no spare height, and anything taller
+   here is paid for out of the agent list. */
+.brk-row {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+}
+.brk-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.brk-chip {
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.brk-chip.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.brk-chip.bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+.brk-name {
+  color: var(--ink);
+  white-space: nowrap;
+}
+.brk-agent {
+  color: var(--ink-faint);
+  font-size: 9.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.brk-window {
+  font-size: 9px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.brk-wire {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.brk-wire-track {
+  display: block;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.brk-wire-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.brk-wire-num {
+  font-size: 9px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.brk-dim {
+  color: var(--ink-faint);
+}
+.brk-reason,
+.brk-reset {
+  font-size: 9px;
+  color: var(--ink-faint);
+  padding-left: 4px;
+}
+.brk-row.is-tripped .brk-reason {
+  color: var(--bad);
+}

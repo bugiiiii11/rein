@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   AgentView,
+  BreakerView,
+  ControlPosture,
   DemoStatus,
   FeedItem,
   GateView,
@@ -9,7 +11,7 @@ import type {
   SignerView,
   Stats,
 } from '../server/wire';
-import { fetchState } from './api';
+import { fetchControl, fetchState } from './api';
 
 export interface ConsoleData {
   ready: boolean;
@@ -21,9 +23,12 @@ export interface ConsoleData {
   gate: GateView | null;
   signer: SignerView | null;
   graph: GraphView | null;
+  breakers: BreakerView[];
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
+  /** Whether this console accepts mutations at all (GET /api/control). */
+  control: ControlPosture;
   error: string | null;
 }
 
@@ -43,9 +48,13 @@ export function useConsole(): ConsoleData {
     gate: null,
     signer: null,
     graph: null,
+    breakers: [],
     demo: EMPTY_DEMO,
     publicKey: '',
     startedAt: '',
+    // Assume read-only until the server says otherwise — the same fail-closed
+    // default the server itself boots with.
+    control: { writable: false, auth: 'none' },
     error: null,
   });
   const maxSeq = useRef(0);
@@ -66,7 +75,10 @@ export function useConsole(): ConsoleData {
     const sync = async () => {
       pending = [];
       try {
-        const s = await fetchState();
+        // Posture rides the snapshot rather than a one-shot boot fetch, so a
+        // server that restarts into a different posture (a key added, a bind
+        // changed) is picked up by the same reconnect heal as the feed.
+        const [s, control] = await Promise.all([fetchState(), fetchControl()]);
         if (cancelled) return;
         const snapMax = s.feed.reduce((m, f) => Math.max(m, f.seq), 0);
         const extra = (pending ?? [])
@@ -84,9 +96,11 @@ export function useConsole(): ConsoleData {
           gate: s.gate,
           signer: s.signer,
           graph: s.graph,
+          breakers: s.breakers,
           demo: s.demo,
           publicKey: s.publicKey,
           startedAt: s.startedAt,
+          control,
           error: null,
         }));
       } catch (e) {
@@ -138,6 +152,9 @@ export function useConsole(): ConsoleData {
     );
     es.addEventListener('graph', (ev) =>
       setData((d) => ({ ...d, graph: parse<{ graph: GraphView }>(ev).graph })),
+    );
+    es.addEventListener('breakers', (ev) =>
+      setData((d) => ({ ...d, breakers: parse<{ breakers: BreakerView[] }>(ev).breakers })),
     );
     es.addEventListener('demo', (ev) =>
       setData((d) => ({ ...d, demo: parse<{ demo: DemoStatus }>(ev).demo })),

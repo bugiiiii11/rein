@@ -156,6 +156,34 @@ describe('boot scenario fingerprint', () => {
   });
 });
 
+describe('breakers (A3)', () => {
+  it('arms one breaker per agent, counting the calls the scenario actually made', () => {
+    expect(boot.breakers).toHaveLength(boot.agents.length);
+    for (const b of boot.breakers) {
+      expect(b.breakerId).toBe('velocity');
+      expect(b.window).toBe('24h');
+      expect(b.txCap).toBe(6);
+      expect(b.policyId).toBe(`policy-${b.agentName}`);
+      // The floor: with no signed reset it is simply the window edge.
+      expect(b.resetAt).toBeUndefined();
+      expect(Number.isNaN(Date.parse(b.countingFrom))).toBe(false);
+    }
+    // research-agent-1 settled 4 of the 7 payments (see the gate fingerprint),
+    // so its window holds 4 — the panel is reading real spend, not a stub.
+    const research = boot.breakers.find((b) => b.agentName === 'research-agent-1');
+    expect(research?.txCount).toBe(4);
+    expect(Number(research?.sum)).toBeCloseTo(0.04);
+  });
+
+  it('is sized to COUNT without tripping — the boot fingerprint is a contract', () => {
+    // A breaker that tripped here would turn an allowed call into a parked
+    // escalation and rewrite every count in this file. If this fails, the
+    // breaker was tightened without deciding to change the scenario.
+    expect(boot.breakers.every((b) => !b.tripped)).toBe(true);
+    expect(boot.stats.escalate).toBe(0);
+  });
+});
+
 describe('world methods', () => {
   it('freeze/unfreeze flip agent status and reject unknown ids', async () => {
     const agent = world.getState().agents.find((a) => a.name === 'research-agent-1')!;

@@ -224,6 +224,46 @@ export interface GraphView {
   denyBelow: number;
 }
 
+/**
+ * Where one behavioral breaker stands for one agent, flattened for render.
+ *
+ * Read-only observability: nothing about evaluation depends on this view, and
+ * the counters are measured against a zero-value probe, so `tripped` answers
+ * "has the agent already left the envelope?" rather than "would the next
+ * payment leave it?". `countingFrom` is the later of the window start and the
+ * last signed reset — the floor, which is why a reset needs no counter wipe.
+ */
+export interface BreakerView {
+  agentId: string;
+  agentName: string;
+  breakerId: string;
+  policyId: string;
+  window: string; // the trailing span, e.g. '1h'
+  /** The tripwires. At least one is always present; both may be. */
+  txCap?: number;
+  valueCap?: string; // decimal USDC
+  // where the agent stands inside the measured span
+  txCount: number;
+  sum: string; // decimal USDC
+  countingFrom: string; // ISO
+  /** Present when a signed approval moved the floor. */
+  resetAt?: string; // ISO
+  tripped: boolean;
+  /** Why, when tripped — the same text a human sees in the challenge. */
+  reason?: string;
+}
+
+/**
+ * What this console will let the caller do (`GET /api/control`), so the UI can
+ * render honestly instead of offering buttons that answer 401/403. A public
+ * deployment without a key is read-only BY DEFAULT — that is the posture, not
+ * a failure to configure.
+ */
+export interface ControlPosture {
+  writable: boolean;
+  auth: 'none' | 'bearer';
+}
+
 export interface DemoStatus {
   running: boolean;
   phase: string;
@@ -238,6 +278,7 @@ export interface ConsoleState {
   gate: GateView;
   signer: SignerView;
   graph: GraphView;
+  breakers: BreakerView[];
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -252,4 +293,5 @@ export type ServerEvent =
   | { type: 'gate'; gate: GateView }
   | { type: 'signer'; signer: SignerView }
   | { type: 'graph'; graph: GraphView }
+  | { type: 'breakers'; breakers: BreakerView[] }
   | { type: 'demo'; demo: DemoStatus };
