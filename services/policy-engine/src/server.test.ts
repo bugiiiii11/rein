@@ -13,6 +13,39 @@ describe('policy-engine HTTP API', () => {
     await app.close();
   });
 
+  it('serves breaker standing on a read-scope route', async () => {
+    const app = buildServer();
+    const agentId = newId('agt');
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      payload: {
+        policyId: 'pol_breaker',
+        breakers: [{ id: 'velocity', window: '1h', txCount: 1 }],
+        default: 'allow',
+      },
+    });
+    const intent = {
+      agentId,
+      vendor: { host: 'api.example.com', address: '0x1' },
+      resource: '/v1/answer',
+      amount: '1.00',
+      asset: 'USDC',
+      chain: 'base',
+    };
+    await app.inject({ method: 'POST', url: '/v1/evaluate', payload: intent });
+
+    const res = await app.inject({ method: 'GET', url: `/v1/agents/${agentId}/breakers` });
+    expect(res.statusCode).toBe(200);
+    const [state] = res.json();
+    expect(state.breaker.id).toBe('velocity');
+    expect(state.txCount).toBe(1);
+    // One transaction inside a 1-tx envelope: the NEXT one would exceed it.
+    expect(state.tripped).toBe(true);
+    expect(state.reason).toMatch(/2 tx > 1 in 1h/);
+    await app.close();
+  });
+
   it('registers an agent, adds a policy, and evaluates an intent end-to-end', async () => {
     const app = buildServer();
 

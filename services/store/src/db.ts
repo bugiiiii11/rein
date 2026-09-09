@@ -21,6 +21,11 @@ import { PGlite } from '@electric-sql/pglite';
  *   JSONB carries the Session — token HASH only, never a token; `spent` is a
  *   TEXT decimal beside it) and the burned-voucher set. Wallet private keys
  *   are deliberately NOT stored anywhere in this schema.
+ * - `spend_records.task_id` is the A4 attribution: nullable, because an intent
+ *   may carry no task, and a task budget deliberately never triggers on one.
+ * - `breaker_resets` is the A3 counting FLOOR, one row per (agent, breaker) —
+ *   it must be durable, or a restart would silently re-trip every breaker a
+ *   human had already cleared and ask them the same question again.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -57,6 +62,13 @@ CREATE TABLE IF NOT EXISTS spend_records (
   at       BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS spend_records_agent_at ON spend_records (agent_id, at);
+
+CREATE TABLE IF NOT EXISTS breaker_resets (
+  agent_id   TEXT NOT NULL,
+  breaker_id TEXT NOT NULL,
+  at         BIGINT NOT NULL,
+  PRIMARY KEY (agent_id, breaker_id)
+);
 
 CREATE TABLE IF NOT EXISTS vendor_reputation (
   host  TEXT PRIMARY KEY,
@@ -142,6 +154,8 @@ ALTER TABLE signer_used_decisions
   ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
 ALTER TABLE gate_replays
   ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
+ALTER TABLE spend_records
+  ADD COLUMN IF NOT EXISTS task_id TEXT;
 `;
 
 /**

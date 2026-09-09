@@ -21,6 +21,8 @@ function ctx(overrides: Partial<SpendContext> = {}): SpendContext {
   return {
     rollingSum: () => '0',
     txCount: () => 0,
+    taskSum: () => '0',
+    breakerWindow: () => ({ txCount: 0, sum: '0' }),
     isVendorFirstSeen: () => false,
     vendorReputation: () => undefined,
     resourceMedian: () => undefined,

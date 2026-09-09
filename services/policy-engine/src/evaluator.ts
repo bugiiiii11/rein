@@ -2,6 +2,7 @@ import {
   type Agent,
   type Policy,
   type PaymentIntent,
+  type Breaker,
   type Condition,
   type DecisionOutcome,
   type Window,
@@ -21,9 +22,24 @@ import {
 export interface SpendContext {
   rollingSum(window: Window): string;
   txCount(window: Window): number;
+  /** Prior spend attributed to one task id, across every window. */
+  taskSum(taskId: string): string;
+  /**
+   * Prior activity a breaker counts: the agent's trailing `window`, floored
+   * at the breaker's last reset. Making a reset a FLOOR rather than a counter
+   * wipe is what collapses "reset by window expiry" and "reset by signed
+   * approval" into one mechanism — both simply move the cutoff forward.
+   */
+  breakerWindow(breakerId: string, window: Window): BreakerWindow;
   isVendorFirstSeen(host: string): boolean;
   vendorReputation(host: string): number | undefined;
   resourceMedian(resource: string): string | undefined;
+}
+
+/** Prior transactions and prior spend inside a breaker's measured span. */
+export interface BreakerWindow {
+  txCount: number;
+  sum: string;
 }
 
 export interface EvaluationResult {
@@ -32,6 +48,12 @@ export interface EvaluationResult {
   reason: string;
   policyId: string;
   policyVersion: string;
+  /**
+   * Breaker ids that tripped on this intent. Carried separately from
+   * `matchedRules` (where they also appear, prefixed) so the engine can reset
+   * exactly these on approval without parsing a label back out of a string.
+   */
+  breakers?: string[];
 }
 
 /**
@@ -97,6 +119,22 @@ export function conditionMatches(
     if (rep === undefined || !(rep < cond.vendorReputationLt)) return false;
   }
 
+  if (cond.taskBudget) {
+    const taskId = intent.taskContext.taskId;
+    // No task id => the spend cannot be attributed to a task => the budget
+    // has nothing to measure. Deliberately not a trigger: an untagged probe
+    // payment must not trip every task budget in the policy. Enforce
+    // attribution with `taskIdMissing` when you want it required.
+    if (!taskId) return false;
+    const prospective = sumDecimal([ctx.taskSum(taskId), intent.amount]);
+    if (!gt(prospective, cond.taskBudget.gt)) return false;
+  }
+
+  if (cond.taskIdMissing !== undefined) {
+    const missing = !intent.taskContext.taskId;
+    if (missing !== cond.taskIdMissing) return false;
+  }
+
   if (cond.amountVsResourceMedian) {
     const med = ctx.resourceMedian(intent.resource);
     if (med === undefined) return false;
@@ -105,6 +143,40 @@ export function conditionMatches(
   }
 
   return true;
+}
+
+/**
+ * Test one breaker against an intent, prospectively: the tripwires measure the
+ * window's prior activity PLUS this payment, so the transaction that would
+ * carry the agent past the envelope is the one that escalates — not the
+ * innocent one behind it, which is what a retrospective check would stop.
+ *
+ * Returns a human-readable reason when tripped, `undefined` otherwise. The
+ * reason is what a human reads in the approval challenge, so it names the
+ * tripwire and the numbers rather than just the breaker.
+ */
+export function breakerTrips(
+  breaker: Breaker,
+  intent: PaymentIntent,
+  ctx: SpendContext,
+): string | undefined {
+  const prior = ctx.breakerWindow(breaker.id, breaker.window);
+
+  if (breaker.txCount !== undefined) {
+    const prospective = prior.txCount + 1;
+    if (prospective > breaker.txCount) {
+      return `breaker:${breaker.id} tripped (${prospective} tx > ${breaker.txCount} in ${breaker.window})`;
+    }
+  }
+
+  if (breaker.valueCap !== undefined) {
+    const prospective = sumDecimal([prior.sum, intent.amount]);
+    if (gt(prospective, breaker.valueCap)) {
+      return `breaker:${breaker.id} tripped (${prospective} > ${breaker.valueCap} in ${breaker.window})`;
+    }
+  }
+
+  return undefined;
 }
 
 function actionOf(rule: Policy['rules'][number]): { action: DecisionOutcome; cond: Condition } {
@@ -120,6 +192,10 @@ function actionOf(rule: Policy['rules'][number]): { action: DecisionOutcome; con
  * policy default. v0.1 selects the FIRST applicable policy (deterministic by
  * insertion order); overlapping-policy merge is a documented future item. When
  * no policy applies, we fail closed (deny).
+ *
+ * Breakers sit at the ESCALATE level, which decides both halves of their
+ * behavior for free: an explicit DENY still wins (a hard cap is a hard cap,
+ * tripped breaker or not), and no ALLOW rule can wave one past.
  */
 export function evaluate(
   intent: PaymentIntent,
@@ -141,13 +217,28 @@ export function evaluate(
   const denies: string[] = [];
   const escalates: string[] = [];
   const allows: string[] = [];
+  // Ids identify, reasons explain. A rule contributes its id to both; a
+  // breaker contributes `breaker:<id>` and a reason naming the tripwire and
+  // the numbers, because that string is what a human reads in the challenge.
+  const escalateReasons: string[] = [];
+  const breakers: string[] = [];
 
   for (const rule of policy.rules) {
     const { action, cond } = actionOf(rule);
     if (!conditionMatches(cond, intent, ctx)) continue;
     if (action === 'deny') denies.push(rule.id);
-    else if (action === 'escalate') escalates.push(rule.id);
-    else allows.push(rule.id);
+    else if (action === 'escalate') {
+      escalates.push(rule.id);
+      escalateReasons.push(rule.id);
+    } else allows.push(rule.id);
+  }
+
+  for (const breaker of policy.breakers) {
+    const tripped = breakerTrips(breaker, intent, ctx);
+    if (!tripped) continue;
+    breakers.push(breaker.id);
+    escalates.push(`breaker:${breaker.id}`);
+    escalateReasons.push(tripped);
   }
 
   const base = { policyId: policy.policyId, policyVersion: policy.version };
@@ -158,7 +249,8 @@ export function evaluate(
     return {
       outcome: 'escalate',
       matchedRules: escalates,
-      reason: `escalated by: ${escalates.join(', ')}`,
+      reason: `escalated by: ${escalateReasons.join(', ')}`,
+      breakers,
       ...base,
     };
   }

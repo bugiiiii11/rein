@@ -6,6 +6,7 @@ import {
   ApprovalGrant,
   ApprovalRequest,
   ApproverKey,
+  Breaker,
   Decision,
   PaymentIntent,
   Policy,
@@ -16,6 +17,23 @@ import type { IntentSubmission } from './x402.js';
 
 /** Any fetch-compatible function (global fetch, undici, or a test double). */
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/**
+ * One breaker's standing for one agent, as the engine reports it. Mirrors the
+ * engine's `BreakerState`; declared here so the client validates the wire
+ * shape rather than trusting it.
+ */
+export const BreakerState = z.object({
+  breaker: Breaker,
+  policyId: z.string(),
+  txCount: z.number(),
+  sum: z.string(),
+  countingFrom: z.number(),
+  resetAt: z.number().optional(),
+  tripped: z.boolean(),
+  reason: z.string().optional(),
+});
+export type BreakerState = z.infer<typeof BreakerState>;
 
 const Health = z.object({
   status: z.string(),
@@ -135,6 +153,15 @@ export class EngineClient {
 
   unfreeze(agentId: string): Promise<void> {
     return this.request('POST', `/v1/agents/${agentId}/unfreeze`, z.void());
+  }
+
+  /**
+   * Where the agent's behavioral breakers stand. Read-only: nothing here can
+   * trip or clear one — a breaker clears when its window rolls forward or
+   * when a signed approval moves its floor.
+   */
+  breakerStates(agentId: string): Promise<BreakerState[]> {
+    return this.request('GET', `/v1/agents/${agentId}/breakers`, z.array(BreakerState));
   }
 
   addPolicy(policy: z.input<typeof Policy>): Promise<Policy> {

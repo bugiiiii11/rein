@@ -17,6 +17,7 @@ export {
 } from './guard.js';
 export {
   EngineClient,
+  BreakerState,
   type EngineClientOptions,
   type EvaluateResponse,
   type ApprovalView,

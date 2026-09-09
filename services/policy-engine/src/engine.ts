@@ -15,16 +15,23 @@ import {
   DecimalString,
   Agent,
   Policy,
+  type Breaker,
   type ApprovalGrant,
   type ApprovalRequest,
   type Decision,
   type ReinEvent,
 } from '@reinconsole/core';
-import { evaluate, type EvaluationResult } from './evaluator.js';
+import {
+  breakerTrips,
+  evaluate,
+  policyApplies,
+  type EvaluationResult,
+} from './evaluator.js';
 import {
   InMemorySpendStore,
   InMemoryPolicyStore,
   InMemoryAgentRegistry,
+  parseWindowMs,
   type SpendStorePort,
   type PolicyStorePort,
   type AgentRegistryPort,
@@ -63,6 +70,30 @@ export interface EvaluateOutput {
 export interface ResolveOutput {
   request: ApprovalRequest;
   decision: Decision;
+}
+
+/** One breaker's current standing for one agent (console observability). */
+export interface BreakerState {
+  breaker: Breaker;
+  policyId: string;
+  /** Prior transactions and prior spend inside the measured span. */
+  txCount: number;
+  sum: string;
+  /** Epoch ms the span starts at — the later of window start and last reset. */
+  countingFrom: number;
+  /** Present when a signed approval moved the floor. */
+  resetAt?: number;
+  tripped: boolean;
+  /** Why, when tripped — the same text a human sees in the challenge. */
+  reason?: string;
+}
+
+/** Which world to read breaker standing in (see `breakerStates`). */
+export interface BreakerStateOptions {
+  /** Selects the policy, when policies are chain-scoped. Defaults to `base`. */
+  chain?: Chain;
+  /** Injected clock, so window arithmetic is testable. */
+  now?: number;
 }
 
 /** The persistence seams the engine composes over (in-memory when omitted). */
@@ -196,13 +227,16 @@ export class PolicyEngine {
           host: intent.vendor.host,
           resource: intent.resource,
           amount: intent.amount,
+          taskId: intent.taskContext.taskId,
         },
         intent.createdAt.getTime(),
       );
     }
 
     if (decision.outcome === 'escalate' && this.approvals) {
-      const request = await this.approvals.open(intent, decision);
+      const request = await this.approvals.open(intent, decision, {
+        breakers: result.breakers ?? [],
+      });
       this.emit({ type: 'approval.requested', at: new Date(), request });
       return { intent, decision, approval: request };
     }
@@ -212,7 +246,13 @@ export class PolicyEngine {
 
   /** Optimistically count the spend; the indexer confirms settlement later. */
   private async recordSpend(
-    facts: { agentId: string; host: string; resource: string; amount: string },
+    facts: {
+      agentId: string;
+      host: string;
+      resource: string;
+      amount: string;
+      taskId?: string | undefined;
+    },
     at: number,
   ): Promise<void> {
     await this.spend.record({
@@ -220,6 +260,7 @@ export class PolicyEngine {
       host: facts.host,
       resource: facts.resource,
       amount: facts.amount,
+      ...(facts.taskId ? { taskId: facts.taskId } : {}),
       at,
     });
   }
@@ -263,6 +304,14 @@ export class PolicyEngine {
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
     if (approved) {
+      const at = Date.now();
+      // A human waving this payment through also clears the behavior that
+      // stopped it. Reset FIRST: the reset moves each tripped breaker's
+      // counting floor to now, so the spend recorded a line later starts the
+      // new window rather than landing behind the floor and being ignored.
+      for (const breakerId of request.breakers) {
+        await this.spend.resetBreaker(request.agentId, breakerId, at);
+      }
       // Counted at approval time, not at park time: an escalation may have sat
       // for most of its TTL, and the money moves now — so this is the instant
       // the rolling windows should age from.
@@ -272,8 +321,9 @@ export class PolicyEngine {
           host: request.vendorHost,
           resource: request.resource,
           amount: request.amount,
+          taskId: request.taskId,
         },
-        Date.now(),
+        at,
       );
     }
 
@@ -345,6 +395,52 @@ export class PolicyEngine {
       throw new TypeError('this engine has no approval service; escalations cannot be resolved');
     }
     return this.approvals;
+  }
+
+  /**
+   * Where every breaker that applies to an agent currently stands. Read-only
+   * observability — the console renders it, and nothing about evaluation
+   * depends on it. `tripped` is measured against a zero-value probe, so it
+   * answers "has the agent already left the envelope?" rather than "would
+   * this specific payment leave it?".
+   *
+   * Policy selection is first-applicable, exactly as in evaluation — which
+   * means a chain-scoped policy needs `options.chain` to be found. The
+   * default matches the default an intent carries.
+   */
+  breakerStates(agentId: string, options: BreakerStateOptions = {}): BreakerState[] {
+    const now = options.now ?? Date.now();
+    const agent = this.agents.get(agentId);
+    const probe = PaymentIntent.parse({
+      id: newId('int'),
+      agentId,
+      vendor: { host: 'breaker.probe.invalid', address: '0x0' },
+      resource: '/',
+      amount: '0',
+      asset: 'USDC',
+      chain: options.chain ?? 'base',
+      taskContext: {},
+      nonce: 'probe',
+      createdAt: new Date(now),
+    });
+    const policy = this.policies.list().find((p) => policyApplies(p, probe, agent));
+    if (!policy) return [];
+    const ctx = this.spend.contextFor(agentId, now);
+    const resets = this.spend.breakerResets(agentId);
+    return policy.breakers.map((breaker) => {
+      const window = ctx.breakerWindow(breaker.id, breaker.window);
+      const tripped = breakerTrips(breaker, probe, ctx);
+      return {
+        breaker,
+        policyId: policy.policyId,
+        txCount: window.txCount,
+        sum: window.sum,
+        countingFrom: Math.max(now - parseWindowMs(breaker.window), resets[breaker.id] ?? 0),
+        ...(resets[breaker.id] !== undefined ? { resetAt: resets[breaker.id] as number } : {}),
+        tripped: tripped !== undefined,
+        ...(tripped !== undefined ? { reason: tripped } : {}),
+      };
+    });
   }
 
   decisions(): readonly Decision[] {

@@ -40,11 +40,73 @@ export const Condition = z
     vendorReputationLt: z.number().min(0).max(100).optional(),
     /** Amount is more than `gt`-times the observed median for this resource. */
     amountVsResourceMedian: z.object({ gt: Multiplier }).optional(),
+    /**
+     * Cumulative spend attributed to THIS intent's `taskContext.taskId`
+     * (prior spend on the task plus this payment) exceeds `gt`. Scopes a
+     * budget to one unit of work rather than to a window: a research run that
+     * is meant to cost a dollar cannot quietly cost fifty, however slowly.
+     *
+     * An intent carrying no `taskId` cannot be attributed to a task, so the
+     * predicate never triggers for one. Requiring attribution is a separate,
+     * deliberate rule (deny on `taskIdMissing`), not a side effect of setting
+     * a budget — otherwise every untagged probe payment would trip every
+     * task budget in the policy.
+     */
+    taskBudget: z.object({ gt: DecimalString }).optional(),
+    /** The intent carries no `taskContext.taskId` (or an empty one). */
+    taskIdMissing: z.boolean().optional(),
   })
   .refine((c) => Object.values(c).some((v) => v !== undefined), {
     message: 'a condition must specify at least one predicate',
   });
 export type Condition = z.infer<typeof Condition>;
+
+/**
+ * A behavioral circuit breaker: one primitive with three tripwires — a window
+ * (rate), a transaction count, and a value cap — measured over the agent's
+ * own recent activity.
+ *
+ * A breaker is not a rule. Rules ask about the intent in front of them; a
+ * breaker asks whether the agent's BEHAVIOR has left the envelope it was
+ * given, and once it has, every subsequent intent ESCALATES for a signed
+ * approval. It never denies on its own: an agent that trips a breaker in the
+ * middle of a job must be able to be waved through by a human, because a
+ * silent deny at the wrong moment strands the work with no path forward and
+ * no one told (the failure mode Flash's exit paths taught).
+ *
+ * Reset happens two ways, and they are one mechanism: the window rolling
+ * forward, or a signed approval, which moves the breaker's counting floor to
+ * now. Nothing "un-trips" a breaker by decree — the activity simply stops
+ * being inside the measured span.
+ *
+ * Targeting is the policy's job: `appliesTo.agents` / `appliesTo.labels`
+ * decide WHICH agents carry the breaker. COUNTING is always per agent — a
+ * breaker pooled across every agent sharing a label needs a cross-agent
+ * aggregate the per-agent spend context cannot express, and is deferred.
+ */
+export const Breaker = z
+  .object({
+    id: z.string().min(1),
+    /** The trailing span the tripwires measure over. */
+    window: Window,
+    /**
+     * Trip when the window would hold MORE than this many transactions.
+     * `10` permits ten in the window and escalates the eleventh.
+     */
+    txCount: z.number().int().positive().optional(),
+    /**
+     * Trip when the window's spend would exceed this total. `"50.00"` permits
+     * a window totalling exactly 50.00 and escalates the payment that would
+     * carry it past. Prospective, like every other spend predicate: the
+     * payment that would breach the cap is the one that escalates, rather
+     * than the innocent one after it.
+     */
+    valueCap: DecimalString.optional(),
+  })
+  .refine((b) => b.txCount !== undefined || b.valueCap !== undefined, {
+    message: 'a breaker must specify at least one of txCount / valueCap',
+  });
+export type Breaker = z.infer<typeof Breaker>;
 
 /**
  * A single rule: an id plus exactly one action (allow / deny / escalate) whose
@@ -95,6 +157,12 @@ export const Policy = z.object({
   version: z.string().default('1'),
   appliesTo: AppliesTo.default({}),
   rules: z.array(Rule).default([]),
+  /**
+   * Behavioral breakers evaluated alongside the rules. A tripped breaker
+   * escalates at the same precedence as an `escalate` rule — so an explicit
+   * DENY still wins, and an ALLOW rule cannot wave past a tripped breaker.
+   */
+  breakers: z.array(Breaker).default([]),
   default: PolicyDefault.default('deny'),
   /** Below this amount, fail-open is permitted during a policy-service outage. */
   denyFloor: DecimalString.default('0.05'),

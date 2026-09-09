@@ -186,8 +186,17 @@ export class ApprovalService {
   /**
    * Park an escalated decision. Delivery happens after the record is durable,
    * so a channel can never announce a challenge the engine has not stored.
+   *
+   * `context.breakers` names the breakers whose trip contributed to the
+   * escalation; the engine resets those, and only those, if this request is
+   * approved. It is passed in rather than parsed back out of the decision's
+   * matched rules, so the label format stays a display detail.
    */
-  async open(intent: PaymentIntent, decision: Decision): Promise<ApprovalRequest> {
+  async open(
+    intent: PaymentIntent,
+    decision: Decision,
+    context: { breakers?: string[] } = {},
+  ): Promise<ApprovalRequest> {
     const createdAt = new Date(this.now());
     const request = ApprovalRequest.parse({
       decisionId: decision.id,
@@ -199,7 +208,9 @@ export class ApprovalService {
       amount: intent.amount,
       asset: intent.asset,
       chain: intent.chain,
+      taskId: intent.taskContext.taskId,
       reason: decision.reason ?? 'escalated',
+      breakers: context.breakers ?? [],
       status: 'pending',
       createdAt,
       expiresAt: new Date(this.now() + this.ttlMs),

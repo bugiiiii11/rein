@@ -1,5 +1,5 @@
 import { type Agent, type Policy, type Window, sumDecimal, compareDecimal } from '@reinconsole/core';
-import { policyApplies, type SpendContext } from './evaluator.js';
+import { policyApplies, type BreakerWindow, type SpendContext } from './evaluator.js';
 
 /**
  * One observed/pending spend event. The lightweight in-memory stores here
@@ -12,6 +12,8 @@ export interface SpendRecord {
   resource: string;
   amount: string;
   at: number; // epoch ms
+  /** Task attribution, when the caller supplied one. Feeds `taskBudget`. */
+  taskId?: string;
 }
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -25,6 +27,14 @@ export type MaybePromise<T> = T | Promise<T>;
 export interface SpendStorePort {
   record(rec: SpendRecord): MaybePromise<void>;
   setVendorReputation(host: string, score: number): MaybePromise<void>;
+  /**
+   * Move a breaker's counting floor for one agent. Called when a signed
+   * approval clears a tripped breaker; the floor also expires naturally as
+   * the breaker's window rolls past it, so nothing has to be cleaned up.
+   */
+  resetBreaker(agentId: string, breakerId: string, at: number): MaybePromise<void>;
+  /** Where each of an agent's breakers is currently counting from. */
+  breakerResets(agentId: string): Record<string, number>;
   /** Resolve a point-in-time spend context for one agent (prior activity only). */
   contextFor(agentId: string, now?: number): SpendContext;
 }
@@ -69,6 +79,8 @@ function median(values: readonly string[]): string | undefined {
 export class InMemorySpendStore implements SpendStorePort {
   private readonly records: SpendRecord[] = [];
   private readonly reputations = new Map<string, number>();
+  /** agentId -> breakerId -> epoch ms that breaker counts from. */
+  private readonly resets = new Map<string, Map<string, number>>();
 
   record(rec: SpendRecord): void {
     this.records.push(rec);
@@ -78,14 +90,34 @@ export class InMemorySpendStore implements SpendStorePort {
     this.reputations.set(host, score);
   }
 
+  resetBreaker(agentId: string, breakerId: string, at: number): void {
+    let mine = this.resets.get(agentId);
+    if (!mine) this.resets.set(agentId, (mine = new Map()));
+    mine.set(breakerId, at);
+  }
+
+  breakerResets(agentId: string): Record<string, number> {
+    return Object.fromEntries(this.resets.get(agentId) ?? []);
+  }
+
   /** Resolve a point-in-time spend context for one agent (prior activity only). */
   contextFor(agentId: string, now: number = Date.now()): SpendContext {
     const mine = this.records.filter((r) => r.agentId === agentId);
     const reputations = this.reputations;
     const all = this.records;
+    const resets = this.resets;
     return {
       rollingSum: (window) => sumDecimal(within(mine, window, now).map((r) => r.amount)),
       txCount: (window) => within(mine, window, now).length,
+      taskSum: (taskId) => sumDecimal(mine.filter((r) => r.taskId === taskId).map((r) => r.amount)),
+      breakerWindow: (breakerId, window): BreakerWindow => {
+        // The later of the two cutoffs wins, which is the whole trick: a
+        // reset and an expiring window are the same operation on the floor.
+        const reset = resets.get(agentId)?.get(breakerId) ?? 0;
+        const cutoff = Math.max(now - parseWindowMs(window), reset);
+        const counted = mine.filter((r) => r.at >= cutoff);
+        return { txCount: counted.length, sum: sumDecimal(counted.map((r) => r.amount)) };
+      },
       isVendorFirstSeen: (host) => !mine.some((r) => r.host === host),
       vendorReputation: (host) => reputations.get(host),
       resourceMedian: (resource) =>

@@ -79,6 +79,35 @@ describe('openReinStore', () => {
     expect(second.fresh).toBe(false);
   });
 
+  it('persists breaker floors and task attribution across restarts', async () => {
+    const dir = tempDir();
+    const agentId = newId('agt');
+    const a = await open(dir);
+    const engineA = new PolicyEngine(a);
+    await engineA.addPolicy({
+      policyId: 'pol_breaker',
+      rules: [{ id: 'task-cap', escalate: { taskBudget: { gt: '5.00' } } }],
+      breakers: [{ id: 'velocity', window: '1h', txCount: 2 }],
+      default: 'allow',
+    });
+    await engineA.evaluateIntent({ ...intent(agentId, '1.00'), taskContext: { taskId: 't1' } });
+    await engineA.evaluateIntent({ ...intent(agentId, '1.00'), taskContext: { taskId: 't1' } });
+    // Clear the breaker the way an approval does, then prove the floor is
+    // durable: a restart that forgot it would re-trip and ask a human the
+    // same question again.
+    const clearedAt = Date.now();
+    await a.spend.resetBreaker(agentId, 'velocity', clearedAt);
+    await a.close();
+
+    const b = await open(dir);
+    const engineB = new PolicyEngine(b);
+    expect(b.spend.breakerResets(agentId).velocity).toBe(clearedAt);
+    expect(engineB.breakerStates(agentId)[0]?.tripped).toBe(false);
+    // Task attribution survived, so the budget still counts what was spent.
+    expect(b.spend.contextFor(agentId).taskSum('t1')).toBe('2');
+    expect(b.spend.contextFor(agentId).taskSum('t2')).toBe('0');
+  });
+
   it('runs fully in-memory when no dir is given', async () => {
     const engine = new PolicyEngine(await open());
     await engine.addPolicy({ policyId: 'open', rules: [], default: 'allow' });

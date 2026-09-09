@@ -123,7 +123,8 @@ export class PgSpendStore implements SpendStorePort {
       resource: string;
       amount: string;
       at: number | string;
-    }>('SELECT agent_id, host, resource, amount, at FROM spend_records ORDER BY seq');
+      task_id: string | null;
+    }>('SELECT agent_id, host, resource, amount, at, task_id FROM spend_records ORDER BY seq');
     for (const row of records.rows) {
       store.mem.record({
         agentId: row.agent_id,
@@ -131,7 +132,18 @@ export class PgSpendStore implements SpendStorePort {
         resource: row.resource,
         amount: row.amount,
         at: Number(row.at),
+        ...(row.task_id ? { taskId: row.task_id } : {}),
       });
+    }
+    // Breaker floors hydrate too: without them a restart re-trips every
+    // breaker a human had already signed off on.
+    const resets = await store.db.query<{
+      agent_id: string;
+      breaker_id: string;
+      at: number | string;
+    }>('SELECT agent_id, breaker_id, at FROM breaker_resets');
+    for (const row of resets.rows) {
+      store.mem.resetBreaker(row.agent_id, row.breaker_id, Number(row.at));
     }
     const reputations = await db.query<{ host: string; score: number }>(
       'SELECT host, score FROM vendor_reputation',
@@ -142,10 +154,24 @@ export class PgSpendStore implements SpendStorePort {
 
   async record(rec: SpendRecord): Promise<void> {
     await this.db.query(
-      'INSERT INTO spend_records (agent_id, host, resource, amount, at) VALUES ($1, $2, $3, $4, $5)',
-      [rec.agentId, rec.host, rec.resource, rec.amount, rec.at],
+      `INSERT INTO spend_records (agent_id, host, resource, amount, at, task_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [rec.agentId, rec.host, rec.resource, rec.amount, rec.at, rec.taskId ?? null],
     );
     this.mem.record(rec);
+  }
+
+  async resetBreaker(agentId: string, breakerId: string, at: number): Promise<void> {
+    await this.db.query(
+      `INSERT INTO breaker_resets (agent_id, breaker_id, at) VALUES ($1, $2, $3)
+       ON CONFLICT (agent_id, breaker_id) DO UPDATE SET at = EXCLUDED.at`,
+      [agentId, breakerId, at],
+    );
+    this.mem.resetBreaker(agentId, breakerId, at);
+  }
+
+  breakerResets(agentId: string): Record<string, number> {
+    return this.mem.breakerResets(agentId);
   }
 
   async setVendorReputation(host: string, score: number): Promise<void> {

@@ -313,6 +313,7 @@ The guard layers _underneath_ any x402 payment library: the first unpaid request
 | GET    | `/v1/policies`               | List policies                                 |
 | POST   | `/v1/evaluate`               | Evaluate a payment intent → signed decision   |
 | GET    | `/v1/decisions`              | The hash-chained decision log                 |
+| GET    | `/v1/agents/:id/breakers`    | Where the agent's behavioral breakers stand   |
 
 A policy is declarative — for example, a $0.50 per-transaction cap plus a rolling $0.04/hour budget, defaulting to allow:
 
@@ -327,6 +328,42 @@ A policy is declarative — for example, a $0.50 per-transaction cap plus a roll
   "default": "allow"
 }
 ```
+
+### Breakers and task budgets
+
+Rules ask about the payment in front of them. A **breaker** asks whether the agent's
+*behavior* has left the envelope it was given — and once it has, every subsequent
+intent escalates for a signed approval. It never denies on its own: a silent deny at
+the wrong moment strands a running job with no path forward and nobody told.
+
+```json
+{
+  "policyId": "research-policy",
+  "breakers": [
+    { "id": "velocity", "window": "1h", "txCount": 60, "valueCap": "5.00" }
+  ],
+  "rules": [
+    { "id": "task-cap", "escalate": { "taskBudget": { "gt": "1.00" } } },
+    { "id": "untagged", "deny": { "taskIdMissing": true } }
+  ],
+  "default": "allow"
+}
+```
+
+- Tripwires are **prospective** and ORed: the payment that would carry the window
+  past 60 transactions *or* past $5.00 is the one that escalates, rather than the
+  innocent one behind it. At least one tripwire is required.
+- A breaker sits at the **escalate** precedence level, so an explicit `deny` still
+  wins and no `allow` rule can wave a tripped breaker past.
+- It resets two ways, which are the same mechanism — a counting **floor**: the window
+  rolling forward, or a signed approval moving the floor to now. `GET /v1/agents/:id/breakers`
+  (or `client.breakerStates(agentId)`) reports where each one stands.
+- `taskBudget` caps cumulative spend on one unit of work rather than one window: the
+  research run meant to cost a dollar cannot quietly cost fifty, however slowly. The
+  guard's `withTask({ taskId })` carries the attribution. An intent with no task id
+  never triggers a budget — requiring attribution is the separate, deliberate
+  `taskIdMissing` rule, because otherwise every untagged probe payment would trip
+  every task budget in the policy.
 
 ## Design principles
 

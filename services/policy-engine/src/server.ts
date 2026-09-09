@@ -160,6 +160,12 @@ export function buildServer(
     return reply.status(204).send();
   });
 
+  // Where the agent's breakers stand right now — read-only observability, so
+  // an operator can see WHY an agent is escalating before a challenge lands.
+  app.get('/v1/agents/:id/breakers', (req) =>
+    engine.breakerStates((req.params as { id: string }).id),
+  );
+
   // --- Policies ---
   app.post('/v1/policies', (req) => engine.addPolicy(Policy.parse(req.body)));
   app.get('/v1/policies', () => engine.policies.list());

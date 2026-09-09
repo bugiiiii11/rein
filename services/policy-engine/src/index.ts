@@ -4,12 +4,16 @@ export {
   type EvaluateOutput,
   type ResolveOutput,
   type EngineStores,
+  type BreakerState,
+  type BreakerStateOptions,
 } from './engine.js';
 export {
   evaluate,
   conditionMatches,
+  breakerTrips,
   policyApplies,
   type SpendContext,
+  type BreakerWindow,
   type EvaluationResult,
 } from './evaluator.js';
 export {

@@ -63,8 +63,23 @@ export const ApprovalRequest = z.object({
   amount: DecimalString,
   asset: Asset,
   chain: Chain,
+  /**
+   * Task attribution copied from the intent. Carried so an approved payment
+   * still counts against its `taskBudget` — an escalation that lost its task
+   * id on the way through would make the budget silently under-count exactly
+   * the payments a human had to look at.
+   */
+  taskId: z.string().optional(),
   /** Why policy escalated, verbatim from the decision. */
   reason: z.string(),
+  /**
+   * Breaker ids whose trip contributed to this escalation. An approval of
+   * this request resets exactly these — moving their counting floor to the
+   * approval instant — so a human waving one payment through also clears the
+   * behavior that stopped it, rather than being asked again immediately.
+   * Empty when ordinary rules did the escalating.
+   */
+  breakers: z.array(z.string()).default([]),
   status: ApprovalStatus,
   createdAt: z.coerce.date(),
   /** Past this instant the request denies, whatever arrives afterwards. */
