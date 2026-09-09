@@ -13,6 +13,58 @@ describe('policy-engine HTTP API', () => {
     await app.close();
   });
 
+  it('reconciles over HTTP: an allowance opens a gap and a settlement closes it', async () => {
+    const app = buildServer();
+    const agentId = newId('agt');
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      payload: { policyId: 'pol_open', default: 'allow' },
+    });
+    const evaluated = await app.inject({
+      method: 'POST',
+      url: '/v1/evaluate',
+      payload: {
+        agentId,
+        vendor: { host: 'api.example.com', address: '0x1' },
+        resource: '/v1/answer',
+        amount: '1.00',
+        asset: 'USDC',
+        chain: 'base',
+      },
+    });
+    const intentId = evaluated.json().intent.id;
+
+    const open = await app.inject({ method: 'GET', url: '/v1/reconciliation?graceMs=0' });
+    expect(open.statusCode).toBe(200);
+    expect(open.json()).toMatchObject({ allowed: 1, unsettled: 1, settlementsSeen: 0 });
+
+    // 202, not 200: the engine is ACCEPTING a claim about the world, not
+    // deciding anything — the only thing this can change is a report.
+    const reported = await app.inject({
+      method: 'POST',
+      url: '/v1/settlements',
+      payload: { intentId, txHash: '0xabc', source: 'indexer', confirmedAt: new Date() },
+    });
+    expect(reported.statusCode).toBe(202);
+
+    const closed = await app.inject({ method: 'GET', url: '/v1/reconciliation?graceMs=0' });
+    expect(closed.json()).toMatchObject({ settled: 1, unsettled: 0, settlementsSeen: 1 });
+    await app.close();
+  });
+
+  it('rejects a settlement report for something that is not an intent id', async () => {
+    const app = buildServer();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/settlements',
+      payload: { intentId: 'nope', confirmedAt: new Date() },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('validation_error');
+    await app.close();
+  });
+
   it('serves breaker standing on a read-scope route', async () => {
     const app = buildServer();
     const agentId = newId('agt');

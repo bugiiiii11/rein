@@ -8,6 +8,7 @@ import type {
   GateView,
   GraphView,
   PolicyView,
+  ReconciliationView,
   SignerView,
   Stats,
 } from '../server/wire';
@@ -24,6 +25,7 @@ export interface ConsoleData {
   signer: SignerView | null;
   graph: GraphView | null;
   breakers: BreakerView[];
+  reconciliation: ReconciliationView | null;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -49,6 +51,7 @@ export function useConsole(): ConsoleData {
     signer: null,
     graph: null,
     breakers: [],
+    reconciliation: null,
     demo: EMPTY_DEMO,
     publicKey: '',
     startedAt: '',
@@ -97,6 +100,7 @@ export function useConsole(): ConsoleData {
           signer: s.signer,
           graph: s.graph,
           breakers: s.breakers,
+          reconciliation: s.reconciliation,
           demo: s.demo,
           publicKey: s.publicKey,
           startedAt: s.startedAt,
@@ -155,6 +159,12 @@ export function useConsole(): ConsoleData {
     );
     es.addEventListener('breakers', (ev) =>
       setData((d) => ({ ...d, breakers: parse<{ breakers: BreakerView[] }>(ev).breakers })),
+    );
+    es.addEventListener('reconciliation', (ev) =>
+      setData((d) => ({
+        ...d,
+        reconciliation: parse<{ reconciliation: ReconciliationView }>(ev).reconciliation,
+      })),
     );
     es.addEventListener('demo', (ev) =>
       setData((d) => ({ ...d, demo: parse<{ demo: DemoStatus }>(ev).demo })),

@@ -11,6 +11,8 @@ export type FeedKind =
   | 'decision'
   | 'settled'
   | 'shadow'
+  // the mirror of a shadow spend: an allowance whose money never moved
+  | 'unsettled'
   // vendor side (gate.*): a quote issued, revenue earned, a payment turned away
   | 'quote'
   | 'revenue'
@@ -254,6 +256,62 @@ export interface BreakerView {
 }
 
 /**
+ * One allowance with no settlement behind it (B1), flattened for render.
+ *
+ * The mirror image of a shadow spend: a shadow spend is money that moved with
+ * no allowance behind it, and this is an allowance with no money behind it.
+ * Both are the same join failing, in opposite directions.
+ */
+export interface AllowanceGapView {
+  intentId: string;
+  /** The decision that authorized it — the link into the audit chain. */
+  decisionId?: string;
+  agentId: string;
+  agentName: string;
+  host: string;
+  resource: string;
+  /** The amount ALLOWED. Nothing is known to have moved. */
+  amount: string;
+  allowedAt: string; // ISO
+  ageMs: number;
+  /** `in-flight` is the normal state of any fresh payment; `unsettled` is not. */
+  state: 'in-flight' | 'unsettled';
+}
+
+/**
+ * The reconciliation panel (B1): where the allowance ledger and the settlement
+ * facts disagree.
+ *
+ * All-time by the two-window rule — every number here is rebuilt from durable
+ * state (the spend ledger and the settlements table), so it survives a restart,
+ * scoped to the trailing `window` rather than to this process.
+ *
+ * `settlementsSeen` is the honesty valve. The engine watches no chain; it is
+ * TOLD when payments land. Zero reports means nobody is looking, and the gaps
+ * below are then an artifact of the wiring, not evidence about payments — the
+ * panel must say so rather than raise an alarm it cannot support.
+ */
+export interface ReconciliationView {
+  window: string; // the trailing span of allowances covered, e.g. '24h'
+  graceMs: number;
+  allowed: number;
+  allowedValue: string;
+  settled: number;
+  settledValue: string;
+  inFlight: number;
+  inFlightValue: string;
+  unsettled: number;
+  unsettledValue: string;
+  /** Allowances written before B1: no intent id, so nothing to join on. */
+  unattributed: number;
+  settlementsSeen: number;
+  /** Worst first: unsettled before in-flight, oldest before newest. */
+  gaps: AllowanceGapView[];
+  /** When this report was computed — every `ageMs` is relative to it. */
+  at: string; // ISO
+}
+
+/**
  * What this console will let the caller do (`GET /api/control`), so the UI can
  * render honestly instead of offering buttons that answer 401/403. A public
  * deployment without a key is read-only BY DEFAULT — that is the posture, not
@@ -279,6 +337,7 @@ export interface ConsoleState {
   signer: SignerView;
   graph: GraphView;
   breakers: BreakerView[];
+  reconciliation: ReconciliationView;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -294,4 +353,5 @@ export type ServerEvent =
   | { type: 'signer'; signer: SignerView }
   | { type: 'graph'; graph: GraphView }
   | { type: 'breakers'; breakers: BreakerView[] }
+  | { type: 'reconciliation'; reconciliation: ReconciliationView }
   | { type: 'demo'; demo: DemoStatus };

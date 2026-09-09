@@ -3,9 +3,12 @@ import { Agent, Policy } from '@reinconsole/core';
 import {
   InMemoryAgentRegistry,
   InMemoryPolicyStore,
+  InMemorySettlementStore,
   InMemorySpendStore,
   type AgentRegistryPort,
   type PolicyStorePort,
+  type SettlementRecord,
+  type SettlementStorePort,
   type SpendContext,
   type SpendRecord,
   type SpendStorePort,
@@ -124,7 +127,12 @@ export class PgSpendStore implements SpendStorePort {
       amount: string;
       at: number | string;
       task_id: string | null;
-    }>('SELECT agent_id, host, resource, amount, at, task_id FROM spend_records ORDER BY seq');
+      intent_id: string | null;
+      decision_id: string | null;
+    }>(
+      'SELECT agent_id, host, resource, amount, at, task_id, intent_id, decision_id ' +
+        'FROM spend_records ORDER BY seq',
+    );
     for (const row of records.rows) {
       store.mem.record({
         agentId: row.agent_id,
@@ -133,6 +141,11 @@ export class PgSpendStore implements SpendStorePort {
         amount: row.amount,
         at: Number(row.at),
         ...(row.task_id ? { taskId: row.task_id } : {}),
+        // NULL on rows written before B1 — deliberately left undefined rather
+        // than backfilled, so reconciliation can tell "no settlement" from
+        // "nothing to join on" (see reconciliation.ts).
+        ...(row.intent_id ? { intentId: row.intent_id } : {}),
+        ...(row.decision_id ? { decisionId: row.decision_id } : {}),
       });
     }
     // Breaker floors hydrate too: without them a restart re-trips every
@@ -154,9 +167,19 @@ export class PgSpendStore implements SpendStorePort {
 
   async record(rec: SpendRecord): Promise<void> {
     await this.db.query(
-      `INSERT INTO spend_records (agent_id, host, resource, amount, at, task_id)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [rec.agentId, rec.host, rec.resource, rec.amount, rec.at, rec.taskId ?? null],
+      `INSERT INTO spend_records
+         (agent_id, host, resource, amount, at, task_id, intent_id, decision_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        rec.agentId,
+        rec.host,
+        rec.resource,
+        rec.amount,
+        rec.at,
+        rec.taskId ?? null,
+        rec.intentId ?? null,
+        rec.decisionId ?? null,
+      ],
     );
     this.mem.record(rec);
   }
@@ -185,5 +208,65 @@ export class PgSpendStore implements SpendStorePort {
 
   contextFor(agentId: string, now?: number): SpendContext {
     return this.mem.contextFor(agentId, now);
+  }
+
+  allowancesIn(from: number, to?: number): readonly SpendRecord[] {
+    return this.mem.allowancesIn(from, to);
+  }
+}
+
+/**
+ * Settlement facts (B1). Durable for the same reason the breaker floors are:
+ * a restart that forgot them would read every resumed allowance as unsettled
+ * and raise an alarm about payments that landed days ago.
+ *
+ * `INSERT ... ON CONFLICT DO NOTHING` is the first-report-wins rule of
+ * {@link SettlementStorePort} expressed in SQL — two observers of one payment
+ * cannot fight over its confirmation time.
+ */
+export class PgSettlementStore implements SettlementStorePort {
+  private readonly mem = new InMemorySettlementStore();
+
+  private constructor(private readonly db: PGlite) {}
+
+  static async open(db: PGlite): Promise<PgSettlementStore> {
+    const store = new PgSettlementStore(db);
+    const rows = await db.query<{
+      intent_id: string;
+      at: number | string;
+      tx_hash: string | null;
+      chain: string | null;
+      amount: string | null;
+      source: string | null;
+    }>('SELECT intent_id, at, tx_hash, chain, amount, source FROM settlements');
+    for (const row of rows.rows) {
+      store.mem.settle({
+        intentId: row.intent_id,
+        at: Number(row.at),
+        ...(row.tx_hash ? { txHash: row.tx_hash } : {}),
+        ...(row.chain ? { chain: row.chain } : {}),
+        ...(row.amount ? { amount: row.amount } : {}),
+        ...(row.source ? { source: row.source } : {}),
+      });
+    }
+    return store;
+  }
+
+  async settle(rec: SettlementRecord): Promise<void> {
+    await this.db.query(
+      `INSERT INTO settlements (intent_id, at, tx_hash, chain, amount, source)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (intent_id) DO NOTHING`,
+      [rec.intentId, rec.at, rec.txHash ?? null, rec.chain ?? null, rec.amount ?? null, rec.source ?? null],
+    );
+    this.mem.settle(rec);
+  }
+
+  get(intentId: string): SettlementRecord | undefined {
+    return this.mem.get(intentId);
+  }
+
+  count(): number {
+    return this.mem.count();
   }
 }

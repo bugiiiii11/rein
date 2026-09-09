@@ -14,6 +14,15 @@ export interface SpendRecord {
   at: number; // epoch ms
   /** Task attribution, when the caller supplied one. Feeds `taskBudget`. */
   taskId?: string;
+  /**
+   * The intent this allowance authorized, and the decision that authorized it.
+   * Optional because records written before reconciliation (B1) existed carry
+   * neither — and a record with no intent id cannot be joined against a
+   * settlement, so it is reported as UNATTRIBUTED rather than as a gap. An
+   * upgrade must not manufacture alarms out of history it cannot check.
+   */
+  intentId?: string;
+  decisionId?: string;
 }
 
 export type MaybePromise<T> = T | Promise<T>;
@@ -37,6 +46,52 @@ export interface SpendStorePort {
   breakerResets(agentId: string): Record<string, number>;
   /** Resolve a point-in-time spend context for one agent (prior activity only). */
   contextFor(agentId: string, now?: number): SpendContext;
+  /**
+   * The raw ledger in a span, oldest first — what reconciliation joins against
+   * settlements. Every spend record IS an allowance: the engine writes one only
+   * after a decision came back `allow` (including the follow-up allow a signed
+   * approval appends), so "the allowances made between t0 and t1" needs no
+   * separate table to answer.
+   */
+  allowancesIn(from: number, to?: number): readonly SpendRecord[];
+}
+
+/**
+ * One settlement fact: an allowed intent whose payment was observed to land.
+ * Keyed by intent, because the intent is the payment — a resolved escalation
+ * appends a SECOND decision for the same intent (S40), and one settlement
+ * settles it however many decisions judged it.
+ */
+export interface SettlementRecord {
+  intentId: string;
+  /** Epoch ms the settlement was confirmed at (not when it was reported). */
+  at: number;
+  txHash?: string;
+  chain?: string;
+  /** The amount as settled, when the observer knew it. */
+  amount?: string;
+  /** Who observed it, e.g. "indexer" | "guard" | "facilitator". */
+  source?: string;
+}
+
+/**
+ * Where settlement facts live. Separate from spend on purpose: the engine
+ * WRITES an allowance itself, but it can only ever be TOLD about a settlement
+ * — it does not watch a chain. A deployment with no reporter has an empty
+ * store, which is why the reconciliation report carries `settlementsSeen`:
+ * zero means nobody is looking, not that nothing settled.
+ */
+export interface SettlementStorePort {
+  /**
+   * Record a settlement. Idempotent by intent id, FIRST report wins: a
+   * settlement can be observed twice (the paying guard and an indexer both
+   * see it), and the earliest confirmation is the one that happened. A later
+   * report must not be able to move a settled payment's clock forward.
+   */
+  settle(rec: SettlementRecord): MaybePromise<void>;
+  get(intentId: string): SettlementRecord | undefined;
+  /** How many settlements this engine has ever been told about. */
+  count(): number;
 }
 
 export interface PolicyStorePort {
@@ -123,6 +178,30 @@ export class InMemorySpendStore implements SpendStorePort {
       resourceMedian: (resource) =>
         median(all.filter((r) => r.resource === resource).map((r) => r.amount)),
     };
+  }
+
+  allowancesIn(from: number, to: number = Number.POSITIVE_INFINITY): readonly SpendRecord[] {
+    return this.records.filter((r) => r.at >= from && r.at <= to);
+  }
+}
+
+export class InMemorySettlementStore implements SettlementStorePort {
+  private readonly byIntent = new Map<string, SettlementRecord>();
+
+  settle(rec: SettlementRecord): void {
+    const seen = this.byIntent.get(rec.intentId);
+    // First report wins (see the port). A second observer of the same payment
+    // adds nothing; it must not overwrite the confirmation time either.
+    if (seen && seen.at <= rec.at) return;
+    this.byIntent.set(rec.intentId, rec);
+  }
+
+  get(intentId: string): SettlementRecord | undefined {
+    return this.byIntent.get(intentId);
+  }
+
+  count(): number {
+    return this.byIntent.size;
   }
 }
 

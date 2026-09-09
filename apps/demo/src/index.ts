@@ -1,7 +1,7 @@
 /**
  * Rein v0.1 — End-to-End Demo
  *
- * Seven scenarios in one in-process run (<1s):
+ * Eight scenarios in one in-process run (<1s):
  *   1. Normal calls allowed within rolling budget
  *   2. Rolling-budget cap enforcement (deny before payment exists)
  *   3. Single-transaction cap
@@ -9,6 +9,7 @@
  *   5. Shadow spend — direct ledger.transfer() flagged by the indexer
  *   6. Behavioral breaker: trips, escalates, cleared by a SIGNED approval
  *   7. Per-task budget: a runaway task escalates while other tasks run on
+ *   8. Reconciliation — an allowed payment that never settled (the mirror of 5)
  *
  * Run: pnpm --filter @reinconsole/demo demo
  */
@@ -393,6 +394,75 @@ async function main() {
     outcome('allow', 'run-B call 1  $0.01', 'a different task, its own budget');
   });
 
+  // -- Scenario 8: Reconciliation --------------------------------------------
+  console.log(section('Scenario 8  ·  Reconciliation (allowed but never settled)'));
+  console.log('  Scenario 5 was money with no allowance behind it. This is the mirror:');
+  console.log('  an allowance with no money behind it — the engine said yes and the');
+  console.log('  payment never happened. Nothing raises an error when that occurs.\n');
+
+  // A wallet that goes dark after the engine has already allowed the payment.
+  // The decision chain says "allowed", the rolling budget is charged, and no
+  // money moves. This is the failure mode B1 exists to make visible.
+  const rcWallet = '0xReconcile01';
+  const rcAgentId = newId('agt');
+  await engine.registerAgent({
+    id: rcAgentId,
+    orgId: newId('org'),
+    name: 'reconcile-agent',
+    wallets: [{ chain: 'base', address: rcWallet, mode: 'sdk' }],
+    status: 'active',
+    createdAt: new Date(),
+  });
+  const rcGuard = createGuard({
+    engineUrl,
+    agentId: rcAgentId,
+    fetch: vendor.fetch,
+    payer: facilitator.payerFor(rcWallet),
+  });
+  await rcGuard.client.addPolicy({
+    policyId: 'reconcile-policy',
+    appliesTo: { agents: [rcAgentId] },
+    default: 'allow',
+  });
+  await rcGuard.wrap()(VENDOR_URL);
+  outcome('allow', 'call 1  $0.01', 'paid and settled — the guard reports it');
+
+  // The same agent's wallet goes dark. The engine still allows the payment;
+  // the money never moves, and nothing throws on the engine side.
+  const brokenGuard = createGuard({
+    engineUrl,
+    agentId: rcAgentId,
+    fetch: vendor.fetch,
+    payer: () => {
+      throw new Error('wallet unreachable');
+    },
+  });
+  await brokenGuard
+    .wrap()(VENDOR_URL)
+    .catch(() => undefined);
+  outcome('allow', 'call 2  $0.01', 'allowed — but the wallet never paid');
+  // Let the settled guards' fire-and-forget reports land (never awaited on the
+  // payment path: telemetry must not be able to change a payment's outcome).
+  await new Promise((r) => setTimeout(r, 150));
+
+  const report = engine.reconcile({ graceMs: 0, agentId: rcAgentId });
+  console.log(`  Allowances (24h):  ${report.allowed}`);
+  console.log(`  Settled:           ${report.settled}  ${usd(report.settledValue)}`);
+  console.log(`  Unsettled:         ${report.unsettled}  ${usd(report.unsettledValue)}`);
+  console.log(`  Reporters seen:    ${report.settlementsSeen} settlement reports`);
+  for (const gap of report.gaps) {
+    console.log(
+      `\n  [UNSETTLED]  ${usd(gap.amount)}  ${gap.host}${gap.resource}` +
+        `\n    intent:    ${gap.intentId}` +
+        `\n    decision:  ${gap.decisionId}` +
+        `\n    allowed:   ${new Date(gap.allowedAt).toISOString()}`,
+    );
+  }
+  console.log(
+    '\n  The budget stays charged for it, deliberately: an allowance that is' +
+      '\n  refunded when it fails to settle would be a self-service reset.',
+  );
+
   // ── Summary ────────────────────────────────────────────────────────────────
   console.log('\n' + bar('═'));
   console.log('  Summary');
@@ -414,6 +484,7 @@ async function main() {
   Settled payments:  ${indexer.settledPayments().length}
   Shadow spends:     ${indexer.shadowSpends().length}
   Escalations:       ${approvals.list().length}  (${approvals.pending().length} still parked)
+  Unsettled:         ${engine.reconcile({ graceMs: 0 }).unsettled}  allowances with no settlement behind them
   Decision log:      ${engine.decisions().length} entries  (ed25519-signed, sha256-chained)
   Elapsed:           ${Date.now() - t0}ms
 `);

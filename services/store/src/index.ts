@@ -3,12 +3,12 @@ import { Decision } from '@reinconsole/core';
 import { DecisionLog } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
-import { PgAgentRegistry, PgPolicyStore, PgSpendStore } from './stores.js';
+import { PgAgentRegistry, PgPolicyStore, PgSettlementStore, PgSpendStore } from './stores.js';
 import { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 import { PgSessionStore } from './signer-stores.js';
 import { PgGateStore } from './gate-stores.js';
 
-export { PgAgentRegistry, PgPolicyStore, PgSpendStore } from './stores.js';
+export { PgAgentRegistry, PgPolicyStore, PgSettlementStore, PgSpendStore } from './stores.js';
 export { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 export { PgSessionStore } from './signer-stores.js';
 export { PgGateStore } from './gate-stores.js';
@@ -30,6 +30,8 @@ export interface ReinStore {
   spend: PgSpendStore;
   policies: PgPolicyStore;
   agents: PgAgentRegistry;
+  /** Settlement facts behind `engine.reconcile()` — see PgSettlementStore. */
+  settlements: PgSettlementStore;
   log: DecisionLog;
   /** Reputation evidence ledger — pass to `new ReputationGraph({ ledger })`. */
   ledger: PgEvidenceLedger;
@@ -82,6 +84,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const agents = await PgAgentRegistry.open(db);
     const policies = await PgPolicyStore.open(db);
     const spend = await PgSpendStore.open(db);
+    const settlements = await PgSettlementStore.open(db);
     const ledger = await PgEvidenceLedger.open(db);
     const intents = await PgIntentStore.open(db);
     const sessions = await PgSessionStore.open(db);
@@ -121,6 +124,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       spend,
       policies,
       agents,
+      settlements,
       log,
       ledger,
       intents,

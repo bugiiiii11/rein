@@ -108,6 +108,55 @@ describe('openReinStore', () => {
     expect(b.spend.contextFor(agentId).taskSum('t2')).toBe('0');
   });
 
+  it('reconciliation survives a restart — settled payments stay settled (B1)', async () => {
+    const dir = tempDir();
+    const agentId = newId('agt');
+    const a = await open(dir);
+    const engineA = new PolicyEngine(a);
+    await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+    const paid = await engineA.evaluateIntent(intent(agentId, '1.00'));
+    const lost = await engineA.evaluateIntent(intent(agentId, '2.00'));
+    await engineA.recordSettlement({
+      intentId: paid.intent.id,
+      txHash: '0xdeadbeef',
+      source: 'indexer',
+      confirmedAt: new Date(),
+    });
+    expect(engineA.reconcile({ graceMs: 0 })).toMatchObject({ settled: 1, unsettled: 1 });
+    await a.close();
+
+    // The whole point of persisting settlements: without them the restart
+    // itself would raise the alarm, reporting every resumed allowance as a
+    // payment nobody can account for.
+    const b = await open(dir);
+    const engineB = new PolicyEngine(b);
+    const report = engineB.reconcile({ graceMs: 0 });
+    expect(report).toMatchObject({ allowed: 2, settled: 1, unsettled: 1, settlementsSeen: 1 });
+    expect(report.gaps[0]?.intentId).toBe(lost.intent.id);
+    expect(b.settlements.get(paid.intent.id)?.txHash).toBe('0xdeadbeef');
+  });
+
+  it('reads a pre-B1 spend row as unattributed, never as a gap', async () => {
+    const dir = tempDir();
+    const a = await open(dir);
+    // Exactly the row an older build wrote: no intent id to join on. Counting
+    // it as a gap would make upgrading a live data dir raise a false alarm
+    // about every payment it ever allowed.
+    await a.spend.record({
+      agentId: newId('agt'),
+      host: 'api.example.com',
+      resource: '/v1/answer',
+      amount: '3.00',
+      at: Date.now(),
+    });
+    await a.close();
+
+    const b = await open(dir);
+    const report = new PolicyEngine(b).reconcile({ graceMs: 0 });
+    expect(report).toMatchObject({ unattributed: 1, allowed: 0, unsettled: 0 });
+    expect(report.gaps).toEqual([]);
+  });
+
   it('runs fully in-memory when no dir is given', async () => {
     const engine = new PolicyEngine(await open());
     await engine.addPolicy({ policyId: 'open', rules: [], default: 'allow' });

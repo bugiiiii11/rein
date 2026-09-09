@@ -8,7 +8,7 @@ import { GatePanel } from './components/GatePanel';
 import { SignerPanel } from './components/SignerPanel';
 import { ReputationPanel } from './components/ReputationPanel';
 import { BreakersPanel } from './components/BreakersPanel';
-import { Shadow } from './components/Shadow';
+import { Reconciliation } from './components/Reconciliation';
 import { AuditChain } from './components/AuditChain';
 
 export function App() {
@@ -42,7 +42,7 @@ export function App() {
         <div className="col right">
           <GatePanel gate={d.gate} />
           <SignerPanel signer={d.signer} />
-          <Shadow feed={d.feed} />
+          <Reconciliation reconciliation={d.reconciliation} feed={d.feed} />
           <AuditChain feed={d.feed} publicKey={d.publicKey} chainLinks={d.stats?.chainLinks ?? 0} />
         </div>
       </main>

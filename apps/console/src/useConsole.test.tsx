@@ -24,6 +24,7 @@ import type {
   GateView,
   GraphView,
   PolicyView,
+  ReconciliationView,
   ServerEvent,
   Stats,
 } from '../server/wire';
@@ -196,6 +197,23 @@ const POLICY: PolicyView = {
   rules: [{ id: 'tx-cap', action: 'deny', summary: 'max $5' }],
 };
 
+const RECONCILIATION: ReconciliationView = {
+  window: '24h',
+  graceMs: 60_000,
+  allowed: 0,
+  allowedValue: '0',
+  settled: 0,
+  settledValue: '0',
+  inFlight: 0,
+  inFlightValue: '0',
+  unsettled: 0,
+  unsettledValue: '0',
+  unattributed: 0,
+  settlementsSeen: 0,
+  gaps: [],
+  at: '2026-08-28T00:00:00.000Z',
+};
+
 const snapshot = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   feed: [],
   agents: [],
@@ -205,6 +223,7 @@ const snapshot = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   signer: { sessions: [], active: 0 },
   graph: GRAPH,
   breakers: [],
+  reconciliation: RECONCILIATION,
   demo: { running: false, phase: 'idle' },
   publicKey: 'pk_test',
   startedAt: '2026-08-28T00:00:00.000Z',

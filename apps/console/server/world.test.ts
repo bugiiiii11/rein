@@ -184,6 +184,38 @@ describe('breakers (A3)', () => {
   });
 });
 
+describe('reconciliation (B1)', () => {
+  it('joins the 8 allowances against the 7 settlements and finds the one gap', () => {
+    const r = boot.reconciliation;
+    expect(r.allowed).toBe(8);
+    expect(r.settled).toBe(7);
+    expect(Number(r.settledValue)).toBeCloseTo(0.07);
+    // The scenario already contained this gap before B1 existed: beat 11, the
+    // session-cap backstop. The ENGINE allowed a third $0.01 and the signer
+    // refused to sign it, so the decision chain says "allowed" and no money
+    // ever moved. Nothing was added to the scenario to produce it — which is
+    // why the pinned boot fingerprint above is untouched.
+    expect(r.gaps).toHaveLength(1);
+    const gap = r.gaps[0]!;
+    expect(gap.agentName).toBe('session-agent-1');
+    expect(Number(gap.amount)).toBeCloseTo(0.01);
+    expect(gap.decisionId).toBeDefined();
+    // A payment seconds old is IN FLIGHT, not a gap: under the grace period a
+    // missing settlement is the normal state of every payment.
+    expect(gap.state).toBe('in-flight');
+    expect(r.unsettled).toBe(0);
+    expect(r.inFlight).toBe(1);
+  });
+
+  it('has a settlement source connected, so a gap is evidence and not just wiring', () => {
+    // Zero reports would mean every allowance reads as unsettled because
+    // nobody is looking — the panel renders that case differently on purpose.
+    expect(boot.reconciliation.settlementsSeen).toBe(7);
+    // Nothing predates B1 in a fresh world; every allowance carries its ids.
+    expect(boot.reconciliation.unattributed).toBe(0);
+  });
+});
+
 describe('world methods', () => {
   it('freeze/unfreeze flip agent status and reject unknown ids', async () => {
     const agent = world.getState().agents.find((a) => a.name === 'research-agent-1')!;

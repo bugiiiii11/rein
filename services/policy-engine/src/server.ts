@@ -9,12 +9,16 @@ import {
   ApprovalVerdict,
   ApproverKeyId,
   ApiKeyScope,
+  AgentId,
   Policy,
   OrgId,
+  SettlementReport,
+  Window,
   newId,
   type Decision,
 } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
+import type { ReconcileOptions } from './reconciliation.js';
 import { ApiKeyAuth, AuthError } from './auth.js';
 import {
   ApprovalError,
@@ -74,8 +78,33 @@ export interface ServerOptions {
 export function requiredScope(method: string, pathname: string): ApiKeyScope {
   if (method === 'GET' || method === 'HEAD') return 'read';
   if (method === 'POST' && pathname === '/v1/evaluate') return 'evaluate';
+  // Reporting a settlement rides the same scope as spending, because the
+  // reporter IS the spender: the guard that made the payment is the component
+  // that sees the vendor confirm it. Nothing is granted by this — a settlement
+  // report can only close a reconciliation gap, never authorize a payment. The
+  // worst a stolen evaluate key does here is hide gaps it created, and a key
+  // that can spend can already do far worse.
+  if (method === 'POST' && pathname === '/v1/settlements') return 'evaluate';
   if (method === 'POST' && /^\/v1\/approvals\/[^/]+\/resolve$/.test(pathname)) return 'approve';
   return 'admin';
+}
+
+/** Query parsing for `GET /v1/reconciliation`, shared with the tests. */
+const ReconcileQuery = z.object({
+  window: Window.optional(),
+  graceMs: z.coerce.number().int().nonnegative().optional(),
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+  agentId: AgentId.optional(),
+});
+
+export function reconcileOptionsFromQuery(query: unknown): ReconcileOptions {
+  const q = ReconcileQuery.parse(query ?? {});
+  return {
+    ...(q.window !== undefined ? { window: q.window } : {}),
+    ...(q.graceMs !== undefined ? { graceMs: q.graceMs } : {}),
+    ...(q.limit !== undefined ? { limit: q.limit } : {}),
+    ...(q.agentId !== undefined ? { agentId: q.agentId } : {}),
+  };
 }
 
 /**
@@ -175,6 +204,15 @@ export function buildServer(
 
   // --- Audit ---
   app.get('/v1/decisions', () => engine.decisions());
+
+  // --- Reconciliation (B1): allowed but never settled ---
+  // The write is the settlement half of the join — see requiredScope for why
+  // it sits at `evaluate` rather than `admin`.
+  app.post('/v1/settlements', async (req, reply) =>
+    reply.status(202).send(await engine.recordSettlement(SettlementReport.parse(req.body))),
+  );
+
+  app.get('/v1/reconciliation', (req) => engine.reconcile(reconcileOptionsFromQuery(req.query)));
 
   // --- API keys (admin scope; see requiredScope) ---
   app.post('/v1/keys', async (req, reply) => {

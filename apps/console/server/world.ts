@@ -29,6 +29,7 @@ import {
   parseErc8004Id,
   sumDecimal,
   type Agent,
+  type Chain,
   type Decision,
   type PaymentIntent,
   type Receipt,
@@ -43,7 +44,7 @@ import {
   linkVendorFromRegistry,
   readSummary,
 } from '@reinconsole/erc8004';
-import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import { PolicyEngine, buildServer, parseWindowMs } from '@reinconsole/policy-engine';
 import {
   createGuard,
   PaymentBlockedError,
@@ -83,6 +84,7 @@ import {
 } from '@reinconsole/x402-rails';
 import type {
   AgentView,
+  AllowanceGapView,
   BreakerView,
   ConsoleState,
   DemoStatus,
@@ -91,6 +93,7 @@ import type {
   GraphView,
   PolicyView,
   PolicyRuleView,
+  ReconciliationView,
   ReputationRow,
   ServerEvent,
   SignerSessionView,
@@ -150,6 +153,23 @@ const REP_FLOOR = 40;
 const REP_MIN_CONFIDENCE = 0.3;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
+
+/**
+ * Reconciliation (B1). How long an allowance may go unsettled before the
+ * console calls it a gap rather than a payment in flight, and how often the
+ * gaps are re-measured.
+ *
+ * A gap has to AGE into existence — nothing emits when a payment fails to
+ * happen, which is exactly why this needs a sweep and the other panels do not.
+ * The default grace is deliberately far longer than these mock rails need
+ * (they settle in the same tick): the number that matters is a real
+ * facilitator's, and a console that cried gap after 200ms would be measuring
+ * its own simulator.
+ */
+const RECONCILE_GRACE_MS = Number(process.env['REIN_RECONCILE_GRACE_MS'] ?? 60_000);
+const RECONCILE_SWEEP_MS = Number(process.env['REIN_RECONCILE_SWEEP_MS'] ?? 30_000);
+/** The trailing span of allowances the panel covers. */
+const RECONCILE_WINDOW = '24h' as const;
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -444,6 +464,32 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       .find((a) => a.wallets.some((w) => w.address.toLowerCase() === key));
   }
 
+  /**
+   * Settlement writes, chained. The indexer's callback is synchronous but a
+   * durable settlement write is not, so boot awaits this tail before handing
+   * the world over — otherwise the first snapshot could report a payment as
+   * unsettled purely because its write had not landed yet.
+   */
+  let settlementTail: Promise<unknown> = Promise.resolve();
+
+  function reportSettlement(report: {
+    intentId: string;
+    txHash?: string;
+    chain?: Chain;
+    amount?: string;
+    source: string;
+    confirmedAt: Date;
+  }): void {
+    settlementTail = settlementTail.then(() =>
+      engine.recordSettlement(report).catch((err: unknown) => {
+        // A lost report leaves the allowance looking like a gap, which is the
+        // safe direction: an operator sees a payment to check, never a
+        // payment silently marked good.
+        console.error('[console] settlement report failed (gap stays open):', err);
+      }),
+    );
+  }
+
   function pushFeed(item: FeedItem): void {
     feed.push(item);
     if (feed.length > FEED_CAP) feed.shift();
@@ -655,6 +701,89 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     );
   }
 
+  /**
+   * Where the allowance ledger and the settlement facts disagree (B1).
+   *
+   * All-time by the two-window rule: both halves of the join are durable
+   * state, so a resumed console reports on the payments it authorized before
+   * the restart — which is precisely when an unanswered allowance matters
+   * most, and precisely what a feed-derived counter could not have told it.
+   */
+  function viewReconciliation(now = Date.now()): ReconciliationView {
+    const report = engine.reconcile({
+      window: RECONCILE_WINDOW,
+      graceMs: RECONCILE_GRACE_MS,
+      now,
+    });
+    return {
+      window: report.window,
+      graceMs: report.graceMs,
+      allowed: report.allowed,
+      allowedValue: report.allowedValue,
+      settled: report.settled,
+      settledValue: report.settledValue,
+      inFlight: report.inFlight,
+      inFlightValue: report.inFlightValue,
+      unsettled: report.unsettled,
+      unsettledValue: report.unsettledValue,
+      unattributed: report.unattributed,
+      settlementsSeen: report.settlementsSeen,
+      gaps: report.gaps.map(
+        (g): AllowanceGapView => ({
+          intentId: g.intentId,
+          ...(g.decisionId !== undefined ? { decisionId: g.decisionId } : {}),
+          agentId: g.agentId,
+          agentName: agentName(g.agentId) ?? g.agentId,
+          host: g.host,
+          resource: g.resource,
+          amount: g.amount,
+          allowedAt: new Date(g.allowedAt).toISOString(),
+          ageMs: g.ageMs,
+          state: g.state,
+        }),
+      ),
+      at: new Date(now).toISOString(),
+    };
+  }
+
+  /**
+   * The alert half of B1. Every other panel is driven by something happening;
+   * this one is driven by something NOT happening, so it needs a clock. The
+   * sweep re-measures the gaps and announces each allowance the first time it
+   * crosses out of grace — once per intent, never a repeating alarm about a
+   * payment an operator has already been told about.
+   */
+  const announcedGaps = new Map<string, number>();
+
+  function sweepReconciliation(): void {
+    const now = Date.now();
+    const view = viewReconciliation(now);
+    // Drop announcements for allowances that have aged out of the window. They
+    // can never come back into it, so this is pure accretion otherwise — the
+    // S28 lesson, on a Map that a long-lived console would grow forever.
+    const windowFrom = Date.parse(view.at) - parseWindowMs(RECONCILE_WINDOW);
+    for (const [intentId, allowedAt] of announcedGaps) {
+      if (allowedAt < windowFrom) announcedGaps.delete(intentId);
+    }
+    for (const gap of view.gaps) {
+      if (gap.state !== 'unsettled' || announcedGaps.has(gap.intentId)) continue;
+      announcedGaps.set(gap.intentId, Date.parse(gap.allowedAt));
+      pushFeed({
+        seq: ++seq,
+        at: new Date(now).toISOString(),
+        kind: 'unsettled',
+        agentId: gap.agentId,
+        agentName: gap.agentName,
+        amount: gap.amount,
+        host: gap.host,
+        resource: gap.resource,
+        intentId: gap.intentId,
+        ...(gap.decisionId !== undefined ? { decisionId: gap.decisionId } : {}),
+      });
+    }
+    emit({ type: 'reconciliation', reconciliation: view });
+  }
+
   function computeStats(): Stats {
     // All-time counters read the DURABLE audit chain, not the feed. The feed is
     // this process's telemetry, so deriving decision counts from it made a
@@ -734,6 +863,18 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   indexer.onEvent((ev) => {
     if (ev.type === 'payment.settled') {
       const intent = intents.get(ev.payment.intentId);
+      // Close the reconciliation gap (B1). The indexer is the STRONG reporter
+      // here — it read the ledger, rather than taking a payer's word for it —
+      // so the world tells the engine even though every guard also self-reports;
+      // the store keeps the first report and the two agree.
+      reportSettlement({
+        intentId: ev.payment.intentId,
+        txHash: ev.payment.txHash,
+        chain: ev.payment.chain,
+        ...(intent ? { amount: intent.amount } : {}),
+        source: 'indexer',
+        confirmedAt: ev.payment.confirmedAt,
+      });
       pushFeed({
         seq: ++seq,
         at: ev.payment.confirmedAt.toISOString(),
@@ -1384,6 +1525,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       signer: viewSigner(),
       graph: viewGraph(),
       breakers: viewBreakers(),
+      reconciliation: viewReconciliation(),
       demo,
       publicKey: engine.publicKeyPem,
       startedAt,
@@ -1400,6 +1542,11 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // invisible until shutdown. Drain gate + graph tails every 30s (surfacing
   // the first failure in the logs within seconds of it happening) and TTL-
   // prune the burn tables so a long-lived console doesn't accrete them.
+  // The reconciliation clock (B1) — see sweepReconciliation. Unref'd, so it
+  // never holds a process open, and stopped in close().
+  const reconcileTimer: NodeJS.Timeout = setInterval(sweepReconciliation, RECONCILE_SWEEP_MS);
+  reconcileTimer.unref?.();
+
   let maintenanceTimer: NodeJS.Timeout | undefined;
   if (store) {
     maintenanceTimer = setInterval(() => {
@@ -1419,6 +1566,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   async function close(): Promise<void> {
     if (syncTimer) clearTimeout(syncTimer);
     if (maintenanceTimer) clearInterval(maintenanceTimer);
+    clearInterval(reconcileTimer);
     await app.close();
     // Flush write-behind reputation evidence before the handle goes away. A
     // failure here means some evidence was NOT persisted — log it loudly, but
@@ -1446,6 +1594,9 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   await wireLiveIdentity();
   await syncGraph();
   if (fresh) await playScenario(false);
+  // Every settlement the scenario produced is written before the world is
+  // handed over, so the first snapshot's reconciliation is the real one.
+  await settlementTail;
   if (store) {
     console.log(
       `[rein] console world on ${options.dataDir}: ` +

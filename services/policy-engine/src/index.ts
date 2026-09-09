@@ -27,18 +27,31 @@ export {
   InMemorySpendStore,
   InMemoryPolicyStore,
   InMemoryAgentRegistry,
+  InMemorySettlementStore,
   parseWindowMs,
   type SpendRecord,
+  type SettlementRecord,
   type MaybePromise,
   type SpendStorePort,
   type PolicyStorePort,
   type AgentRegistryPort,
+  type SettlementStorePort,
 } from './stores.js';
+export {
+  reconcile,
+  DEFAULT_SETTLEMENT_GRACE_MS,
+  DEFAULT_RECONCILE_WINDOW,
+  DEFAULT_RECONCILE_LIMIT,
+  type AllowanceGap,
+  type ReconcileOptions,
+  type ReconciliationReport,
+} from './reconciliation.js';
 // Re-exported from @reinconsole/core (moved there so @reinconsole/gate shares the matcher).
 export { globMatch, globMatchAny } from '@reinconsole/core';
 export {
   buildServer,
   requiredScope,
+  reconcileOptionsFromQuery,
   authFromEnv,
   approvalsFromEnv,
   resolveHost,

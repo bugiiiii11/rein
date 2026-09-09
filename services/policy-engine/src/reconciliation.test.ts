@@ -1,0 +1,268 @@
+import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { describe, it, expect } from 'vitest';
+import { newId, type ApprovalVerdict } from '@reinconsole/core';
+import { PolicyEngine } from './engine.js';
+import { ApprovalService, signApproval } from './approvals.js';
+import { InMemorySettlementStore, InMemorySpendStore } from './stores.js';
+import { reconcile } from './reconciliation.js';
+
+/**
+ * B1 — "allowed but never settled".
+ *
+ * The invariants these tests exist to defend:
+ *   - an unsettled allowance KEEPS its charge against the budget (refunding it
+ *     would be a self-service reset: don't settle, and the envelope refills);
+ *   - a gap has an AGE — under the grace period a missing settlement is a
+ *     payment in flight, which is the normal state of every payment;
+ *   - reconciliation is observability, never authority: running it changes no
+ *     decision, and a settlement report authorizes nothing.
+ */
+
+function baseIntent(agentId: string, amount = '1.00') {
+  return {
+    agentId,
+    vendor: { host: 'api.example.com', address: '0x1' },
+    resource: '/v1/answer',
+    amount,
+    asset: 'USDC' as const,
+    chain: 'base' as const,
+  };
+}
+
+async function allowingEngine() {
+  const engine = new PolicyEngine();
+  await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+  return engine;
+}
+
+function grant(
+  request: { decisionId: string; intentHash: string },
+  approverKeyId: string,
+  privateKey: KeyObject,
+  verdict: ApprovalVerdict,
+) {
+  return {
+    decisionId: request.decisionId,
+    intentHash: request.intentHash,
+    verdict,
+    approverKeyId,
+    signature: signApproval(privateKey, {
+      decisionId: request.decisionId,
+      intentHash: request.intentHash,
+      verdict,
+    }),
+  };
+}
+
+describe('the join', () => {
+  it('reports an allowance with no settlement, and closes it when one arrives', async () => {
+    const engine = await allowingEngine();
+    const agentId = newId('agt');
+    const { intent } = await engine.evaluateIntent(baseIntent(agentId, '2.50'));
+
+    const before = engine.reconcile({ graceMs: 0 });
+    expect(before.allowed).toBe(1);
+    expect(before.unsettled).toBe(1);
+    expect(Number(before.unsettledValue)).toBeCloseTo(2.5);
+    expect(before.settlementsSeen).toBe(0);
+    expect(before.gaps[0]?.intentId).toBe(intent.id);
+    expect(before.gaps[0]?.host).toBe('api.example.com');
+
+    await engine.recordSettlement({
+      intentId: intent.id,
+      txHash: '0xabc',
+      source: 'indexer',
+      confirmedAt: new Date(),
+    });
+
+    const after = engine.reconcile({ graceMs: 0 });
+    expect(after.unsettled).toBe(0);
+    expect(after.settled).toBe(1);
+    expect(Number(after.settledValue)).toBeCloseTo(2.5);
+    expect(after.settlementsSeen).toBe(1);
+    expect(after.gaps).toEqual([]);
+  });
+
+  it('counts only ALLOWED payments — a deny authorized nothing to settle', async () => {
+    const engine = new PolicyEngine();
+    await engine.addPolicy({
+      policyId: 'pol_cap',
+      rules: [{ id: 'tx-cap', deny: { amountGt: '1.00' } }],
+      default: 'allow',
+    });
+    await engine.evaluateIntent(baseIntent(newId('agt'), '5.00'));
+
+    const report = engine.reconcile({ graceMs: 0 });
+    expect(report.allowed).toBe(0);
+    expect(report.gaps).toEqual([]);
+  });
+
+  it('does NOT refund the budget: the unsettled allowance still counts against it', async () => {
+    const engine = new PolicyEngine();
+    await engine.addPolicy({
+      policyId: 'pol_budget',
+      rules: [{ id: 'hour-budget', deny: { rollingSum: { window: '1h', gt: '1.00' } } }],
+      default: 'allow',
+    });
+    const agentId = newId('agt');
+    await engine.evaluateIntent(baseIntent(agentId, '1.00'));
+    // Nothing settled that first payment, and nothing ever will.
+    expect(engine.reconcile({ graceMs: 0 }).unsettled).toBe(1);
+
+    const { decision } = await engine.evaluateIntent(baseIntent(agentId, '0.50'));
+    // The rolling budget is still charged for money that never moved. An agent
+    // that never settles must not get an envelope that refills itself.
+    expect(decision.outcome).toBe('deny');
+  });
+});
+
+describe('a gap has an age, not a boolean', () => {
+  it('reads as in-flight under the grace period and unsettled past it', async () => {
+    const engine = await allowingEngine();
+    await engine.evaluateIntent(baseIntent(newId('agt')));
+    const at = Date.now();
+
+    const fresh = engine.reconcile({ graceMs: 60_000, now: at + 1_000 });
+    expect(fresh.inFlight).toBe(1);
+    expect(fresh.unsettled).toBe(0);
+    expect(fresh.gaps[0]?.state).toBe('in-flight');
+
+    const aged = engine.reconcile({ graceMs: 60_000, now: at + 61_000 });
+    expect(aged.inFlight).toBe(0);
+    expect(aged.unsettled).toBe(1);
+    expect(aged.gaps[0]?.state).toBe('unsettled');
+    expect(aged.gaps[0]?.ageMs).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it('covers only the window, so an ancient allowance stops being news', async () => {
+    const engine = await allowingEngine();
+    await engine.evaluateIntent(baseIntent(newId('agt')));
+    const tomorrow = Date.now() + 25 * 3_600_000;
+    expect(engine.reconcile({ window: '24h', graceMs: 0, now: tomorrow }).allowed).toBe(0);
+  });
+});
+
+describe('reporting posture', () => {
+  it('carries settlementsSeen, so "no reporter" is distinguishable from "no settlements"', async () => {
+    const engine = await allowingEngine();
+    await engine.evaluateIntent(baseIntent(newId('agt')));
+    // Zero reports: every allowance reads as a gap, and the count says why.
+    expect(engine.reconcile({ graceMs: 0 })).toMatchObject({ unsettled: 1, settlementsSeen: 0 });
+
+    await engine.recordSettlement({ intentId: newId('int'), confirmedAt: new Date() });
+    // A settlement for some OTHER intent still proves a reporter is connected.
+    expect(engine.reconcile({ graceMs: 0 })).toMatchObject({ unsettled: 1, settlementsSeen: 1 });
+  });
+
+  it('is idempotent per intent, first report winning', async () => {
+    const engine = await allowingEngine();
+    const { intent } = await engine.evaluateIntent(baseIntent(newId('agt')));
+    const first = new Date(Date.now() - 10_000);
+    await engine.recordSettlement({ intentId: intent.id, source: 'indexer', confirmedAt: first });
+    await engine.recordSettlement({
+      intentId: intent.id,
+      source: 'guard',
+      confirmedAt: new Date(),
+    });
+    expect(engine.settlements.count()).toBe(1);
+    expect(engine.settlements.get(intent.id)?.source).toBe('indexer');
+    expect(engine.settlements.get(intent.id)?.at).toBe(first.getTime());
+  });
+
+  it('does not let a settlement report change any decision', async () => {
+    const engine = await allowingEngine();
+    const { decision } = await engine.evaluateIntent(baseIntent(newId('agt')));
+    await engine.recordSettlement({ intentId: decision.intentId, confirmedAt: new Date() });
+    expect(engine.decisions()).toHaveLength(1);
+    expect(engine.decisions()[0]).toEqual(decision);
+  });
+});
+
+describe('allowances written before B1', () => {
+  it('counts a record with no intent id as unattributed, never as a gap', () => {
+    const spend = new InMemorySpendStore();
+    const now = Date.now();
+    // Exactly what a durable store hydrates from a pre-B1 data dir.
+    spend.record({ agentId: 'agt_old', host: 'h', resource: '/r', amount: '9.99', at: now - 1_000 });
+    const report = reconcile(spend, new InMemorySettlementStore(), { graceMs: 0, now });
+    expect(report.unattributed).toBe(1);
+    expect(report.allowed).toBe(0);
+    expect(report.gaps).toEqual([]);
+  });
+});
+
+describe('an approved escalation', () => {
+  it('is one allowance for one intent, closed by one settlement', async () => {
+    const approvals = new ApprovalService();
+    const engine = new PolicyEngine({ approvals });
+    await engine.addPolicy({
+      policyId: 'pol_review',
+      rules: [{ id: 'big-ticket', escalate: { amountGt: '10.00' } }],
+      default: 'allow',
+    });
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const approver = await approvals.registerApprover({
+      orgId: newId('org'),
+      name: 'Finance',
+      publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    });
+
+    const { intent, approval } = await engine.evaluateIntent(baseIntent(newId('agt'), '50.00'));
+    // Parked, not allowed: nothing has been authorized, so nothing is expected
+    // to settle and the escalation is not a gap.
+    expect(engine.reconcile({ graceMs: 0 }).allowed).toBe(0);
+
+    await engine.resolveEscalation(grant(approval as never, approver.id, privateKey, 'approve'));
+
+    // The release appended a SECOND decision for the same intent. One payment,
+    // one allowance — and the settlement for that intent closes it.
+    const parked = engine.reconcile({ graceMs: 0 });
+    expect(engine.decisions()).toHaveLength(2);
+    expect(parked.allowed).toBe(1);
+    expect(parked.gaps[0]?.intentId).toBe(intent.id);
+
+    await engine.recordSettlement({ intentId: intent.id, confirmedAt: new Date() });
+    expect(engine.reconcile({ graceMs: 0 }).unsettled).toBe(0);
+  });
+});
+
+describe('the report itself', () => {
+  it('caps its rows without lying about the counts, keeping the oldest gaps', async () => {
+    const engine = await allowingEngine();
+    const agentId = newId('agt');
+    for (let i = 0; i < 5; i++) {
+      await engine.evaluateIntent({
+        ...baseIntent(agentId, '0.01'),
+        createdAt: new Date(Date.now() - (5 - i) * 1_000),
+      });
+    }
+    const report = engine.reconcile({ graceMs: 0, limit: 2 });
+    expect(report.unsettled).toBe(5);
+    expect(report.gaps).toHaveLength(2);
+    expect(report.truncated).toBe(true);
+    // Oldest first: the longest-standing gap is never the one dropped.
+    expect(report.gaps[0]?.allowedAt).toBeLessThan(report.gaps[1]?.allowedAt ?? 0);
+  });
+
+  it('sorts unsettled before in-flight — the alarm is never below the fold', async () => {
+    const engine = await allowingEngine();
+    const agentId = newId('agt');
+    await engine.evaluateIntent({
+      ...baseIntent(agentId, '1.00'),
+      createdAt: new Date(Date.now() - 120_000),
+    });
+    await engine.evaluateIntent(baseIntent(agentId, '2.00'));
+    const report = engine.reconcile({ graceMs: 60_000 });
+    expect(report.gaps.map((g) => g.state)).toEqual(['unsettled', 'in-flight']);
+  });
+
+  it('narrows to one agent on request', async () => {
+    const engine = await allowingEngine();
+    const mine = newId('agt');
+    await engine.evaluateIntent(baseIntent(mine, '1.00'));
+    await engine.evaluateIntent(baseIntent(newId('agt'), '2.00'));
+    const report = engine.reconcile({ graceMs: 0, agentId: mine });
+    expect(report.allowed).toBe(1);
+    expect(Number(report.unsettledValue)).toBeCloseTo(1);
+  });
+});

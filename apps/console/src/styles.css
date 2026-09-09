@@ -1008,6 +1008,80 @@ a.pill:hover {
   font-size: 10.5px;
   color: var(--ink-dim);
 }
+/* Reconciliation: the ledger-vs-money summary above the alert cards. */
+.recon-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  padding-bottom: 2px;
+}
+.recon-strip b {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+}
+.recon-strip .is-bad b {
+  color: var(--alarm);
+}
+.recon-note {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+/* One line per unanswered item — the audit chain below pays for anything taller. */
+.recon-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  min-width: 0;
+}
+.recon-chip {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--alarm);
+  border: 1px solid rgba(255, 77, 77, 0.35);
+  background: var(--alarm-soft);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.recon-amt {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+}
+.recon-who {
+  flex: 0 1 auto;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recon-where {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recon-tail {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.recon-more {
+  font-size: 10px;
+  color: var(--ink-dim);
+}
 
 /* ── Audit chain ──────────────────────────────────────────────────────────── */
 .chain-status {

@@ -22,6 +22,16 @@ afterAll(async () => {
   await app.close();
 });
 
+/**
+ * Let the guard's fire-and-forget settlement report reach the engine. It is
+ * deliberately not awaited on the payment path (telemetry must never be able
+ * to change a payment's outcome), so a test that reads the engine right after
+ * a payment has to give it a tick.
+ */
+async function settled(): Promise<void> {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 10));
+}
+
 /** Register a fresh agent so each test gets isolated rolling-budget state. */
 async function newAgent(): Promise<string> {
   const client = new EngineClient({ baseUrl: engineUrl });
@@ -199,6 +209,86 @@ describe('Guard (against a live policy engine)', () => {
     const second = await guarded(url, { headers: { 'X-PAYMENT': 'signed-by-x402-fetch' } });
     expect(second.status).toBe(200);
     expect(guard.receipts()).toHaveLength(1);
+    expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
+  });
+
+  it('reports its settlements, so the engine can close the allowance (B1)', async () => {
+    const agentId = await newAgent();
+    const vendor = mockVendor('10000');
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, payer: mockPayer });
+    await guard.client.addPolicy({
+      policyId: 'pol_reconcile',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+
+    await guard.wrap()('https://api.vendor.test/v1/answer');
+    await settled();
+
+    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
+    expect(report.allowed).toBe(1);
+    expect(report.settled).toBe(1);
+    expect(report.unsettled).toBe(0);
+    expect(report.gaps).toEqual([]);
+  });
+
+  it('leaves the gap OPEN when the payment never settles', async () => {
+    const agentId = await newAgent();
+    const vendor = mockVendor('10000');
+    // A payer that dies after the engine allowed: the decision chain says
+    // "allowed", the budget is charged, and no money ever moves. This is the
+    // shape of the failure B1 exists to make visible.
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      payer: () => {
+        throw new Error('wallet unreachable');
+      },
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_reconcile_gap',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+
+    await expect(guard.wrap()('https://api.vendor.test/v1/answer')).rejects.toThrow(
+      'wallet unreachable',
+    );
+    await settled();
+
+    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
+    expect(report.allowed).toBe(1);
+    expect(report.unsettled).toBe(1);
+    expect(report.gaps[0]?.host).toBe('api.vendor.test');
+    expect(Number(report.gaps[0]?.amount)).toBeCloseTo(0.01);
+  });
+
+  it('never lets a failed settlement report break the payment', async () => {
+    const agentId = await newAgent();
+    const vendor = mockVendor('10000');
+    // The engine's settlement route is unreachable for this guard; the payment
+    // itself already succeeded, and telemetry must not be able to undo that.
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      payer: mockPayer,
+      engineFetch: async (input, init) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/v1/settlements')) throw new Error('engine unreachable');
+        return fetch(input as string, init);
+      },
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_reconcile_offline',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+    await settled();
+    expect(res.status).toBe(200);
     expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
   });
 

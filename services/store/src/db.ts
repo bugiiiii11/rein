@@ -26,6 +26,15 @@ import { PGlite } from '@electric-sql/pglite';
  * - `breaker_resets` is the A3 counting FLOOR, one row per (agent, breaker) —
  *   it must be durable, or a restart would silently re-trip every breaker a
  *   human had already cleared and ask them the same question again.
+ * - `spend_records.intent_id` / `.decision_id` are the B1 join keys: they make
+ *   the spend ledger the ALLOWANCE ledger. Nullable, and rows written before
+ *   B1 keep NULL — reconciliation counts those as unattributed rather than as
+ *   gaps, so upgrading a live data dir cannot invent an alarm out of history.
+ * - `settlements` is the other half of that join, one row per INTENT (a
+ *   resolved escalation appends a second decision for the same intent, and one
+ *   settlement settles it). It must be durable for the same reason the breaker
+ *   floors are: without it every allowance resumed from disk would read
+ *   unsettled, and the restart itself would raise the alarm.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -141,6 +150,15 @@ CREATE TABLE IF NOT EXISTS gate_counters (
   quoted  BIGINT NOT NULL,
   refused BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settlements (
+  intent_id TEXT PRIMARY KEY,
+  at        BIGINT NOT NULL,
+  tx_hash   TEXT,
+  chain     TEXT,
+  amount    TEXT,
+  source    TEXT
+);
 `;
 
 /**
@@ -156,6 +174,10 @@ ALTER TABLE gate_replays
   ADD COLUMN IF NOT EXISTS burned_at BIGINT NOT NULL DEFAULT ((EXTRACT(EPOCH FROM now()) * 1000)::BIGINT);
 ALTER TABLE spend_records
   ADD COLUMN IF NOT EXISTS task_id TEXT;
+ALTER TABLE spend_records
+  ADD COLUMN IF NOT EXISTS intent_id TEXT;
+ALTER TABLE spend_records
+  ADD COLUMN IF NOT EXISTS decision_id TEXT;
 `;
 
 /**

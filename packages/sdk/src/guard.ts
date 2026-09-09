@@ -67,6 +67,19 @@ export interface GuardOptions {
   /** Called once per receipt, as it is recorded. */
   onReceipt?: (receipt: Receipt) => void;
   /**
+   * Tell the engine when a payment settles, so reconciliation can close the
+   * allowance (B1). On by default: without a report from somewhere, every
+   * allowance the engine made reads as a gap, and the one component that sees
+   * both the decision and the vendor's confirmation is this guard.
+   *
+   * Best-effort by construction — the report is fired and forgotten, and a
+   * failed one never touches the payment. Telemetry must not be able to change
+   * a payment's outcome. Set false where an independent indexer reports
+   * instead, which is the stronger evidence: a guard reporting its own
+   * settlement is the spender vouching for itself.
+   */
+  reportSettlement?: boolean;
+  /**
    * What to do when policy escalates: by default nothing — the payment blocks
    * immediately, exactly as a deny does, and a human can still approve it out
    * of band. Set `await: true` and the guard holds the request open while it
@@ -235,7 +248,32 @@ export class Guard {
     });
     this.log.push(receipt);
     this.options.onReceipt?.(receipt);
+    if (settlement) this.announceSettlement(receipt);
     return receipt;
+  }
+
+  /**
+   * Fire-and-forget the settlement fact at the engine. Deliberately silent on
+   * failure: a reconciliation report that never arrives leaves a gap open,
+   * which is the SAFE direction — an operator sees a payment they must check.
+   * Raising here would let telemetry break a payment that already succeeded.
+   *
+   * The amount is not reported: the guard knows what it was asked to pay, not
+   * what the chain moved, and a settlement report should carry only what its
+   * reporter actually observed.
+   */
+  private announceSettlement(receipt: Receipt): void {
+    if (this.options.reportSettlement === false) return;
+    const txHash = receipt.settlement?.txHash;
+    void this.client
+      .reportSettlement({
+        intentId: receipt.intentId,
+        ...(txHash !== undefined ? { txHash } : {}),
+        chain: receipt.chain,
+        source: 'guard',
+        confirmedAt: receipt.createdAt,
+      })
+      .catch(() => undefined);
   }
 
   /**
@@ -257,7 +295,10 @@ export class Guard {
     const receipt = this.pendingByUrl.get(url);
     if (!receipt || !res.ok) return;
     const settlement = parseSettlement(res);
-    if (settlement) receipt.settlement = settlement;
+    if (settlement) {
+      receipt.settlement = settlement;
+      this.announceSettlement(receipt);
+    }
     this.pendingByUrl.delete(url);
   }
 }

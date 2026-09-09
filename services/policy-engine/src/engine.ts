@@ -18,6 +18,7 @@ import {
   type Breaker,
   type ApprovalGrant,
   type ApprovalRequest,
+  SettlementReport,
   type Decision,
   type ReinEvent,
 } from '@reinconsole/core';
@@ -31,11 +32,14 @@ import {
   InMemorySpendStore,
   InMemoryPolicyStore,
   InMemoryAgentRegistry,
+  InMemorySettlementStore,
   parseWindowMs,
   type SpendStorePort,
   type PolicyStorePort,
   type AgentRegistryPort,
+  type SettlementStorePort,
 } from './stores.js';
+import { reconcile, type ReconcileOptions, type ReconciliationReport } from './reconciliation.js';
 import { DecisionLog } from './decision-log.js';
 import { ApprovalService } from './approvals.js';
 
@@ -101,6 +105,13 @@ export interface EngineStores {
   spend?: SpendStorePort;
   policies?: PolicyStorePort;
   agents?: AgentRegistryPort;
+  /**
+   * Settlement facts, for reconciliation (B1). In-memory when omitted — which
+   * on a durable deployment means every allowance resumed from disk reads as
+   * unsettled after a restart, the false-alarm storm that lands on exactly
+   * the deployment with state worth watching. Pass the durable one.
+   */
+  settlements?: SettlementStorePort;
   /** Pre-built decision log (e.g. persistent key + resumed chain from @reinconsole/store). */
   log?: DecisionLog;
   /**
@@ -122,6 +133,7 @@ export class PolicyEngine {
   readonly spend: SpendStorePort;
   readonly policies: PolicyStorePort;
   readonly agents: AgentRegistryPort;
+  readonly settlements: SettlementStorePort;
   /** Undefined when no approval tier is configured (see EngineStores.approvals). */
   readonly approvals: ApprovalService | undefined;
   private readonly log: DecisionLog;
@@ -132,6 +144,7 @@ export class PolicyEngine {
     this.spend = stores.spend ?? new InMemorySpendStore();
     this.policies = stores.policies ?? new InMemoryPolicyStore();
     this.agents = stores.agents ?? new InMemoryAgentRegistry();
+    this.settlements = stores.settlements ?? new InMemorySettlementStore();
     this.log = stores.log ?? new DecisionLog();
     this.approvals = stores.approvals;
   }
@@ -228,6 +241,8 @@ export class PolicyEngine {
           resource: intent.resource,
           amount: intent.amount,
           taskId: intent.taskContext.taskId,
+          intentId: intent.id,
+          decisionId: decision.id,
         },
         intent.createdAt.getTime(),
       );
@@ -244,7 +259,15 @@ export class PolicyEngine {
     return { intent, decision };
   }
 
-  /** Optimistically count the spend; the indexer confirms settlement later. */
+  /**
+   * Optimistically count the spend; the indexer confirms settlement later.
+   *
+   * The record carries its intent and decision ids, which is what makes this
+   * ledger the ALLOWANCE ledger reconciliation joins against settlements — no
+   * second table, and every budget the engine charged is a row that must
+   * eventually be answered for. The optimism is deliberate and stays: an
+   * allowance that never settles keeps its charge (see reconciliation.ts).
+   */
   private async recordSpend(
     facts: {
       agentId: string;
@@ -252,6 +275,8 @@ export class PolicyEngine {
       resource: string;
       amount: string;
       taskId?: string | undefined;
+      intentId: string;
+      decisionId: string;
     },
     at: number,
   ): Promise<void> {
@@ -261,8 +286,43 @@ export class PolicyEngine {
       resource: facts.resource,
       amount: facts.amount,
       ...(facts.taskId ? { taskId: facts.taskId } : {}),
+      intentId: facts.intentId,
+      decisionId: facts.decisionId,
       at,
     });
+  }
+
+  /**
+   * Record that an allowed payment actually landed.
+   *
+   * The engine watches no chain, so settlement is something it is TOLD: by an
+   * indexer, a facilitator webhook, or the guard that made the payment. The
+   * write closes a reconciliation gap and nothing else — it cannot authorize
+   * spend, alter a decision, or unblock anything. Idempotent by intent id,
+   * first report winning, so two observers of one payment agree.
+   */
+  async recordSettlement(input: z.input<typeof SettlementReport>): Promise<SettlementReport> {
+    const report = SettlementReport.parse(input);
+    await this.settlements.settle({
+      intentId: report.intentId,
+      at: report.confirmedAt.getTime(),
+      ...(report.txHash !== undefined ? { txHash: report.txHash } : {}),
+      ...(report.chain !== undefined ? { chain: report.chain } : {}),
+      ...(report.amount !== undefined ? { amount: report.amount } : {}),
+      ...(report.source !== undefined ? { source: report.source } : {}),
+    });
+    return report;
+  }
+
+  /**
+   * Which allowances in the window have no settlement behind them (B1).
+   *
+   * Read-only, like {@link breakerStates}: nothing about evaluation depends on
+   * it, and running it changes nothing. See reconciliation.ts for why an
+   * unsettled allowance keeps its charge against the budget.
+   */
+  reconcile(options: ReconcileOptions = {}): ReconciliationReport {
+    return reconcile(this.spend, this.settlements, options);
   }
 
   /**
@@ -322,6 +382,11 @@ export class PolicyEngine {
           resource: request.resource,
           amount: request.amount,
           taskId: request.taskId,
+          // The RELEASING decision, not the escalation it answered: this row
+          // is the allowance, and reconciliation joins on the intent — which
+          // both decisions share, so one settlement closes it either way.
+          intentId: request.intentId,
+          decisionId: decision.id,
         },
         at,
       );

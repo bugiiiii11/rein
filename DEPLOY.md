@@ -195,6 +195,22 @@ posture anyway (roadmap E2).
 
 `GET /api/control` reports `{ writable, auth }` so a client can tell which it is talking to.
 
+## Reconciliation tuning (S44)
+
+The console's reconciliation panel calls an allowance a GAP once it has gone unsettled
+for longer than the grace period, and re-measures on a sweep -- a gap has to age into
+existence, because nothing emits when a payment fails to happen.
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `REIN_RECONCILE_GRACE_MS` | `60000` | How long a missing settlement is "in flight" rather than a gap |
+| `REIN_RECONCILE_SWEEP_MS` | `30000` | How often the gaps are re-measured and newly-aged ones announced |
+
+The grace default is deliberately far longer than the mock rails need (they settle in the
+same tick): the number that matters is a real facilitator's, and a console that cried gap
+after 200ms would be measuring its own simulator. Tighten it only against rails whose real
+settlement latency you know.
+
 The policy engine's standalone server has the stricter rule -- no `REIN_ENGINE_API_KEY` means
 it binds loopback only, and asking for a public bind without one is a startup error. It is not
 deployed on Railway today; if it ever is, it needs the key first.

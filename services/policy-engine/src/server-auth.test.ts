@@ -119,6 +119,11 @@ describe('engine API auth', () => {
   it('demands admin for any route nobody classified', () => {
     expect(requiredScope('GET', '/v1/decisions')).toBe('read');
     expect(requiredScope('POST', '/v1/evaluate')).toBe('evaluate');
+    // Reporting a settlement rides the spender's scope: the guard that paid is
+    // the component that sees the vendor confirm it, and a settlement report
+    // can only close a reconciliation gap — it authorizes nothing.
+    expect(requiredScope('POST', '/v1/settlements')).toBe('evaluate');
+    expect(requiredScope('GET', '/v1/reconciliation')).toBe('read');
     expect(requiredScope('POST', '/v1/approvals/dec_1/resolve')).toBe('approve');
     expect(requiredScope('POST', '/v1/policies')).toBe('admin');
     expect(requiredScope('POST', '/v1/something-invented-next-year')).toBe('admin');

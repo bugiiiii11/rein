@@ -10,6 +10,7 @@ import {
   Decision,
   PaymentIntent,
   Policy,
+  SettlementReport,
   type ApiKeyScope,
 } from '@reinconsole/core';
 import { EngineError } from './errors.js';
@@ -62,6 +63,56 @@ export type ApprovalView = z.infer<typeof ApprovalView>;
 
 const ResolveResponse = z.object({ request: ApprovalRequest, decision: Decision });
 export type ResolveResponse = z.infer<typeof ResolveResponse>;
+
+/** One allowance with no settlement behind it (B1). Mirrors the engine's shape. */
+export const AllowanceGap = z.object({
+  intentId: z.string(),
+  decisionId: z.string().optional(),
+  agentId: z.string(),
+  host: z.string(),
+  resource: z.string(),
+  amount: z.string(),
+  taskId: z.string().optional(),
+  allowedAt: z.number(),
+  ageMs: z.number(),
+  state: z.enum(['in-flight', 'unsettled']),
+});
+export type AllowanceGap = z.infer<typeof AllowanceGap>;
+
+/**
+ * The reconciliation report. Declared here so the client validates the wire
+ * shape rather than trusting it — and note `settlementsSeen`: zero means this
+ * engine has never been told about a settlement, so the gaps below say more
+ * about the deployment's wiring than about its payments.
+ */
+export const ReconciliationReport = z.object({
+  from: z.number(),
+  to: z.number(),
+  window: z.string(),
+  graceMs: z.number(),
+  allowed: z.number(),
+  allowedValue: z.string(),
+  settled: z.number(),
+  settledValue: z.string(),
+  inFlight: z.number(),
+  inFlightValue: z.string(),
+  unsettled: z.number(),
+  unsettledValue: z.string(),
+  unattributed: z.number(),
+  settlementsSeen: z.number(),
+  gaps: z.array(AllowanceGap),
+  truncated: z.boolean(),
+});
+export type ReconciliationReport = z.infer<typeof ReconciliationReport>;
+
+export interface ReconciliationQuery {
+  /** Trailing span of allowances to cover, e.g. '24h'. */
+  window?: string;
+  /** How long an allowance may go unsettled before it counts as a gap. */
+  graceMs?: number;
+  limit?: number;
+  agentId?: string;
+}
 
 const IssuedApiKey = z.object({ key: ApiKey, secret: z.string() });
 export type IssuedApiKey = z.infer<typeof IssuedApiKey>;
@@ -179,6 +230,33 @@ export class EngineClient {
 
   decisions(): Promise<Decision[]> {
     return this.request('GET', '/v1/decisions', z.array(Decision));
+  }
+
+  // --- Reconciliation (B1) ---
+
+  /**
+   * Tell the engine an allowed payment landed. The engine watches no chain, so
+   * this is how a gap gets closed — by the guard that paid, an indexer, or a
+   * facilitator webhook. It authorizes nothing: the only thing a settlement
+   * report can change is a line in the reconciliation report.
+   */
+  reportSettlement(input: z.input<typeof SettlementReport>): Promise<SettlementReport> {
+    return this.request('POST', '/v1/settlements', SettlementReport, SettlementReport.parse(input));
+  }
+
+  /** Which allowances in the window have no settlement behind them. */
+  reconciliation(query: ReconciliationQuery = {}): Promise<ReconciliationReport> {
+    const params = new URLSearchParams();
+    if (query.window !== undefined) params.set('window', query.window);
+    if (query.graceMs !== undefined) params.set('graceMs', String(query.graceMs));
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    if (query.agentId !== undefined) params.set('agentId', query.agentId);
+    const qs = params.toString();
+    return this.request(
+      'GET',
+      `/v1/reconciliation${qs ? `?${qs}` : ''}`,
+      ReconciliationReport,
+    );
   }
 
   // --- API keys (admin scope) ---

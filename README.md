@@ -320,6 +320,8 @@ The guard layers _underneath_ any x402 payment library: the first unpaid request
 | POST   | `/v1/evaluate`               | Evaluate a payment intent → signed decision   |
 | GET    | `/v1/decisions`              | The hash-chained decision log                 |
 | GET    | `/v1/agents/:id/breakers`    | Where the agent's behavioral breakers stand   |
+| POST   | `/v1/settlements`            | Report that an allowed payment landed         |
+| GET    | `/v1/reconciliation`         | Allowances with no settlement behind them     |
 
 A policy is declarative — for example, a $0.50 per-transaction cap plus a rolling $0.04/hour budget, defaulting to allow:
 
@@ -370,6 +372,36 @@ the wrong moment strands a running job with no path forward and nobody told.
   never triggers a budget — requiring attribution is the separate, deliberate
   `taskIdMissing` rule, because otherwise every untagged probe payment would trip
   every task budget in the policy.
+
+### Reconciliation: allowed but never settled
+
+An allow authorizes a payment; it does not make one. In between is a gap where a
+payment can quietly fail — a facilitator that never broadcast, a vendor that never
+confirmed, an agent that crashed mid-flight — and nothing in the stack notices on its
+own. The decision chain says "allowed", the rolling budget has already been charged,
+and the money simply never moved.
+
+Rein closes that loop by joining the allowance ledger against settlement facts:
+
+```ts
+await client.reportSettlement({ intentId, txHash, source: 'indexer', confirmedAt: new Date() });
+const report = await client.reconciliation({ window: '24h', graceMs: 60_000 });
+// → { allowed, settled, inFlight, unsettled, unsettledValue, settlementsSeen, gaps: [...] }
+```
+
+The guard reports its own settlements automatically (fire-and-forget — a failed report
+can never affect a payment that already succeeded); an indexer or facilitator webhook
+is the stronger reporter, and `reportSettlement: false` hands the job over to it.
+
+- A gap has an **age**, not a boolean. Under `graceMs` a missing settlement is a payment
+  in flight, which is the normal state of every payment for its first seconds.
+- The unsettled allowance **keeps its charge** against the budget. Refunding it would be
+  a self-service reset: don't settle, and the envelope refills.
+- `settlementsSeen` is the honesty valve. The engine watches no chain — it is *told* when
+  payments land — so zero reports means nobody is looking, and the gaps say more about
+  the wiring than about the payments. The console renders that case differently.
+- Reconciliation is observability, never authority: it cannot deny, cannot alter a
+  decision, and a settlement report authorizes nothing.
 
 ## Design principles
 
