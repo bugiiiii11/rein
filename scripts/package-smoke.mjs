@@ -237,15 +237,37 @@ try {
 
 // ----------------------------------------------------------- boot bins
 
-/** Boot a bin and wait for it to say it is listening. Proves the shim resolves dist/. */
-function bootBin(binName, binFile, expect) {
+/**
+ * What a given bin needs to start, and the line that proves it did. Not every
+ * bin is an HTTP server: `rein-mcp` speaks MCP over stdio and fails CLOSED
+ * without its config, so booting it with a bare env would (correctly) exit 1 --
+ * which says nothing about whether the tarball is sound. The env below is the
+ * minimum that gets it past its own gate to the point where dist/ has actually
+ * loaded and the transport is up.
+ */
+const BIN_BOOT = {
+  'rein-mcp': {
+    expect: 'ready on stdio',
+    env: {
+      REIN_ENGINE_URL: 'http://127.0.0.1:1',
+      // Syntactically valid and deliberately unreachable: this boots the server,
+      // it does not exercise a payment.
+      REIN_AGENT_ID: 'agt_01JSM0KE000000000000000000',
+    },
+  },
+};
+const DEFAULT_BOOT = { expect: 'listening on', env: {} };
+
+/** Boot a bin and wait for its readiness line. Proves the shim resolves dist/. */
+function bootBin(binName, binFile) {
+  const { expect, env: extraEnv } = BIN_BOOT[binName] ?? DEFAULT_BOOT;
   return new Promise((resolve) => {
     // PORT=0 lets the OS pick, so a stray engine on 8787 cannot fail this run.
     // cwd is deliberately NOT the consumer dir: on Windows a live child holding
     // it as its working directory makes the cleanup rmdir fail with EBUSY.
     const child = spawn(process.execPath, [binFile], {
       cwd: tmpdir(),
-      env: { ...process.env, PORT: '0' },
+      env: { ...process.env, PORT: '0', ...extraEnv },
     });
     let output = '';
     let settled = false;
@@ -293,7 +315,7 @@ for (const { name, manifest } of packed) {
 if (bins.length > 0) {
   log('\nBooting declared bins (PORT=0)...');
   for (const { binName, file } of bins) {
-    await bootBin(binName, file, 'listening on');
+    await bootBin(binName, file);
   }
 }
 

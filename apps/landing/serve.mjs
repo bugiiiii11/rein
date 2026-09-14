@@ -15,6 +15,10 @@ const types = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
+  // Served as plain text, not text/markdown: the agent-facing docs are meant to
+  // be read in a browser as well as curled, and text/markdown makes a browser
+  // download the file instead of showing it.
+  '.md': 'text/plain; charset=utf-8',
 };
 
 createServer(async (req, res) => {

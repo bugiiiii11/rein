@@ -1,0 +1,72 @@
+{
+  "name": "@reinconsole/mcp",
+  "version": "0.1.1",
+  "description": "Rein Guard MCP server — give any MCP-capable agent harness a spend-governed fetch: every x402 paywall is policy-checked, receipted and observable before a cent moves.",
+  "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "services/mcp"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "mcp",
+    "model-context-protocol",
+    "x402",
+    "ai-agents",
+    "agent-payments",
+    "spend-control",
+    "claude"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/server.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "bin": {
+    "rein-mcp": "./bin/rein-mcp.mjs"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@reinconsole/core": "workspace:^",
+    "@reinconsole/sdk": "workspace:^",
+    "@reinconsole/x402-rails": "workspace:^",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@reinconsole/policy-engine": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

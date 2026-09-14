@@ -3,5 +3,11 @@
   "framework": null,
   "installCommand": "echo 'zero dependencies — skipping install'",
   "buildCommand": "echo 'static site — no build step'",
-  "outputDirectory": "."
+  "outputDirectory": ".",
+  "headers": [
+    {
+      "source": "/(.*).md",
+      "headers": [{ "key": "content-type", "value": "text/plain; charset=utf-8" }]
+    }
+  ]
 }

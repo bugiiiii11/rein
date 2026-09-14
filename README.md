@@ -19,6 +19,7 @@ Rein is developer tooling and middleware for the agentic payments economy (the [
 A complete demand-side Guard loop, runnable two ways: fully offline on mock rails (no accounts, no Docker, no chain), or live on Base Sepolia over the real x402 stack:
 
 - **`@reinconsole/sdk`** — wrap your agent's fetch once; every x402 paywall is policy-checked, receipted, and observable _before a cent moves_.
+- **`@reinconsole/mcp`** — the guard as an **MCP server**. Point any MCP-capable harness (Claude Code, Codex-class agents) at it and its agent gets a spend-governed fetch plus read-only introspection of the rules it is under — no code changes. The authority boundary is the design: the client on the other end of the pipe _is_ the agent, so no tool can widen the agent's own authority — no approving its own escalation, no editing a policy, no unfreezing itself, no minting a key. A test asserts the whole tool surface rather than a sample of it.
 - **`@reinconsole/policy-engine`** — a sandboxed declarative rule engine (`deny > escalate > allow > default`) behind a Fastify API. Every decision is ed25519-signed and sha256 hash-chained into a tamper-evident audit log.
 - **`@reinconsole/core`** — the canonical zod schemas: the single source of truth for DB rows, API payloads, and SDK types, with float-free decimal money math.
 - **`@reinconsole/mock-rails`** — a simulated payment world (x402 facilitator + on-chain ledger + indexer) that reconciles spend and flags **shadow spend**: payments that bypassed the guard.
@@ -34,9 +35,10 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The eight library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.1.1`, MIT, Node ≥22):
+The nine library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.1.1`, MIT, Node ≥22):
 
 ```bash
+npx -y @reinconsole/mcp          # the guard as an MCP server — a governed fetch for any MCP harness
 npm install @reinconsole/sdk     # agent-side guard — wrap your fetch
 npm install @reinconsole/gate    # vendor-side x402 monetization middleware
 npm install @reinconsole/graph   # explainable reputation scoring
@@ -46,6 +48,7 @@ npm install @reinconsole/graph   # explainable reputation scoring
 | ------- | ------------- |
 | [`@reinconsole/core`](https://www.npmjs.com/package/@reinconsole/core) | Canonical zod schemas — the single source of truth |
 | [`@reinconsole/sdk`](https://www.npmjs.com/package/@reinconsole/sdk) | Agent-side guard; wraps the x402 client |
+| [`@reinconsole/mcp`](https://www.npmjs.com/package/@reinconsole/mcp) | The guard as an MCP server: a spend-governed fetch for any MCP harness |
 | [`@reinconsole/policy-engine`](https://www.npmjs.com/package/@reinconsole/policy-engine) | Declarative rule engine + signed, hash-chained audit log |
 | [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate) | Vendor-side x402 monetization middleware |
 | [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph) | Reputation: evidence off every bus, explainable scores |

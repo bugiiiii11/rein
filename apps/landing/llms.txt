@@ -1,0 +1,55 @@
+# Rein
+
+> The control plane for AI agent payments. Rein governs an agent's authority to spend — it never holds the funds. Set the rules, watch every payment, score every counterparty. Non-custodial, MIT, live on Base Sepolia.
+
+Rein sits between an agent and the x402 payment rails. Every payment an agent attempts is checked
+against a declarative policy before the payment is constructed: allowed payments are receipted,
+denied ones never exist, and payments past an envelope are escalated to a human for a signed
+approval. Three planes: **Guard** (spend control on the agent that pays), **Gate** (monetization
+middleware on the API that earns), **Graph** (a reputation ledger that feeds evidence back into
+enforcement on both sides).
+
+Four things are load-bearing and worth knowing before you integrate:
+
+- **Non-custodial.** Funds never pass through Rein. It governs authority, not money.
+- **Fail-closed.** An unreachable policy engine denies payments rather than allowing them, and a
+  402 offering nothing Rein can govern is refused rather than paid.
+- **Denials happen before a payment exists.** Nothing is signed, sent, or refunded.
+- **An approval is a signature, not a click.** Releasing an escalated payment requires an ed25519
+  signature over the decision by a registered approver key. No UI, channel, or tool call stands in
+  for one.
+
+## Start here
+
+- [Agent quickstart](https://reinconsole.com/agent-quickstart.md): The complete integration, written for an agent to execute. Install, boot the engine, register an agent, write a policy, watch a budget deny fire. Runs offline with no accounts, chain, or funds.
+- [Agent Skill](https://reinconsole.com/skill/SKILL.md): An installable skill that teaches a coding agent how to wire Rein into a project correctly. Drop it in `~/.claude/skills/rein/SKILL.md`.
+- [Get started (for humans)](https://reinconsole.com/get-started.html): The same runbook as a page, with both the agent side and the vendor side.
+- [Live console](https://app.reinconsole.com): The whole two-sided story running against a seeded scenario — policies, decisions, breakers, reconciliation, escalations. Read-only.
+
+## Packages
+
+All on npm under [@reinconsole](https://www.npmjs.com/org/reinconsole), Node >=22, MIT.
+
+- [@reinconsole/mcp](https://www.npmjs.com/package/@reinconsole/mcp): The Guard as an MCP server. Point any MCP-capable harness at it and its agent gets a spend-governed fetch. The fastest path to a governed agent.
+- [@reinconsole/sdk](https://www.npmjs.com/package/@reinconsole/sdk): The guard. Wrap an agent's fetch once and every x402 paywall it hits is policy-checked, receipted and observable.
+- [@reinconsole/policy-engine](https://www.npmjs.com/package/@reinconsole/policy-engine): The referee. Holds agents, policies, and the hash-chained signed decision log. Runs standalone: `npx -p @reinconsole/policy-engine rein-policy-engine`.
+- [@reinconsole/core](https://www.npmjs.com/package/@reinconsole/core): The schemas every other package derives from. Import these to validate at a boundary.
+- [@reinconsole/gate](https://www.npmjs.com/package/@reinconsole/gate): The vendor side. Price an API per call over x402; an unpaid caller gets a quote, a paying one gets through, receipted.
+- [@reinconsole/graph](https://www.npmjs.com/package/@reinconsole/graph): Reputation. Scores are never stored — they are pure functions of an append-only evidence ledger.
+- [@reinconsole/mock-rails](https://www.npmjs.com/package/@reinconsole/mock-rails): A simulated x402 world (ledger, facilitator, paywalled vendor) so the whole stack runs offline.
+- [@reinconsole/x402-rails](https://www.npmjs.com/package/@reinconsole/x402-rails): The real rails on Base Sepolia. EIP-3009 payer, hosted-facilitator client, on-chain indexer.
+- [@reinconsole/erc8004](https://www.npmjs.com/package/@reinconsole/erc8004): On-chain agent identity per ERC-8004.
+
+## Concepts
+
+- **Intent**: what an agent proposes to pay, derived from the vendor's 402. Evaluated; never constructed unless allowed.
+- **Decision**: the engine's signed, hash-chained answer — `allow`, `deny`, or `escalate`. Precedence is deny > escalate > allow > the policy default.
+- **Policy**: a declarative document of rules (`amountGt`, `rollingSum`, `txCount`, `vendorHostIn`, `resourceIn`, `taskBudget`, ...), behavioral `breakers`, and a `default`. First-applicable by `appliesTo`.
+- **Breaker**: a rolling envelope (`txCount` and/or `valueCap` over a window) that escalates the payment which would carry an agent past it. Prospective, never retrospective. A breaker never denies on its own.
+- **Escalation**: a parked payment awaiting a signed human approval. It has a TTL; expiry denies. The resolution appends a new decision rather than rewriting the original.
+- **Receipt**: the agent-side record of a decision and its settlement.
+- **Reconciliation**: the join between payments Rein allowed and settlements it was told about — "allowed but never settled".
+
+## Optional
+
+- [GitHub](https://github.com/bugiiiii11/rein): Source, issues, and the full README.
