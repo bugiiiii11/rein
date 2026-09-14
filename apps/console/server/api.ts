@@ -36,6 +36,25 @@ function secretMatches(presented: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+/** Read a JSON body, capped — an unbounded read is a free memory exhaust. */
+const MAX_BODY_BYTES = 16_384;
+
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw new Error('request body too large');
+    chunks.push(chunk as Buffer);
+  }
+  if (size === 0) return {};
+  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('body must be a JSON object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
 function bearerOf(req: IncomingMessage): string | undefined {
   const header = req.headers.authorization;
   const value = Array.isArray(header) ? header[0] : header;
@@ -123,6 +142,45 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
     if (method === 'POST' && pathname === '/api/demo/run') {
       const started = world.runDemo();
       sendJson(res, started ? 202 : 409, { started });
+      return true;
+    }
+
+    // POST /api/escalations/:decisionId/grant — submit a SIGNED verdict for a
+    // parked payment. The console never signs: it carries bytes an approver
+    // produced wherever their private key lives, and the engine verifies them
+    // against a registered key. Treated as a mutation (and so refused outright
+    // on a read-only console) not because the signature needs protecting — it
+    // verifies or it does not — but because a public dashboard should not be a
+    // submission endpoint for anyone who finds it.
+    if (
+      method === 'POST' &&
+      parts[0] === 'api' &&
+      parts[1] === 'escalations' &&
+      parts[2] &&
+      parts[3] === 'grant'
+    ) {
+      const decisionId = parts[2];
+      readJson(req)
+        .then((body) =>
+          world.submitGrant({
+            decisionId,
+            intentHash: String(body['intentHash'] ?? ''),
+            verdict: body['verdict'] === 'reject' ? 'reject' : 'approve',
+            approverKeyId: String(body['approverKeyId'] ?? ''),
+            signature: String(body['signature'] ?? ''),
+          }),
+        )
+        .then((result) => sendJson(res, 200, result))
+        .catch((err: unknown) => {
+          // Every refusal is a reason, never a silent no-op: the request stays
+          // parked and the submitter is told which check it failed.
+          const e = err as { status?: number; code?: string; message?: string };
+          const status = typeof e.status === 'number' ? e.status : 400;
+          sendJson(res, status, {
+            error: e.code ?? 'bad_request',
+            message: e.message ?? String(err),
+          });
+        });
       return true;
     }
 

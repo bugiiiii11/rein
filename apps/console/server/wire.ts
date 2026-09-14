@@ -349,6 +349,75 @@ export interface ReconciliationView {
 }
 
 /**
+ * One parked (or lately resolved) escalation, flattened for render.
+ *
+ * The console shows this and CANNOT answer it, which is the point rather than
+ * a limitation: an approval is a signature over `decisionId + intentHash` made
+ * by a key the engine has registered, and a dashboard that could turn a click
+ * into a verdict would be the click-to-approve path A2 exists to refuse. So
+ * the row carries the exact bytes to sign and nothing that would let the page
+ * assert anything about them.
+ */
+export interface EscalationView {
+  /** The escalating decision this answers — the link into the audit chain. */
+  decisionId: string;
+  intentId: string;
+  /**
+   * What the signature commits to, alongside the decision id. Carried because
+   * a submission needs it and it is not a secret — it is on the decision, and
+   * without it an operator holding the challenge bytes would have to parse
+   * them apart to send one.
+   */
+  intentHash: string;
+  agentId: string;
+  agentName: string;
+  host: string;
+  resource: string;
+  amount: string;
+  /** Why policy escalated, verbatim from the decision. */
+  reason: string;
+  /** Breakers whose trip contributed; an approval resets exactly these. */
+  breakers: string[];
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  createdAt: string; // ISO
+  expiresAt: string; // ISO
+  /** Time left before it denies itself. Zero or less: the sweep owes it a deny. */
+  expiresInMs: number;
+  resolvedAt?: string; // ISO
+  /** Who signed. Absent when the TTL lapsed instead — expiry has no author. */
+  approverName?: string;
+  /** The follow-up decision the resolution appended; the original is untouched. */
+  finalDecisionId?: string;
+  /** The two byte-strings an approver may sign. Present only while pending. */
+  challenge?: { approve: string; reject: string };
+}
+
+/**
+ * The escalations panel (A2/B3): payments the engine refused to decide alone.
+ *
+ * `approvers` is the honesty valve, the B3 twin of B1's `settlementsSeen` and
+ * B2's `unknown`. A parked escalation with no registered approver key is not a
+ * payment awaiting a human — it is a payment nobody can release, which will
+ * expire into a deny. The panel says which of the two it is looking at instead
+ * of implying that somebody is being asked.
+ */
+export interface EscalationsView {
+  /**
+   * Registered, unrevoked approver keys — who could answer, by name. Ids and
+   * names only: the public key material is the engine's business, and neither
+   * of these is a credential, since a verdict still needs a signature.
+   */
+  approvers: { id: string; name: string }[];
+  /** How long a parked payment stays answerable before it denies. */
+  ttlMs: number;
+  /** Still answerable, oldest first — the one closest to expiring leads. */
+  pending: EscalationView[];
+  /** Lately resolved (approved, rejected, or expired), newest first. */
+  recent: EscalationView[];
+  at: string; // ISO
+}
+
+/**
  * What this console will let the caller do (`GET /api/control`), so the UI can
  * render honestly instead of offering buttons that answer 401/403. A public
  * deployment without a key is read-only BY DEFAULT — that is the posture, not
@@ -375,6 +444,7 @@ export interface ConsoleState {
   graph: GraphView;
   breakers: BreakerView[];
   reconciliation: ReconciliationView;
+  escalations: EscalationsView;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -391,4 +461,5 @@ export type ServerEvent =
   | { type: 'graph'; graph: GraphView }
   | { type: 'breakers'; breakers: BreakerView[] }
   | { type: 'reconciliation'; reconciliation: ReconciliationView }
+  | { type: 'escalations'; escalations: EscalationsView }
   | { type: 'demo'; demo: DemoStatus };

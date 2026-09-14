@@ -6,7 +6,7 @@
  * change on purpose:
  *
  *   - state survives (decisions, settlements, receipts, reputation subjects);
- *   - the boot seed and the 15-beat scenario run ONLY on a fresh store, so a
+ *   - the boot seed and the 17-beat scenario run ONLY on a fresh store, so a
  *     resume never double-counts;
  *   - the feed does not survive — it is this process's telemetry, not state;
  *   - session-tier keys ROTATE every boot (custody keys are deliberately never
@@ -74,13 +74,14 @@ describe('fresh boot on a store', () => {
   it('tells exactly the same story as the in-memory world', () => {
     // The persistence ports must not change the fingerprint world.test.ts pins;
     // if these drift apart, a store write is altering a payment outcome.
-    expect(first.stats.decisions).toBe(11);
-    expect(first.stats.allow).toBe(8);
+    expect(first.stats.decisions).toBe(14);
+    expect(first.stats.allow).toBe(10);
     expect(first.stats.deny).toBe(3);
-    expect(first.stats.escalate).toBe(0);
-    expect(first.stats.settled).toBe(7);
-    expect(Number(first.stats.settledValue)).toBeCloseTo(0.07);
+    expect(first.stats.escalate).toBe(1);
+    expect(first.stats.settled).toBe(9);
+    expect(Number(first.stats.settledValue)).toBeCloseTo(0.09);
     expect(first.agents.map((a) => a.name).sort()).toEqual([
+      'probation-agent-1',
       'procurement-agent-1',
       'research-agent-1',
       SESSION_AGENT,
@@ -108,8 +109,8 @@ describe('resume', () => {
     // the totals but the per-route and per-payer breakdown, payer attribution
     // included — which is what proves receipts resumed rather than counters.
     expect(resumed.gate).toEqual(first.gate);
-    expect(resumed.gate.settled).toBe(7);
-    expect(Number(resumed.gate.revenue)).toBeCloseTo(0.07);
+    expect(resumed.gate.settled).toBe(9);
+    expect(Number(resumed.gate.revenue)).toBeCloseTo(0.09);
     // Scores are recomputed from the resumed ledger, never stored — the seeded
     // vendors must still land on the same side of the enforcement floor.
     const vendor = (host: string) => resumed.graph.vendors.find((v) => v.id === host);
@@ -219,7 +220,7 @@ describe('the two stat windows', () => {
     expect(resumed.stats.decisions).toBe(resumed.stats.chainLinks);
     expect(resumed.stats.allow).toBe(first.stats.allow);
     expect(resumed.stats.deny).toBe(first.stats.deny);
-    expect(resumed.stats.escalate).toBe(0);
+    expect(resumed.stats.escalate).toBe(1);
     // The parts still account for the whole after a restart.
     expect(resumed.stats.allow + resumed.stats.deny + resumed.stats.escalate).toBe(
       resumed.stats.decisions,
@@ -231,12 +232,33 @@ describe('the two stat windows', () => {
     expect(resumed.stats.gateRefused).toBe(first.stats.gateRefused);
   });
 
+  it('keeps the parked escalation across the restart, on its ORIGINAL clock', () => {
+    // A parked payment is authority state, not telemetry. Losing it would
+    // leave the money blocked (the breaker that stopped it resumed tripped —
+    // those floors are durable) with no challenge left to answer and no record
+    // that a human was ever asked, which is the worst of both fail-closed and
+    // fail-open.
+    expect(resumed.escalations.pending).toHaveLength(1);
+    const before = first.escalations.pending[0]!;
+    const after = resumed.escalations.pending[0]!;
+    expect(after.decisionId).toBe(before.decisionId);
+    expect(after.agentName).toBe(before.agentName);
+    expect(after.breakers).toEqual(before.breakers);
+    // The deadline rides in the stored record, so a restart does NOT hand a
+    // stale escalation a fresh lease.
+    expect(after.expiresAt).toBe(before.expiresAt);
+    expect(after.expiresInMs).toBeLessThanOrEqual(before.expiresInMs);
+    // And the bytes are the same bytes: an operator who walked away mid-signature
+    // can still submit what they signed.
+    expect(after.challenge).toEqual(before.challenge);
+  });
+
   it('since-boot counters reset, because they have no durable reading', () => {
     // Not an oversight: shadow spends are reconciled against a mock ledger that
     // is rebuilt empty each boot, signer refusals are events rather than state,
     // and avgLatencyMs times calls THIS process made. Zero is the honest answer
     // for a fresh process, which is why the KPI tiles label these "this boot".
-    expect(first.stats.settled).toBe(7);
+    expect(first.stats.settled).toBe(9);
     expect(first.stats.shadow).toBe(1);
     expect(resumed.stats.settled).toBe(0);
     expect(resumed.stats.shadow).toBe(0);
@@ -247,8 +269,8 @@ describe('the two stat windows', () => {
     expect(resumed.stats.avgLatencyMs).toBe(0);
     // The durable vendor-side view still carries that money, so the settlement
     // history is never actually lost — only this window's count of it.
-    expect(resumed.gate.settled).toBe(7);
-    expect(Number(resumed.gate.revenue)).toBeCloseTo(0.07);
+    expect(resumed.gate.settled).toBe(9);
+    expect(Number(resumed.gate.revenue)).toBeCloseTo(0.09);
   });
 
   it('a since-boot counter climbs from zero as the resumed world works', () => {

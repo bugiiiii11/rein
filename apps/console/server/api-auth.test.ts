@@ -10,6 +10,7 @@ import type { World } from './world';
 import type { ServerEvent } from './wire';
 
 const frozen: string[] = [];
+const grants: unknown[] = [];
 
 function fakeWorld(): World {
   return {
@@ -21,6 +22,10 @@ function fakeWorld(): World {
     },
     unfreeze: async () => true,
     pingAgent: async () => true,
+    submitGrant: async (grant: unknown) => {
+      grants.push(grant);
+      return { status: 'approved', finalDecisionId: 'dec_final' };
+    },
     runDemo: () => true,
     close: async () => {},
   } as unknown as World;
@@ -42,6 +47,7 @@ async function serve(options: ApiOptions): Promise<string> {
 
 afterEach(async () => {
   frozen.length = 0;
+  grants.length = 0;
   const s = server;
   server = undefined;
   if (s) await new Promise<void>((resolve) => s.close(() => resolve()));
@@ -84,7 +90,12 @@ describe('console API auth', () => {
   it('refuses every mutation in read-only mode, key or not', async () => {
     const base = await serve({ readOnly: true, apiKey: 'console-secret' });
 
-    for (const path of ['/api/agents/agt_x/freeze', '/api/agents/agt_x/ping', '/api/demo/run']) {
+    for (const path of [
+      '/api/agents/agt_x/freeze',
+      '/api/agents/agt_x/ping',
+      '/api/demo/run',
+      '/api/escalations/dec_1/grant',
+    ]) {
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
         headers: { authorization: 'Bearer console-secret' },
@@ -93,6 +104,10 @@ describe('console API auth', () => {
       expect(await res.json()).toMatchObject({ error: 'read_only' });
     }
     expect(frozen).toEqual([]);
+    // A public console is not a submission endpoint either: the signature
+    // would verify or not on its own, but a read-only deployment answers
+    // nothing at all.
+    expect(grants).toEqual([]);
     // The dashboard itself keeps working — that is the point of the mode.
     expect((await fetch(`${base}/api/state`)).status).toBe(200);
   });
@@ -102,6 +117,35 @@ describe('console API auth', () => {
     const res = await fetch(`${base}/api/agents/agt_x/freeze`, { method: 'POST' });
     expect(res.status).toBe(200);
     expect(frozen).toEqual(['agt_x']);
+  });
+
+  it('passes a signed grant through, and gates it like any other mutation', async () => {
+    const base = await serve({ apiKey: 'console-secret' });
+    const body = {
+      intentHash: 'hash_1',
+      verdict: 'approve',
+      approverKeyId: 'apk_1',
+      signature: 'c2ln',
+    };
+
+    // Unauthenticated: refused, and the engine never sees it.
+    const refused = await fetch(`${base}/api/escalations/dec_1/grant`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    expect(refused.status).toBe(401);
+    expect(grants).toEqual([]);
+
+    const res = await fetch(`${base}/api/escalations/dec_1/grant`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer console-secret', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'approved', finalDecisionId: 'dec_final' });
+    // The decision id comes from the PATH, and the signed material from the
+    // body, verbatim — the console adds nothing of its own to what is verified.
+    expect(grants).toEqual([{ decisionId: 'dec_1', ...body }]);
   });
 
   it('reports its posture so a UI can render honestly', async () => {

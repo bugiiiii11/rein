@@ -1,12 +1,21 @@
 import type { PGlite } from '@electric-sql/pglite';
-import { Agent, LivenessExpectation, Policy, type LivenessSource } from '@reinconsole/core';
+import {
+  Agent,
+  ApprovalRequest,
+  ApproverKey,
+  LivenessExpectation,
+  Policy,
+  type LivenessSource,
+} from '@reinconsole/core';
 import {
   InMemoryAgentRegistry,
+  InMemoryApprovalStore,
   InMemoryLivenessStore,
   InMemoryPolicyStore,
   InMemorySettlementStore,
   InMemorySpendStore,
   type AgentRegistryPort,
+  type ApprovalStorePort,
   type LivenessRecord,
   type LivenessStorePort,
   type PolicyStorePort,
@@ -379,5 +388,90 @@ export class PgLivenessStore implements LivenessStorePort {
       at ?? null,
     ]);
     this.mem.setAlerted(agentId, at);
+  }
+}
+
+/**
+ * Durable A2 approvals: registered approver keys, and the escalations parked
+ * against them.
+ *
+ * Both writes are persist-then-cache like the signer's, for the same reason —
+ * this is authority state, not telemetry. The asymmetry worth naming is what a
+ * LOST request would mean. A breaker floor is durable, so a restart resumes
+ * with the behavior still tripped; if the parked request vanished with the
+ * process, the payment would stay blocked with no challenge left to answer and
+ * no record that a human was ever asked. The TTL rides in the doc, so a
+ * resumed request keeps its ORIGINAL deadline: a restart must not hand a stale
+ * escalation a fresh lease, and one that lapsed while the process was down is
+ * swept into its deny on the next sweep, exactly as if nothing had restarted.
+ */
+export class PgApprovalStore implements ApprovalStorePort {
+  private readonly mem = new InMemoryApprovalStore();
+
+  private constructor(private readonly db: PGlite) {}
+
+  static async open(db: PGlite): Promise<PgApprovalStore> {
+    const store = new PgApprovalStore(db);
+    const keys = await db.query<{ doc: unknown }>('SELECT doc FROM approvers');
+    for (const row of keys.rows) store.mem.putApprover(ApproverKey.parse(row.doc));
+    const requests = await db.query<{ doc: unknown }>('SELECT doc FROM approval_requests');
+    for (const row of requests.rows) store.mem.putRequest(ApprovalRequest.parse(row.doc));
+    return store;
+  }
+
+  async putApprover(key: ApproverKey): Promise<void> {
+    await this.db.query(
+      `INSERT INTO approvers (id, doc) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET doc = EXCLUDED.doc`,
+      [key.id, JSON.stringify(key)],
+    );
+    this.mem.putApprover(key);
+  }
+
+  getApprover(id: string): ApproverKey | undefined {
+    return this.mem.getApprover(id);
+  }
+
+  listApprovers(): ApproverKey[] {
+    return this.mem.listApprovers();
+  }
+
+  async putRequest(request: ApprovalRequest): Promise<void> {
+    await this.db.query(
+      `INSERT INTO approval_requests (decision_id, doc) VALUES ($1, $2)
+       ON CONFLICT (decision_id) DO UPDATE SET doc = EXCLUDED.doc`,
+      [request.decisionId, JSON.stringify(request)],
+    );
+    this.mem.putRequest(request);
+  }
+
+  getRequest(decisionId: string): ApprovalRequest | undefined {
+    return this.mem.getRequest(decisionId);
+  }
+
+  listRequests(): ApprovalRequest[] {
+    return this.mem.listRequests();
+  }
+
+  /**
+   * Drop resolved requests older than `olderThanMs`. Pending requests are
+   * NEVER pruned whatever their age — a lapsed one is still owed its deny on
+   * the chain, and the sweep is what produces it. Resolved rows are history
+   * whose authoritative copy is the decision chain, so they are the accretion
+   * this drains (one row per escalation, forever, otherwise).
+   */
+  async pruneResolved(olderThanMs: number): Promise<number> {
+    const cutoff = Date.now() - olderThanMs;
+    let dropped = 0;
+    for (const request of this.mem.listRequests()) {
+      if (request.status === 'pending') continue;
+      if ((request.resolvedAt ?? request.expiresAt).getTime() > cutoff) continue;
+      await this.db.query('DELETE FROM approval_requests WHERE decision_id = $1', [
+        request.decisionId,
+      ]);
+      this.mem.dropRequest(request.decisionId);
+      dropped += 1;
+    }
+    return dropped;
   }
 }

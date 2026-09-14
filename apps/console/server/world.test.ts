@@ -1,9 +1,15 @@
 /**
  * The console world, booted for real: the actual engine over HTTP, the actual
- * gate/signer/graph, mock rails — `createWorld()` runs the full 15-beat boot
+ * gate/signer/graph, mock rails — `createWorld()` runs the full 17-beat boot
  * scenario unpaced, so a fresh in-memory world arrives with a deterministic
  * story already told. These tests pin that story's fingerprint: if a scenario
  * beat, a policy rule, or an event-wiring seam regresses, the numbers move.
+ *
+ * The fingerprint moved ONCE, deliberately, in S46: B3 added a fourth agent on
+ * a probationary envelope whose third purchase is PARKED for a human. That is
+ * a scenario change, and the numbers below are its new contract — but the
+ * three original agents kept every number they had, which is the property the
+ * per-agent assertions guard.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, decodeEvmPayment, type World } from './world';
@@ -23,15 +29,18 @@ afterAll(async () => {
 });
 
 describe('boot scenario fingerprint', () => {
-  it('provisions exactly the three scenario agents, each with its own policy', () => {
+  it('provisions exactly the four scenario agents, each with its own policy', () => {
     expect(boot.agents.map((a) => a.name).sort()).toEqual([
+      'probation-agent-1',
       'procurement-agent-1',
       'research-agent-1',
       'session-agent-1',
     ]);
-    expect(boot.policies).toHaveLength(3);
+    expect(boot.policies).toHaveLength(4);
     for (const p of boot.policies) {
       expect(p.default).toBe('allow');
+      // Every agent carries the same three deny rules — the probation agent
+      // differs only in its BREAKER, which escalates rather than denying.
       expect(p.rules.map((r) => r.id).sort()).toEqual(['hour-budget', 'reputation-gate', 'tx-cap']);
     }
     // The role slug becomes a semantic label (S30).
@@ -39,13 +48,15 @@ describe('boot scenario fingerprint', () => {
     expect(research?.labels).toEqual(['research']);
   });
 
-  it('made 11 decisions: 8 allow, 3 deny, 0 escalate — one deny per guard rule', () => {
-    expect(boot.stats.decisions).toBe(11);
-    expect(boot.stats.allow).toBe(8);
+  it('made 14 decisions: 10 allow, 3 deny, 1 escalate — one deny per guard rule', () => {
+    expect(boot.stats.decisions).toBe(14);
+    expect(boot.stats.allow).toBe(10);
     expect(boot.stats.deny).toBe(3);
-    expect(boot.stats.escalate).toBe(0);
+    // Exactly one, and it is a PARK rather than a refusal: a breaker sits at
+    // the escalate level and never denies on its own authority.
+    expect(boot.stats.escalate).toBe(1);
     // Every decision is on the audit chain.
-    expect(boot.stats.chainLinks).toBe(11);
+    expect(boot.stats.chainLinks).toBe(14);
     const denies = boot.feed.filter((f) => f.kind === 'decision' && f.outcome === 'deny');
     const matched = denies.map((d) => [...(d.matchedRules ?? [])].sort());
     // The $5 premium call trips BOTH guards at once: over the tx cap AND over
@@ -55,16 +66,16 @@ describe('boot scenario fingerprint', () => {
     expect(matched).toContainEqual(['reputation-gate']);
   });
 
-  it('settled 7 payments worth $0.07 and caught the one $2.50 bypass as shadow spend', () => {
-    expect(boot.stats.settled).toBe(7);
-    expect(Number(boot.stats.settledValue)).toBeCloseTo(0.07);
+  it('settled 9 payments worth $0.09 and caught the one $2.50 bypass as shadow spend', () => {
+    expect(boot.stats.settled).toBe(9);
+    expect(Number(boot.stats.settledValue)).toBeCloseTo(0.09);
     expect(boot.stats.shadow).toBe(1);
     expect(Number(boot.stats.shadowValue)).toBeCloseTo(2.5);
   });
 
-  it('gate: 7 settles, $0.07 revenue, 4 refusals with 4 distinct codes incl. a replay burn', () => {
-    expect(boot.gate.settled).toBe(7);
-    expect(Number(boot.gate.revenue)).toBeCloseTo(0.07);
+  it('gate: 9 settles, $0.09 revenue, 4 refusals with 4 distinct codes incl. a replay burn', () => {
+    expect(boot.gate.settled).toBe(9);
+    expect(Number(boot.gate.revenue)).toBeCloseTo(0.09);
     expect(boot.gate.refused).toBe(4);
     const refusals = boot.feed.filter((f) => f.kind === 'gate-refused');
     expect(refusals).toHaveLength(4);
@@ -79,17 +90,20 @@ describe('boot scenario fingerprint', () => {
     ]);
     // All revenue came through the $0.01 query route; the $5 premium never settled.
     const query = boot.gate.routes.find((r) => r.route === '/v1/query');
-    expect(query?.settled).toBe(7);
+    expect(query?.settled).toBe(9);
     for (const r of boot.gate.routes) {
       if (r.route !== '/v1/query') expect(r.settled).toBe(0);
     }
   });
 
-  it('gate payers resolve to managed agents: 4 + 2 + 1 settles across the three wallets', () => {
+  it('gate payers resolve to managed agents: 4 + 2 + 1 + 2 settles across four wallets', () => {
     const byName = new Map(boot.gate.payers.map((p) => [p.agentName, p.settled]));
     expect(byName.get('research-agent-1')).toBe(4);
     expect(byName.get('session-agent-1')).toBe(2);
     expect(byName.get('procurement-agent-1')).toBe(1);
+    // Two inside the probationary envelope; the third never reached the gate,
+    // because it was parked before any payment existed.
+    expect(byName.get('probation-agent-1')).toBe(2);
   });
 
   it('signer: one active capped session, 2 releases, 2 refusals (stolen voucher + cap)', () => {
@@ -160,41 +174,64 @@ describe('breakers (A3)', () => {
   it('arms one breaker per agent, counting the calls the scenario actually made', () => {
     expect(boot.breakers).toHaveLength(boot.agents.length);
     for (const b of boot.breakers) {
-      expect(b.breakerId).toBe('velocity');
-      expect(b.window).toBe('24h');
-      expect(b.txCap).toBe(6);
       expect(b.policyId).toBe(`policy-${b.agentName}`);
       // The floor: with no signed reset it is simply the window edge.
       expect(b.resetAt).toBeUndefined();
       expect(Number.isNaN(Date.parse(b.countingFrom))).toBe(false);
     }
-    // research-agent-1 settled 4 of the 7 payments (see the gate fingerprint),
+    // The three established agents share the loose role envelope.
+    for (const b of boot.breakers.filter((x) => x.agentName !== 'probation-agent-1')) {
+      expect(b.breakerId).toBe('velocity');
+      expect(b.window).toBe('24h');
+      expect(b.txCap).toBe(6);
+    }
+    // research-agent-1 settled 4 of the 9 payments (see the gate fingerprint),
     // so its window holds 4 — the panel is reading real spend, not a stub.
     const research = boot.breakers.find((b) => b.agentName === 'research-agent-1');
     expect(research?.txCount).toBe(4);
     expect(Number(research?.sum)).toBeCloseTo(0.04);
   });
 
-  it('is sized to COUNT without tripping — the boot fingerprint is a contract', () => {
-    // A breaker that tripped here would turn an allowed call into a parked
-    // escalation and rewrite every count in this file. If this fails, the
-    // breaker was tightened without deciding to change the scenario.
-    expect(boot.breakers.every((b) => !b.tripped)).toBe(true);
-    expect(boot.stats.escalate).toBe(0);
+  it('leaves the three established agents COUNTING and untripped', () => {
+    // The role envelope is sized to count without tripping, and adding the
+    // probation agent in S46 must not have changed that: a trip on one of
+    // these three would turn an allowed call into a parked escalation and
+    // rewrite every count in this file. If this fails, the SHARED breaker was
+    // tightened without deciding to change the scenario.
+    const established = boot.breakers.filter((b) => b.agentName !== 'probation-agent-1');
+    expect(established).toHaveLength(3);
+    expect(established.every((b) => !b.tripped)).toBe(true);
+  });
+
+  it('trips the probation agent alone, and its trip PARKS rather than denies', () => {
+    const probation = boot.breakers.find((b) => b.agentName === 'probation-agent-1');
+    expect(probation?.breakerId).toBe('probation');
+    expect(probation?.txCap).toBe(2);
+    // Prospective: two purchases are permitted and counted, and the third —
+    // the one that would carry it past the envelope — is the one that asks.
+    expect(probation?.txCount).toBe(2);
+    expect(probation?.tripped).toBe(true);
+    expect(probation?.reason).toBeTruthy();
+    // A breaker sits at the ESCALATE level and never refuses on its own: the
+    // scenario's only non-allow outcome from a breaker is a park.
+    expect(boot.stats.escalate).toBe(1);
+    expect(boot.stats.deny).toBe(3); // unchanged — the three guard-rule denies
   });
 });
 
 describe('reconciliation (B1)', () => {
-  it('joins the 8 allowances against the 7 settlements and finds the one gap', () => {
+  it('joins the 10 allowances against the 9 settlements and finds the one gap', () => {
     const r = boot.reconciliation;
-    expect(r.allowed).toBe(8);
-    expect(r.settled).toBe(7);
-    expect(Number(r.settledValue)).toBeCloseTo(0.07);
+    expect(r.allowed).toBe(10);
+    expect(r.settled).toBe(9);
+    expect(Number(r.settledValue)).toBeCloseTo(0.09);
     // The scenario already contained this gap before B1 existed: beat 11, the
     // session-cap backstop. The ENGINE allowed a third $0.01 and the signer
     // refused to sign it, so the decision chain says "allowed" and no money
-    // ever moved. Nothing was added to the scenario to produce it — which is
-    // why the pinned boot fingerprint above is untouched.
+    // ever moved. It is still the ONLY gap after S46 added the probation
+    // agent: a parked escalation is not an allowance, so it charges no budget
+    // and writes no spend record — there is nothing for a settlement to
+    // answer for until a human releases it.
     expect(r.gaps).toHaveLength(1);
     const gap = r.gaps[0]!;
     expect(gap.agentName).toBe('session-agent-1');
@@ -210,7 +247,7 @@ describe('reconciliation (B1)', () => {
   it('has a settlement source connected, so a gap is evidence and not just wiring', () => {
     // Zero reports would mean every allowance reads as unsettled because
     // nobody is looking — the panel renders that case differently on purpose.
-    expect(boot.reconciliation.settlementsSeen).toBe(7);
+    expect(boot.reconciliation.settlementsSeen).toBe(9);
     // Nothing predates B1 in a fresh world; every allowance carries its ids.
     expect(boot.reconciliation.unattributed).toBe(0);
   });
@@ -225,6 +262,7 @@ describe('dead-man monitoring (B2)', () => {
     // scenario ends by design — which teaches an operator to ignore the panel.
     expect(byName['session-agent-1']?.liveness).toBeUndefined();
     expect(byName['procurement-agent-1']?.liveness).toBeUndefined();
+    expect(byName['probation-agent-1']?.liveness).toBeUndefined();
 
     const research = byName['research-agent-1']?.liveness;
     expect(research?.interval).toBe('5m');
@@ -238,8 +276,7 @@ describe('dead-man monitoring (B2)', () => {
   it('adds no decision and changes no count — an alarm is not a gate', () => {
     // Liveness is observability: watching an agent must not move a single
     // number in the pinned boot fingerprint above.
-    expect(boot.stats.decisions).toBe(11);
-    expect(boot.stats.escalate).toBe(0);
+    expect(boot.stats.decisions).toBe(14);
     expect(boot.feed.some((f) => f.kind === 'missing')).toBe(false);
   });
 
@@ -254,6 +291,70 @@ describe('dead-man monitoring (B2)', () => {
     expect(Date.parse(after.lastSeenAt!)).toBeGreaterThan(Date.parse(before.lastSeenAt!));
     expect(after.lastSource).toBe('intent');
     expect(after.status).toBe('alive');
+  });
+});
+
+describe('escalations (A2 in the console, B3)', () => {
+  it('parks the probation agent third purchase, with the bytes to sign', () => {
+    const e = boot.escalations;
+    expect(e.pending).toHaveLength(1);
+    const parked = e.pending[0]!;
+    expect(parked.agentName).toBe('probation-agent-1');
+    expect(Number(parked.amount)).toBeCloseTo(0.01);
+    expect(parked.status).toBe('pending');
+    expect(parked.host).toBe('api.data.test');
+    // An approval of this resets exactly the breaker that stopped it, so the
+    // human who waves one payment through is not asked again immediately.
+    expect(parked.breakers).toEqual(['probation']);
+    expect(parked.reason).toBeTruthy();
+    // The escalating decision is named, so the row links into the audit chain.
+    expect(boot.feed.some((f) => f.kind === 'decision' && f.decisionId === parked.decisionId)).toBe(
+      true,
+    );
+    // The two byte-strings, and nothing that could assert a verdict: the
+    // console shows the challenge, it never answers it.
+    expect(parked.challenge?.approve).toContain('approve');
+    expect(parked.challenge?.reject).toContain('reject');
+    expect(parked.challenge?.approve).toContain(parked.decisionId);
+    expect(parked.challenge?.approve).not.toBe(parked.challenge?.reject);
+    expect(parked.expiresInMs).toBeGreaterThan(0);
+  });
+
+  it('says plainly that nobody can answer it — the B3 honesty valve', () => {
+    // No REIN_APPROVER_PUBLIC_KEY in a test world, and that is the same
+    // posture the public console deploys in. A parked payment with no
+    // registered key is not awaiting a human; it is awaiting an expiry. The
+    // panel must be able to tell an operator which of the two it is looking
+    // at, the same way B1 reports `settlementsSeen === 0`.
+    expect(boot.escalations.approvers).toEqual([]);
+    expect(boot.escalations.recent).toEqual([]);
+    expect(boot.escalations.ttlMs).toBeGreaterThan(0);
+  });
+
+  it('charges no budget while parked — an escalation is not an allowance', () => {
+    // The spend ledger IS the allowance ledger, and the engine writes to it
+    // only after an allow. A parked payment therefore leaves the rolling
+    // window exactly where it was; the charge lands at APPROVAL time, which is
+    // when the money actually moves.
+    const probation = boot.breakers.find((b) => b.agentName === 'probation-agent-1')!;
+    expect(probation.txCount).toBe(2);
+    expect(Number(probation.sum)).toBeCloseTo(0.02);
+  });
+
+  it('refuses a grant nobody signed, and leaves the request parked', async () => {
+    const parked = world.getState().escalations.pending[0]!;
+    await expect(
+      world.submitGrant({
+        decisionId: parked.decisionId,
+        intentHash: 'not-the-hash',
+        verdict: 'approve',
+        approverKeyId: 'apk_nobody',
+        signature: 'AAAA',
+      }),
+    ).rejects.toThrow();
+    // Fail closed: a refused submission changes nothing at all.
+    const after = world.getState();
+    expect(after.escalations.pending.map((p) => p.decisionId)).toContain(parked.decisionId);
   });
 });
 

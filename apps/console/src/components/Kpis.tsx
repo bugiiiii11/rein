@@ -28,7 +28,21 @@ export function Kpis({ stats }: { stats: Stats | null }) {
         sub={`on the signed chain · ${latency(s?.avgLatencyMs)} avg this boot`}
       />
       <Kpi label="Allowed" value={s?.allow ?? 0} sub="cleared to pay" tone="is-ok" />
-      <Kpi label="Denied" value={s?.deny ?? 0} sub="blocked pre-pay" tone="is-bad" />
+      {/* B3 asked whether escalations earn a NINTH tile. They do not: the
+          strip is a hard 8-column grid, and "escalated" is not a ninth kind of
+          number — it is the other half of "not allowed", the payments policy
+          declined to decide alone rather than refused. It rides here at zero
+          layout cost, and the Escalations panel carries the detail. */}
+      <Kpi
+        label="Denied"
+        value={s?.deny ?? 0}
+        sub={
+          (s?.escalate ?? 0) > 0
+            ? `blocked pre-pay · ${s?.escalate} escalated to a human`
+            : 'blocked pre-pay'
+        }
+        tone="is-bad"
+      />
       <Kpi
         label="Settled"
         value={usd(s?.settledValue)}

@@ -5,6 +5,7 @@ import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
 import {
   PgAgentRegistry,
+  PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
   PgSettlementStore,
@@ -16,6 +17,7 @@ import { PgGateStore } from './gate-stores.js';
 
 export {
   PgAgentRegistry,
+  PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
   PgSettlementStore,
@@ -53,6 +55,14 @@ export interface ReinStore {
    * concerns, and a store that guessed at them would pick the wrong ones.
    */
   livenessStore: PgLivenessStore;
+  /**
+   * Parked escalations and registered approver keys (A2). Named for the same
+   * reason as `livenessStore`: what the engine takes under `approvals` is an
+   * `ApprovalService`, and this is only its persistent half — compose it,
+   * `new ApprovalService({ store: s.approvalStore })`, because the delivery
+   * channels and the TTL are policy choices a store must not make.
+   */
+  approvalStore: PgApprovalStore;
   log: DecisionLog;
   /** Reputation evidence ledger — pass to `new ReputationGraph({ ledger })`. */
   ledger: PgEvidenceLedger;
@@ -80,18 +90,25 @@ export interface ReinStore {
    * signer's 300s staleness window has long passed) and gate replay slots
    * (dead once the payment's on-chain authorization has expired — see
    * PgGateStore.pruneReplays for the mock-rails caveat behind the generous
-   * default). Runs once at open; long-lived servers should call it
-   * periodically. Defaults: usedDecisions 1h, replays 24h; pass 0 to skip one.
+   * default), plus resolved approval requests (history whose authoritative
+   * copy is the decision chain). Runs once at open; long-lived servers should
+   * call it periodically. Defaults: usedDecisions 1h, replays 24h,
+   * resolvedApprovals 7d; pass 0 to skip one.
    */
   prune(options?: {
     usedDecisionsOlderThanMs?: number;
     replaysOlderThanMs?: number;
-  }): Promise<{ usedDecisions: number; replays: number }>;
+    resolvedApprovalsOlderThanMs?: number;
+  }): Promise<{ usedDecisions: number; replays: number; resolvedApprovals: number }>;
   close(): Promise<void>;
 }
 
 const PRUNE_USED_DECISIONS_MS = 3_600_000; // 12x the signer's 300s staleness window
 const PRUNE_REPLAYS_MS = 86_400_000; // authorizations expire in ~300s; 24h is generous
+// Resolved escalations: the decision chain is the authoritative record of what
+// was approved, so these rows are a convenience copy. A week keeps the console
+// panel's recent history intact across restarts without accreting forever.
+const PRUNE_RESOLVED_APPROVALS_MS = 7 * 86_400_000;
 
 /**
  * Open (or create) a durable Rein store. Hydrates the working set, loads or
@@ -107,6 +124,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const spend = await PgSpendStore.open(db);
     const settlements = await PgSettlementStore.open(db);
     const liveness = await PgLivenessStore.open(db);
+    const approvals = await PgApprovalStore.open(db);
     const ledger = await PgEvidenceLedger.open(db);
     const intents = await PgIntentStore.open(db);
     const sessions = await PgSessionStore.open(db);
@@ -129,13 +147,21 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     });
 
     const prune = async (
-      options: { usedDecisionsOlderThanMs?: number; replaysOlderThanMs?: number } = {},
+      options: {
+        usedDecisionsOlderThanMs?: number;
+        replaysOlderThanMs?: number;
+        resolvedApprovalsOlderThanMs?: number;
+      } = {},
     ) => {
       const usedTtl = options.usedDecisionsOlderThanMs ?? PRUNE_USED_DECISIONS_MS;
       const replayTtl = options.replaysOlderThanMs ?? PRUNE_REPLAYS_MS;
+      const approvalTtl = options.resolvedApprovalsOlderThanMs ?? PRUNE_RESOLVED_APPROVALS_MS;
       return {
         usedDecisions: usedTtl > 0 ? await sessions.pruneUsedDecisions(usedTtl) : 0,
         replays: replayTtl > 0 ? await gate.pruneReplays(replayTtl) : 0,
+        // PENDING requests are never pruned, whatever this is set to: a lapsed
+        // one is still owed its deny on the chain.
+        resolvedApprovals: approvalTtl > 0 ? await approvals.pruneResolved(approvalTtl) : 0,
       };
     };
     // Boot-time sweep: restarts are when accretion actually bites (every boot
@@ -148,6 +174,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       agents,
       settlements,
       livenessStore: liveness,
+      approvalStore: approvals,
       log,
       ledger,
       intents,

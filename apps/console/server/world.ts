@@ -26,6 +26,7 @@ import { generatePrivateKey } from 'viem/accounts';
 import {
   formatErc8004Id,
   newId,
+  type ApprovalRequest,
   parseErc8004Id,
   sumDecimal,
   type Agent,
@@ -45,6 +46,7 @@ import {
   readSummary,
 } from '@reinconsole/erc8004';
 import {
+  ApprovalService,
   LivenessMonitor,
   PolicyEngine,
   buildServer,
@@ -94,6 +96,8 @@ import type {
   BreakerView,
   ConsoleState,
   DemoStatus,
+  EscalationView,
+  EscalationsView,
   FeedItem,
   GateView,
   GraphView,
@@ -200,6 +204,38 @@ const LIVENESS_GRACE_MS = Number(process.env['REIN_LIVENESS_GRACE_MS'] ?? 60_000
 const LIVENESS_SWEEP_MS = Number(process.env['REIN_LIVENESS_SWEEP_MS'] ?? 15_000);
 const LIVENESS_NOTE = 'polls the vendor feed on a schedule';
 
+/**
+ * Human-in-the-loop escalations (A2), and the agent that produces one (B3).
+ *
+ * The three scenario agents carry AGENT_BREAKERS, which is sized to count
+ * without tripping — deliberately, because a trip there would turn an allowed
+ * call into a parked escalation and rewrite the whole pinned fingerprint. The
+ * exhibit gets its OWN agent instead: a new hire on a probationary envelope of
+ * two purchases an hour. Two go through, the third asks a human, and the three
+ * agents above keep every number they had.
+ *
+ * Why an agent rather than a tighter breaker on an existing one: a breaker is
+ * an envelope declared for a role, and a role whose envelope is regularly
+ * exceeded is a misconfiguration, not a demo. A probationary agent is the one
+ * case where escalating on the third purchase is the intended behaviour.
+ */
+const PROBATION_BREAKERS = [{ id: 'probation', window: '1h', txCount: 2 }] as const;
+
+/**
+ * How long a parked payment stays answerable here. Far longer than the
+ * engine's 10-minute default, on purpose: this console is an exhibit that runs
+ * for days, and a visitor arriving eleven minutes after a deploy would find an
+ * empty panel and learn nothing about the state it exists to show. The
+ * fail-closed half of the guarantee — expiry DENIES, and denies on the chain —
+ * is pinned by tests and shown in the mock demo, which is where a guarantee
+ * belongs; it does not need a public dashboard's clock to demonstrate it. When
+ * the day does lapse, the expiry deny lands in the feed and the request moves
+ * to the panel's resolved list, which is the honest end of the story.
+ */
+const ESCALATION_TTL_MS = Number(process.env['REIN_ESCALATION_TTL_MS'] ?? 24 * 3_600_000);
+/** How many resolved escalations the panel keeps behind the pending ones. */
+const ESCALATION_HISTORY = 6;
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Governed refusals are the world working as designed — not errors. */
@@ -265,6 +301,18 @@ export interface World {
   freeze(agentId: string): Promise<boolean>;
   unfreeze(agentId: string): Promise<boolean>;
   pingAgent(agentId: string): Promise<boolean>;
+  /**
+   * Submit a signed verdict for a parked escalation. The console carries the
+   * bytes; the signature is made wherever the approver's private key lives.
+   * Throws `ApprovalError` for every refusal — the request stays parked.
+   */
+  submitGrant(grant: {
+    decisionId: string;
+    intentHash: string;
+    verdict: 'approve' | 'reject';
+    approverKeyId: string;
+    signature: string;
+  }): Promise<{ status: string; finalDecisionId: string }>;
   runDemo(): boolean;
   close(): Promise<void>;
 }
@@ -299,9 +347,25 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     onSightingError: (agentId, err) =>
       console.error(`[console] liveness sighting for ${agentId} was not recorded:`, err),
   });
+  /**
+   * The approval tier (A2). Composed here for the same reason the liveness
+   * monitor is: the store holds only the parked requests and the registered
+   * keys, while the TTL and the delivery channels are this world's to choose.
+   *
+   * No channels: the console's channel is the panel itself, and the feed row
+   * the escalating decision already wrote. Wiring Telegram here would page a
+   * human about a scripted demo — the standalone engine is where a real
+   * channel belongs (`REIN_TELEGRAM_BOT_TOKEN`).
+   */
+  const approvals = new ApprovalService({
+    ...(store ? { store: store.approvalStore } : {}),
+    ttlMs: ESCALATION_TTL_MS,
+    onDeliveryError: (channel, err) =>
+      console.error(`[console] approval channel ${channel} failed:`, err),
+  });
   const engine = store
-    ? new PolicyEngine({ ...store, liveness })
-    : new PolicyEngine({ liveness });
+    ? new PolicyEngine({ ...store, liveness, approvals })
+    : new PolicyEngine({ liveness, approvals });
   const app = buildServer(engine);
   await app.listen({ port: 0, host: '127.0.0.1' });
   const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -813,6 +877,71 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   }
 
   /**
+   * Payments the engine refused to decide alone (A2), rendered for B3.
+   *
+   * Read-only by construction, and that is the design rather than a shortfall:
+   * the only thing that can release a parked payment is a signature over
+   * `decisionId + intentHash` from a key this engine has registered, produced
+   * wherever that private key lives. So the view carries the exact challenge
+   * bytes and no affordance that would let the page assert a verdict.
+   *
+   * All-time, like reconciliation: the requests are durable now, so a resumed
+   * console still shows the payment a human was asked about before the
+   * restart — which is exactly when a forgotten escalation would bite, since
+   * the breaker that stopped it resumed tripped.
+   */
+  function viewEscalation(r: ApprovalRequest, now: number): EscalationView {
+    const pending = r.status === 'pending';
+    return {
+      decisionId: r.decisionId,
+      intentId: r.intentId,
+      intentHash: r.intentHash,
+      agentId: r.agentId,
+      agentName: agentName(r.agentId) ?? r.agentId,
+      host: r.vendorHost,
+      resource: r.resource,
+      amount: r.amount,
+      reason: r.reason,
+      breakers: r.breakers,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      expiresAt: r.expiresAt.toISOString(),
+      expiresInMs: r.expiresAt.getTime() - now,
+      ...(r.resolvedAt ? { resolvedAt: r.resolvedAt.toISOString() } : {}),
+      ...(r.approverKeyId
+        ? { approverName: approvals.listApprovers().find((k) => k.id === r.approverKeyId)?.name ?? r.approverKeyId }
+        : {}),
+      ...(r.finalDecisionId !== undefined ? { finalDecisionId: r.finalDecisionId } : {}),
+      // Only while answerable: bytes for a resolved request would invite
+      // someone to sign something that can no longer be submitted.
+      ...(pending ? { challenge: approvals.challengesFor(r) } : {}),
+    };
+  }
+
+  function viewEscalations(now = Date.now()): EscalationsView {
+    const all = approvals.list();
+    return {
+      approvers: approvals
+        .listApprovers()
+        .filter((k) => k.revokedAt === undefined)
+        .map((k) => ({ id: k.id, name: k.name })),
+      ttlMs: ESCALATION_TTL_MS,
+      // Oldest first: the one closest to denying itself is the one that needs
+      // answering, and it is the one a human has already waited longest on.
+      pending: all
+        .filter((r) => r.status === 'pending' && r.expiresAt.getTime() > now)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .map((r) => viewEscalation(r, now)),
+      recent: all
+        .filter((r) => r.status !== 'pending')
+        .sort((a, b) => (b.resolvedAt?.getTime() ?? 0) - (a.resolvedAt?.getTime() ?? 0))
+        .slice(0, ESCALATION_HISTORY)
+        .map((r) => viewEscalation(r, now)),
+      at: new Date(now).toISOString(),
+    };
+  }
+
+  /**
    * The alert half of B1. Every other panel is driven by something happening;
    * this one is driven by something NOT happening, so it needs a clock. The
    * sweep re-measures the gaps and announces each allowance the first time it
@@ -1144,6 +1273,41 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (p.breakers.length === 0) await engine.addPolicy({ ...p, breakers: [...AGENT_BREAKERS] });
   }
 
+  /**
+   * Register the operator's approver key, if this deployment has one.
+   *
+   * Env-gated and PUBLIC-key only, which is the whole posture: the console
+   * never holds anything that could sign, so the worst an attacker gets from
+   * it is the ability to show someone a challenge. A deployment with no key
+   * set is the honest default — a parked payment there is one nobody can
+   * release, and the panel says exactly that rather than implying a human is
+   * being asked. Re-registering the same PEM every boot would mint a second
+   * key id, so an existing key with this material is left alone.
+   */
+  async function wireApprover(): Promise<void> {
+    // A PEM in an env var usually arrives with its newlines escaped; a key
+    // that silently failed to parse would read as "nobody can approve", which
+    // is the one wrong answer this panel must never give by accident.
+    const pem = process.env['REIN_APPROVER_PUBLIC_KEY']?.trim().replace(/\\n/g, '\n');
+    if (!pem) return;
+    if (approvals.listApprovers().some((k) => k.publicKey === pem && k.revokedAt === undefined)) {
+      return;
+    }
+    try {
+      const key = await approvals.registerApprover({
+        orgId: newId('org'),
+        name: process.env['REIN_APPROVER_NAME']?.trim() || 'operator',
+        publicKey: pem,
+      });
+      console.log(`[rein] approver key registered: ${key.name} (${key.id})`);
+    } catch (err) {
+      // A malformed key must be loud and must not take the console down: the
+      // dashboard still tells the truth, which is that nobody can approve.
+      console.error('[console] REIN_APPROVER_PUBLIC_KEY was not a usable ed25519 PEM:', err);
+    }
+  }
+  await wireApprover();
+
   // Same story for the dead-man watches (B2): agents provisioned before B2
   // existed carry no expectation, so a resumed deployment would show liveness
   // on nobody. `watchLiveness` upserts and keeps the original `since`, so
@@ -1263,6 +1427,10 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       // debounce rather than a subscription of their own. Pure read — unlike
       // syncGraph it pushes nothing INTO the engine, so it cannot fail.
       emit({ type: 'breakers', breakers: viewBreakers() });
+      // Parked and resolved escalations ride the same debounce: both of the
+      // events that change them (`approval.requested`, `approval.resolved`)
+      // are engine events, and so is the decision each one carries.
+      emit({ type: 'escalations', escalations: viewEscalations() });
       syncGraph().catch((err: unknown) =>
         console.error('[console] reputation sync failed:', err),
       );
@@ -1326,7 +1494,14 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   // the working set reflects them, and the very next scenario beat evaluates
   // against this agent — an unawaited write would race it. (In-memory stores
   // resolve immediately, so the await costs nothing there.)
-  async function addAgentPolicy(name: string, agentId: string, wallet: { address: string; mode: 'sdk' | 'session-key' }): Promise<void> {
+  async function addAgentPolicy(
+    name: string,
+    agentId: string,
+    wallet: { address: string; mode: 'sdk' | 'session-key' },
+    // The envelope this agent's role carries. Defaults to the loose one every
+    // established agent gets; the probation agent passes its own.
+    breakers: readonly { id: string; window: string; txCount?: number; valueCap?: string }[] = AGENT_BREAKERS,
+  ): Promise<void> {
     // Register on the (mock) Identity Registry FIRST — the doc carries the
     // erc8004Id, so every future boot can rebuild the registry from the store.
     const registration = registry.register({ owner: wallet.address });
@@ -1355,7 +1530,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         // scores at sync, so unknown vendors stay ungoverned by this rule.
         { id: 'reputation-gate', deny: { vendorReputationLt: REP_FLOOR } },
       ],
-      breakers: [...AGENT_BREAKERS],
+      breakers: breakers.map((b) => ({ ...b })),
       default: 'allow',
     });
     // Dead-man watch (B2), for the research pollers only — see LIVENESS_LABEL.
@@ -1385,7 +1560,10 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   }
 
   /** SDK tier: the agent holds its own (mock) wallet key. */
-  async function provisionAgent(name: string): Promise<{
+  async function provisionAgent(
+    name: string,
+    options: { breakers?: readonly { id: string; window: string; txCount?: number; valueCap?: string }[] } = {},
+  ): Promise<{
     agentId: string;
     wallet: string;
     fetch: FetchLike;
@@ -1393,7 +1571,12 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   }> {
     const agentId = newId('agt');
     const wallet = `0x${name.replace(/[^a-z0-9]/gi, '')}Wallet`;
-    await addAgentPolicy(name, agentId, { address: wallet, mode: 'sdk' });
+    await addAgentPolicy(
+      name,
+      agentId,
+      { address: wallet, mode: 'sdk' },
+      options.breakers ?? AGENT_BREAKERS,
+    );
     // Capture raw X-PAYMENT headers — the replay scenario re-presents one.
     let captured = '';
     const inner = facilitator.payerFor(wallet);
@@ -1602,11 +1785,46 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     });
     await sleep(gap);
 
+    // 16 — the human-in-the-loop tier (A2/A3): a new hire on a probationary
+    //      envelope of two purchases an hour. Two go through; the third is
+    //      PARKED, not denied — a breaker escalates, it never refuses on its
+    //      own authority. Nothing on this console can release it: an approval
+    //      is a signature over decisionId+intentHash from a key held wherever
+    //      the human is, and a dashboard button that stood in for one would be
+    //      the click-to-approve path A2 exists to refuse.
+    const probationName = `probation-agent-${demoRuns}`;
+    setPhase(`spinning up ${probationName} (probationary envelope)`);
+    const probation = await provisionAgent(probationName, { breakers: PROBATION_BREAKERS });
+    await sleep(gap);
+
+    setPhase('probationary purchases');
+    await probation.fetch(VENDOR_URL);
+    await sleep(gap);
+    await probation.fetch(VENDOR_URL);
+    await sleep(gap);
+
+    // 17 — the third purchase leaves the envelope, so a human is asked
+    setPhase('breaker trips: payment parked for a signature');
+    await probation.fetch(VENDOR_URL).catch(swallowGoverned);
+    await sleep(gap);
+
     demo = { running: false, phase: 'idle' };
     emit({ type: 'demo', demo });
   }
 
   // ── public API ─────────────────────────────────────────────────────────────
+  async function submitGrant(grant: {
+    decisionId: string;
+    intentHash: string;
+    verdict: 'approve' | 'reject';
+    approverKeyId: string;
+    signature: string;
+  }): Promise<{ status: string; finalDecisionId: string }> {
+    const { request, decision } = await engine.resolveEscalation(grant);
+    emit({ type: 'escalations', escalations: viewEscalations() });
+    return { status: request.status, finalDecisionId: decision.id };
+  }
+
   function runDemo(): boolean {
     if (demo.running) return false;
     demo = { running: true, phase: 'starting' };
@@ -1653,6 +1871,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       graph: viewGraph(),
       breakers: viewBreakers(),
       reconciliation: viewReconciliation(),
+      escalations: viewEscalations(),
       demo,
       publicKey: engine.publicKeyPem,
       startedAt,
@@ -1683,6 +1902,12 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
   }, LIVENESS_SWEEP_MS);
   livenessTimer.unref?.();
 
+  // The escalation clock (A2). Correctness does not depend on it — a lapsed
+  // request refuses every signature on its own — but the DENY it owes the
+  // audit chain only lands when something runs, and a payment whose refusal
+  // never reached the chain is a hole in the record of what this engine did.
+  const stopExpirySweeper = engine.startExpirySweeper();
+
   let maintenanceTimer: NodeJS.Timeout | undefined;
   if (store) {
     maintenanceTimer = setInterval(() => {
@@ -1704,6 +1929,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     if (maintenanceTimer) clearInterval(maintenanceTimer);
     clearInterval(reconcileTimer);
     clearInterval(livenessTimer);
+    stopExpirySweeper();
     await app.close();
     // Flush write-behind reputation evidence before the handle goes away. A
     // failure here means some evidence was NOT persisted — log it loudly, but
@@ -1745,5 +1971,5 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     );
   }
 
-  return { getState, subscribe, freeze, unfreeze, pingAgent, runDemo, close };
+  return { getState, subscribe, freeze, unfreeze, pingAgent, submitGrant, runDemo, close };
 }

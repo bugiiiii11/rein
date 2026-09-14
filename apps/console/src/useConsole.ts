@@ -4,6 +4,7 @@ import type {
   BreakerView,
   ControlPosture,
   DemoStatus,
+  EscalationsView,
   FeedItem,
   GateView,
   GraphView,
@@ -26,6 +27,7 @@ export interface ConsoleData {
   graph: GraphView | null;
   breakers: BreakerView[];
   reconciliation: ReconciliationView | null;
+  escalations: EscalationsView | null;
   demo: DemoStatus;
   publicKey: string;
   startedAt: string;
@@ -52,6 +54,7 @@ export function useConsole(): ConsoleData {
     graph: null,
     breakers: [],
     reconciliation: null,
+    escalations: null,
     demo: EMPTY_DEMO,
     publicKey: '',
     startedAt: '',
@@ -101,6 +104,7 @@ export function useConsole(): ConsoleData {
           graph: s.graph,
           breakers: s.breakers,
           reconciliation: s.reconciliation,
+          escalations: s.escalations,
           demo: s.demo,
           publicKey: s.publicKey,
           startedAt: s.startedAt,
@@ -164,6 +168,12 @@ export function useConsole(): ConsoleData {
       setData((d) => ({
         ...d,
         reconciliation: parse<{ reconciliation: ReconciliationView }>(ev).reconciliation,
+      })),
+    );
+    es.addEventListener('escalations', (ev) =>
+      setData((d) => ({
+        ...d,
+        escalations: parse<{ escalations: EscalationsView }>(ev).escalations,
       })),
     );
     es.addEventListener('demo', (ev) =>

@@ -24,6 +24,7 @@ import type {
   GateView,
   GraphView,
   PolicyView,
+  EscalationsView,
   ReconciliationView,
   ServerEvent,
   Stats,
@@ -214,6 +215,14 @@ const RECONCILIATION: ReconciliationView = {
   at: '2026-08-28T00:00:00.000Z',
 };
 
+const ESCALATIONS: EscalationsView = {
+  approvers: [],
+  ttlMs: 600_000,
+  pending: [],
+  recent: [],
+  at: '2026-08-28T00:00:00.000Z',
+};
+
 const snapshot = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   feed: [],
   agents: [],
@@ -224,6 +233,7 @@ const snapshot = (over: Partial<ConsoleState> = {}): ConsoleState => ({
   graph: GRAPH,
   breakers: [],
   reconciliation: RECONCILIATION,
+  escalations: ESCALATIONS,
   demo: { running: false, phase: 'idle' },
   publicKey: 'pk_test',
   startedAt: '2026-08-28T00:00:00.000Z',

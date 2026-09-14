@@ -1116,6 +1116,70 @@ a.pill:hover {
   color: var(--ink-dim);
 }
 
+/* ── Escalations (A2/B3) ──────────────────────────────────────────────────── */
+/* One line per payment, same discipline as the reconciliation rows: this panel
+   sits between the breaker list and the reputation board, and every pixel it
+   takes comes out of one of them. */
+.esc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  min-width: 0;
+}
+.esc-chip {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+}
+.esc-chip.bad {
+  color: var(--alarm);
+  border-color: rgba(255, 77, 77, 0.35);
+  background: var(--alarm-soft);
+}
+.esc-chip.ok {
+  color: var(--ok);
+  border-color: rgba(60, 200, 130, 0.3);
+}
+.esc-amt {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--ink);
+}
+.esc-who {
+  flex: 0 1 auto;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.esc-where {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Cursor is the affordance cue for the hover detail — the challenge bytes an
+   approver signs live in the title, because they cannot fit and must not be
+   turned into a button. */
+.esc-tail {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+.esc-row.is-parked .esc-tail {
+  color: var(--alarm);
+}
+
 /* ── Audit chain ──────────────────────────────────────────────────────────── */
 .chain-status {
   display: flex;

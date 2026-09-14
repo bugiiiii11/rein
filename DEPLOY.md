@@ -211,6 +211,32 @@ same tick): the number that matters is a real facilitator's, and a console that 
 after 200ms would be measuring its own simulator. Tighten it only against rails whose real
 settlement latency you know.
 
+## Escalations (S46)
+
+A parked payment is one the engine refused to decide on its own authority. The console
+renders these READ-ONLY on purpose: an approval is a signature over `decisionId + intentHash`
+from a key the engine has registered, and a dashboard button that stood in for one would be
+the click-to-approve path A2 exists to refuse.
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `REIN_ESCALATION_TTL_MS` | `86400000` (24h) | How long a parked payment stays answerable before it denies |
+| `REIN_APPROVER_PUBLIC_KEY` | unset | An ed25519 SPKI **public** key (escaped newlines are unescaped) naming a human who can answer |
+| `REIN_APPROVER_NAME` | `operator` | Display name for that key |
+
+The TTL default is far longer than the engine's own 10 minutes because this console is an
+exhibit that runs for days -- a visitor arriving eleven minutes after a deploy would find an
+empty panel. The fail-closed half (expiry DENIES, on the chain) is pinned by tests and shown
+in the mock demo, which is where a guarantee belongs.
+
+Leave `REIN_APPROVER_PUBLIC_KEY` **unset on the public console** -- that is the intended
+posture, not an oversight. With no approver key the panel says plainly that nothing there can
+be signed and that the parked payment will expire into a denial; setting it would name a human
+who is not actually on call for a demo. The console never holds a private key under any configuration, so the worst it can
+do with this one is show somebody a challenge; `POST /api/escalations/:id/grant` relays a
+signature made elsewhere and is gated exactly like freeze/unfreeze (so a read-only console
+answers `403`).
+
 The policy engine's standalone server has the stricter rule -- no `REIN_ENGINE_API_KEY` means
 it binds loopback only, and asking for a public bind without one is a startup error. It is not
 deployed on Railway today; if it ever is, it needs the key first.

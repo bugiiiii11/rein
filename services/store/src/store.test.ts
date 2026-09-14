@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { newId } from '@reinconsole/core';
-import { LivenessMonitor, PolicyEngine, verifyDecisionChain } from '@reinconsole/policy-engine';
+import { generateKeyPairSync } from 'node:crypto';
+import {
+  ApprovalService,
+  LivenessMonitor,
+  PolicyEngine,
+  signApproval,
+  verifyDecisionChain,
+} from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 
 function intent(agentId: string, amount: string) {
@@ -195,6 +202,94 @@ describe('openReinStore', () => {
     const recovery = await monitorB.seen(agentId, 'heartbeat', bootedAt + 60_000);
     expect(recovery?.silentMs).toBe(7_260_000);
     expect(monitorB.state(agentId, bootedAt + 60_000)?.alertedAt).toBeUndefined();
+  });
+
+  it('persists a parked escalation and its approver key (A2)', async () => {
+    const dir = tempDir();
+    const agentId = newId('agt');
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+    const pem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
+    const a = await open(dir);
+    const approvalsA = new ApprovalService({ store: a.approvalStore, ttlMs: 3_600_000 });
+    const approver = await approvalsA.registerApprover({
+      orgId: newId('org'),
+      name: 'on-call',
+      publicKey: pem,
+    });
+    const engineA = new PolicyEngine({ ...a, approvals: approvalsA });
+    await engineA.addPolicy({
+      policyId: 'pol_probation',
+      rules: [],
+      breakers: [{ id: 'probation', window: '1h', txCount: 1 }],
+      default: 'allow',
+    });
+    await engineA.evaluateIntent(intent(agentId, '1.00')); // inside the envelope
+    const parked = await engineA.evaluateIntent(intent(agentId, '1.00'));
+    expect(parked.decision.outcome).toBe('escalate');
+    const decisionId = parked.approval!.decisionId;
+    const expiresAt = parked.approval!.expiresAt.getTime();
+    await a.close();
+
+    // A lost request would leave the money blocked (the breaker floor IS
+    // durable, so it resumes tripped) with no challenge left to answer and no
+    // record that a human was ever asked.
+    const b = await open(dir);
+    const approvalsB = new ApprovalService({ store: b.approvalStore, ttlMs: 3_600_000 });
+    const engineB = new PolicyEngine({ ...b, approvals: approvalsB });
+    const resumed = approvalsB.get(decisionId);
+    expect(resumed?.status).toBe('pending');
+    expect(resumed?.breakers).toEqual(['probation']);
+    // The deadline rides in the record: a restart does not grant a stale
+    // escalation a fresh lease.
+    expect(resumed?.expiresAt.getTime()).toBe(expiresAt);
+    expect(approvalsB.listApprovers().map((k) => k.id)).toEqual([approver.id]);
+
+    // And the signature made against the ORIGINAL challenge still releases it
+    // after the restart — which is the whole point of persisting the bytes.
+    const challenges = approvalsB.challengesFor(resumed!);
+    expect(challenges).toEqual(approvalsA.challengesFor(resumed!));
+    const signature = signApproval(privateKey, {
+      decisionId,
+      intentHash: resumed!.intentHash,
+      verdict: 'approve',
+    });
+    const resolved = await engineB.resolveEscalation({
+      decisionId,
+      intentHash: resumed!.intentHash,
+      verdict: 'approve',
+      approverKeyId: approver.id,
+      signature,
+    });
+    expect(resolved.decision.outcome).toBe('allow');
+    expect(resolved.request.status).toBe('approved');
+    // The original escalation is never rewritten; the release is a SECOND
+    // decision for the same intent.
+    expect(resolved.decision.id).not.toBe(decisionId);
+  });
+
+  it('prunes resolved escalations but never a pending one', async () => {
+    const dir = tempDir();
+    const a = await open(dir);
+    const approvals = new ApprovalService({ store: a.approvalStore, ttlMs: 3_600_000 });
+    const engine = new PolicyEngine({ ...a, approvals });
+    await engine.addPolicy({
+      policyId: 'pol_probation',
+      rules: [],
+      breakers: [{ id: 'probation', window: '1h', txCount: 1 }],
+      default: 'allow',
+    });
+    const agentId = newId('agt');
+    await engine.evaluateIntent(intent(agentId, '1.00'));
+    const parked = await engine.evaluateIntent(intent(agentId, '1.00'));
+    expect(parked.decision.outcome).toBe('escalate');
+
+    // Nothing has resolved, and an aggressive TTL must not touch it: a lapsed
+    // request is still owed its deny on the chain.
+    expect(await a.prune({ resolvedApprovalsOlderThanMs: 1 })).toMatchObject({
+      resolvedApprovals: 0,
+    });
+    expect(approvals.pending()).toHaveLength(1);
   });
 
   it('runs fully in-memory when no dir is given', async () => {

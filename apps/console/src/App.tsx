@@ -8,6 +8,7 @@ import { GatePanel } from './components/GatePanel';
 import { SignerPanel } from './components/SignerPanel';
 import { ReputationPanel } from './components/ReputationPanel';
 import { BreakersPanel } from './components/BreakersPanel';
+import { Escalations } from './components/Escalations';
 import { Reconciliation } from './components/Reconciliation';
 import { AuditChain } from './components/AuditChain';
 
@@ -37,6 +38,13 @@ export function App() {
           <ReputationPanel graph={d.graph} />
         </div>
         <div className="col">
+          {/* Above the feed, and in THIS column, for a measured reason: the
+              side columns are already at or under their content (adding it to
+              the left took the agent list from 117px to 20px), while the feed
+              is a long scroll list that gives up 80px for the cost of about
+              four rows. A payment waiting on a human also belongs beside the
+              live activity it interrupted, not below a scoreboard. */}
+          <Escalations escalations={d.escalations} />
           <Feed feed={d.feed} />
         </div>
         <div className="col right">

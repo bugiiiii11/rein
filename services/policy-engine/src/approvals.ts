@@ -96,6 +96,16 @@ export class InMemoryApprovalStore implements ApprovalStorePort {
   listRequests(): ApprovalRequest[] {
     return [...this.requests.values()];
   }
+
+  /**
+   * Forget a request entirely. Deliberately NOT on `ApprovalStorePort`: the
+   * service never drops a request (a resolved one is the record that it was
+   * answered, and a pending one is owed its deny), so this exists only for a
+   * durable store's own accretion pruning to keep its working set in step.
+   */
+  dropRequest(decisionId: string): void {
+    this.requests.delete(decisionId);
+  }
 }
 
 /**

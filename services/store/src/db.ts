@@ -40,6 +40,13 @@ import { PGlite } from '@electric-sql/pglite';
  *   durable for the same reason the breaker floors are — a restart that forgot
  *   the sighting would call every live agent dead, and one that forgot
  *   `alerted_at` would re-announce every alarm an operator has already read.
+ * - `approvers` / `approval_requests` are the A2 human-in-the-loop tier. A
+ *   parked escalation is a payment waiting on a signature, so losing it across
+ *   a restart is not a telemetry gap: the money is still blocked, the breaker
+ *   that stopped it is still tripped (those floors ARE durable), and the
+ *   challenge a human was asked to sign no longer exists to answer. The
+ *   request doc carries its own TTL, so a restart resumes the original clock
+ *   rather than granting an expired escalation a fresh lease.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -165,6 +172,16 @@ CREATE TABLE IF NOT EXISTS agent_liveness (
   last_seen_at BIGINT,
   last_source  TEXT,
   alerted_at   BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS approvers (
+  id  TEXT PRIMARY KEY,
+  doc JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS approval_requests (
+  decision_id TEXT PRIMARY KEY,
+  doc         JSONB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS settlements (
