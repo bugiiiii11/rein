@@ -1,5 +1,5 @@
 import { generateKeyPairSync, type KeyObject } from 'node:crypto';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Policy, PaymentIntent, newId, type ApprovalVerdict } from '@reinconsole/core';
 import { breakerTrips, evaluate, type SpendContext } from './evaluator.js';
 import { PolicyEngine } from './engine.js';
@@ -244,28 +244,51 @@ describe('breakers end-to-end through the engine', () => {
       { id: 'velocity', window: '1h', txCount: 2 },
     ]);
     const agentId = newId('agt');
-    await engine.evaluateIntent(pay(agentId));
-    await engine.evaluateIntent(pay(agentId));
 
-    const blocked = await engine.evaluateIntent(pay(agentId));
-    expect(blocked.decision.outcome).toBe('escalate');
-    const request = blocked.approval;
-    expect(request).toBeDefined();
+    // The floor is a TIMESTAMP, so the payments it is meant to put behind it
+    // have to be observably older than the approval that moves it. Left to the
+    // real clock this entire scenario runs inside ONE millisecond on a fast
+    // runner: the priming payments then share the reset instant, `at >= cutoff`
+    // counts them all over again, and the breaker never appears to reset. It
+    // failed exactly that way on macOS, the one platform fast enough to do it.
+    // Only Date is faked — timers and promises stay real, so the awaits below
+    // behave normally — and the clock starts from the real instant, because the
+    // engine was constructed against it and jumping to a fixed date would run
+    // its window arithmetic backwards.
+    const t0 = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(t0);
+      await engine.evaluateIntent(pay(agentId));
+      await engine.evaluateIntent(pay(agentId));
 
-    const resolved = await engine.resolveEscalation(
-      grantFor(request!, approver.id, privateKey, 'approve'),
-    );
-    expect(resolved.decision.outcome).toBe('allow');
+      const blocked = await engine.evaluateIntent(pay(agentId));
+      expect(blocked.decision.outcome).toBe('escalate');
+      const request = blocked.approval;
+      expect(request).toBeDefined();
 
-    const states = engine.breakerStates(agentId);
-    expect(states[0]?.tripped).toBe(false);
-    // The reset is a floor, not a wipe: the approved payment itself lands
-    // AFTER the floor and is counted in the new window.
-    expect(states[0]?.txCount).toBe(1);
-    expect(states[0]?.resetAt).toBeDefined();
+      // A human signing takes time. A single millisecond is all it takes for
+      // the ordering to be real rather than borrowed from machine speed.
+      vi.setSystemTime(t0 + 1);
+      const resolved = await engine.resolveEscalation(
+        grantFor(request!, approver.id, privateKey, 'approve'),
+      );
+      expect(resolved.decision.outcome).toBe('allow');
 
-    const next = await engine.evaluateIntent(pay(agentId));
-    expect(next.decision.outcome).toBe('allow');
+      const states = engine.breakerStates(agentId);
+      expect(states[0]?.tripped).toBe(false);
+      // The reset is a floor, not a wipe: the reset and the payment it waved
+      // through are stamped from a single `Date.now()` in resolveEscalation, so
+      // that payment sits exactly AT the floor and the inclusive cutoff counts
+      // it — one transaction opening the new window, never zero.
+      expect(states[0]?.txCount).toBe(1);
+      expect(states[0]?.resetAt).toBeDefined();
+
+      const next = await engine.evaluateIntent(pay(agentId));
+      expect(next.decision.outcome).toBe('allow');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a rejected approval does not reset the breaker', async () => {
