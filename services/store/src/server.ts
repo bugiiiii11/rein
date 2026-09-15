@@ -5,14 +5,27 @@
  * signing key, and the hash-chained decision log live in a PGlite data
  * directory and survive restarts.
  *
+ * Including that API's AUTHENTICATION. The in-memory engine's boot path
+ * refuses to expose an unauthenticated engine on a public interface; this one
+ * persists the very things that engine only held in RAM — the policies, the
+ * spend ledger, the signing key — so it inherits the same rule rather than
+ * quietly opting out of it. `REIN_ENGINE_API_KEY` is what turns it on.
+ *
  * Run:
  *   $env:REIN_DATA_DIR = ".rein-data"   # optional, this is the default
+ *   $env:REIN_ENGINE_API_KEY = "<secret>"
  *   pnpm --filter @reinconsole/store start
  */
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
+import {
+  PolicyEngine,
+  buildServer,
+  authFromEnv,
+  resolveHost,
+  type ApiKeyAuth,
+} from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 
 export interface PersistentEngine {
@@ -27,12 +40,18 @@ export async function startPersistentEngine(options: {
   dir: string;
   port: number;
   host?: string;
+  /**
+   * API-key auth for the HTTP surface. Omit for an embedded or loopback-only
+   * engine; the standalone boot below builds it from `REIN_ENGINE_API_KEY` and
+   * will not bind a public interface without it.
+   */
+  auth?: ApiKeyAuth;
 }): Promise<PersistentEngine> {
   const store = await openReinStore({ dir: options.dir });
   const engine = new PolicyEngine(store);
-  const app = buildServer(engine);
+  const app = buildServer(engine, { ...(options.auth ? { auth: options.auth } : {}) });
   try {
-    await app.listen({ port: options.port, host: options.host ?? '0.0.0.0' });
+    await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
   } catch (err) {
     // A failed listen (port in use) must not leak the open PGlite handle.
     await store.close().catch(() => undefined);
@@ -65,14 +84,22 @@ function isMainModule(): boolean {
 if (isMainModule()) {
   const dir = process.env.REIN_DATA_DIR ?? '.rein-data';
   const port = Number(process.env.PORT ?? 8787);
-  const host = process.env.HOST ?? '0.0.0.0';
-  startPersistentEngine({ dir, port, host })
+  const auth = await authFromEnv(process.env);
+  // Throws rather than binding a public interface without a key — the same
+  // refusal the in-memory engine makes, and for the same reason: anyone who
+  // can reach an open engine can rewrite policy and authorize spend.
+  const { host, warning } = resolveHost(process.env, auth !== undefined);
+  if (warning) console.warn(`[rein] ${warning}`);
+  startPersistentEngine({ dir, port, host, ...(auth ? { auth } : {}) })
     .then(({ store }) => {
       const resumed = store.fresh
         ? 'fresh store'
         : `resumed ${store.resumedDecisions} decisions, ` +
           `${store.agents.list().length} agents, ${store.policies.list().length} policies`;
-      console.log(`[rein] persistent policy-engine listening on http://${host}:${port}`);
+      console.log(
+        `[rein] persistent policy-engine listening on http://${host}:${port} ` +
+          `(auth: ${auth ? 'api-key' : 'none'})`,
+      );
       console.log(`[rein] data dir ${dir} — ${resumed}`);
     })
     .catch((err) => {

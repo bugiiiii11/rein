@@ -241,6 +241,24 @@ The policy engine's standalone server has the stricter rule -- no `REIN_ENGINE_A
 it binds loopback only, and asking for a public bind without one is a startup error. It is not
 deployed on Railway today; if it ever is, it needs the key first.
 
+## Standalone service bins (S48)
+
+Until S48 the *persistent* bins quietly opted out of that rule: `rein-engine` built its server
+with no auth and bound `0.0.0.0` by default, which made the durable engine -- the one holding
+the policies, the spend ledger and the signing key on disk -- the most reachable thing in the
+stack. All three bins now fail closed. None of them is deployed on Railway today; each needs
+its variable set BEFORE it ever is.
+
+| Bin | Rule | To expose it |
+|---|---|---|
+| `rein-engine` | Inherits `authFromEnv` + `resolveHost`: no key, loopback only; public bind without a key is a startup error | `REIN_ENGINE_API_KEY=<secret>` (or `REIN_ENGINE_AUTH=off` to accept an open engine deliberately) |
+| `rein-graph` | `@reinconsole/graph` ships no auth at all and `POST /v1/events` writes reputation evidence, so there is no key to trade against -- loopback only, public bind is a startup error | `REIN_GRAPH_PUBLIC=1` (the literal string `1`), which logs a warning naming what is open |
+| signer service | `buildSignerServer(signer, { adminToken })` -- the session-admin routes mint spending authority against custodied wallets, so omitting both `adminToken` and `adminAuth: 'off'` throws at construction | Pass an `adminToken` of at least 16 characters; callers send `Authorization: Bearer` or `X-Api-Key` |
+
+The data directory is created `0700` now (POSIX only): `engine_keys.private_pem` lives in it,
+and the default umask would have left it world-readable. Directories that already exist are
+not re-chmodded -- tighten those by hand if an older deploy created one.
+
 ## Verifying a deploy
 
 ```

@@ -12,7 +12,7 @@
 
 export { SessionSigner, type SessionSignerOptions, type SignRequest, type SignResult } from './signer.js';
 export { sessionPayerFor, createRemoteSessionPayer, type RemoteSessionPayerOptions } from './payer.js';
-export { buildSignerServer } from './server.js';
+export { buildSignerServer, type SignerServerOptions } from './server.js';
 export {
   InMemorySessionStore,
   hashToken,

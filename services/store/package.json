@@ -1,12 +1,42 @@
 {
   "name": "@reinconsole/store",
   "version": "0.1.0",
-  "private": true,
   "description": "Rein persistence — Postgres-backed (PGlite) engine stores. Agents, policies, spend history, the signing key, and the hash-chained decision log survive restarts.",
   "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "services/store"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "x402",
+    "persistence",
+    "pglite",
+    "postgres",
+    "audit-log",
+    "ai-agents",
+    "agent-payments"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": ["./dist/server.js", "./dist/graph-server.js"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist", "bin"],
   "bin": {
     "rein-engine": "./bin/rein-engine.mjs",
     "rein-graph": "./bin/rein-graph.mjs"
@@ -23,11 +53,11 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.1",
-    "@reinconsole/core": "workspace:*",
-    "@reinconsole/gate": "workspace:*",
-    "@reinconsole/graph": "workspace:*",
-    "@reinconsole/policy-engine": "workspace:*",
-    "@reinconsole/signer": "workspace:*",
+    "@reinconsole/core": "workspace:^",
+    "@reinconsole/gate": "workspace:^",
+    "@reinconsole/graph": "workspace:^",
+    "@reinconsole/policy-engine": "workspace:^",
+    "@reinconsole/signer": "workspace:^",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

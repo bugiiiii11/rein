@@ -221,9 +221,16 @@ ALTER TABLE spend_records
  * missing. That turns an ordinary deploy setting — a data dir nested more than
  * one level below a mounted volume — into a boot crash, and under a container
  * restart policy into a crash-loop whose cause is buried in the logs.
+ *
+ * Mode 0o700, because `engine_keys.private_pem` lives in here: the key that
+ * signs every decision, sitting in a directory the default umask would have
+ * made world-readable. (Only directories this call CREATES are affected —
+ * node's mkdir does not chmod an existing one, and silently tightening a
+ * directory an operator already placed is not this function's business. On
+ * Windows the mode is ignored, as it is for every POSIX mode there.)
  */
 export async function openDb(dir?: string): Promise<PGlite> {
-  if (dir) await mkdir(dir, { recursive: true });
+  if (dir) await mkdir(dir, { recursive: true, mode: 0o700 });
   const db = dir ? new PGlite(dir) : new PGlite();
   await db.waitReady;
   await db.exec(SCHEMA);

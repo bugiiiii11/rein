@@ -31,6 +31,17 @@ let engineUrl: string;
 let signerUrl: string;
 let walletAddress: string;
 
+/** The admin secret this suite's signer is built with (>= 16 chars). */
+const ADMIN_TOKEN = 'test-admin-secret-0123456789';
+
+/** Every session-admin call goes through here — the routes refuse otherwise. */
+function adminFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${signerUrl}${path}`, {
+    ...init,
+    headers: { ...(init.headers ?? {}), authorization: `Bearer ${ADMIN_TOKEN}` },
+  });
+}
+
 beforeAll(async () => {
   engine = new PolicyEngine();
   const agent = await engine.registerAgent({
@@ -53,7 +64,7 @@ beforeAll(async () => {
   walletAddress = signer.registerWallet(agentId, generatePrivateKey());
 
   engineApp = buildServer(engine);
-  signerApp = buildSignerServer(signer);
+  signerApp = buildSignerServer(signer, { adminToken: ADMIN_TOKEN });
   await engineApp.listen({ port: 0, host: '127.0.0.1' });
   await signerApp.listen({ port: 0, host: '127.0.0.1' });
   engineUrl = `http://127.0.0.1:${(engineApp.server.address() as AddressInfo).port}`;
@@ -69,7 +80,7 @@ async function createSession(body: Record<string, unknown> = {}): Promise<{
   session: Record<string, unknown>;
   token: string;
 }> {
-  const res = await fetch(`${signerUrl}/v1/sessions`, {
+  const res = await adminFetch('/v1/sessions', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ agentId, ...body }),
@@ -139,7 +150,7 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
     };
     expect(health.maxSessionLifetimeSeconds).toBe(MAX_SESSION_LIFETIME_SECONDS);
 
-    const res = await fetch(`${signerUrl}/v1/sessions`, {
+    const res = await adminFetch('/v1/sessions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agentId, ttlSeconds: MAX_SESSION_LIFETIME_SECONDS + 1 }),
@@ -170,7 +181,7 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
 
   it('surfaces signer refusals as SignerError through the remote payer', async () => {
     const { token, session } = await createSession();
-    const res = await fetch(`${signerUrl}/v1/sessions/${session['id']}/revoke`, { method: 'POST' });
+    const res = await adminFetch(`/v1/sessions/${session['id']}/revoke`, { method: 'POST' });
     expect(res.status).toBe(204);
 
     const guard = createGuard({
@@ -213,14 +224,14 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
   });
 
   it('lists sessions with cumulative spend, 404s unknown revokes', async () => {
-    const res = await fetch(`${signerUrl}/v1/sessions`);
+    const res = await adminFetch('/v1/sessions');
     expect(res.status).toBe(200);
     const sessions = (await res.json()) as Array<Record<string, unknown>>;
     expect(sessions.length).toBeGreaterThan(0);
     expect(sessions.every((s) => s['tokenHash'] === undefined)).toBe(true);
     expect(sessions.some((s) => s['spent'] === '0.01')).toBe(true);
 
-    const missing = await fetch(`${signerUrl}/v1/sessions/${newId('ses')}/revoke`, {
+    const missing = await adminFetch(`/v1/sessions/${newId('ses')}/revoke`, {
       method: 'POST',
     });
     expect(missing.status).toBe(404);
@@ -230,16 +241,16 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
     const { session } = await createSession();
     const id = session['id'] as string;
 
-    const active = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    const active = await adminFetch(`/v1/sessions/${id}`, { method: 'DELETE' });
     expect(active.status).toBe(409);
     expect(await active.json()).toMatchObject({ error: 'session_active' });
 
-    await fetch(`${signerUrl}/v1/sessions/${id}/revoke`, { method: 'POST' });
-    const deleted = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    await adminFetch(`/v1/sessions/${id}/revoke`, { method: 'POST' });
+    const deleted = await adminFetch(`/v1/sessions/${id}`, { method: 'DELETE' });
     expect(deleted.status).toBe(204);
     expect(signer.sessions().some((s) => s.id === id)).toBe(false);
 
-    const again = await fetch(`${signerUrl}/v1/sessions/${id}`, { method: 'DELETE' });
+    const again = await adminFetch(`/v1/sessions/${id}`, { method: 'DELETE' });
     expect(again.status).toBe(404);
   });
 
@@ -256,6 +267,99 @@ describe('signer over HTTP (remote payer + guard, end to end)', () => {
     expect(body.from).toBe(walletAddress);
     const payload = decodePaymentHeader(body.paymentHeader);
     expect(payload.payload.authorization.from).toBe(walletAddress);
+  });
+});
+
+/**
+ * D1. The admin surface mints spending authority against a wallet this
+ * process holds the key to, so "someone forgot the token" must not be a way
+ * to get an open one.
+ */
+describe('signer admin auth', () => {
+  it('refuses to build a server with neither a token nor an explicit opt-out', () => {
+    const s = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    expect(() => buildSignerServer(s)).toThrow(/adminToken/);
+    expect(() => buildSignerServer(s, {})).toThrow(/adminAuth/);
+  });
+
+  it('refuses a token short enough to guess, and refuses both-at-once', () => {
+    const s = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    expect(() => buildSignerServer(s, { adminToken: 'admin' })).toThrow(/at least 16/);
+    expect(() => buildSignerServer(s, { adminToken: ADMIN_TOKEN, adminAuth: 'off' })).toThrow(
+      /not both/,
+    );
+  });
+
+  it('builds open only when asked to in so many words', async () => {
+    const s = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    const open = buildSignerServer(s, { adminAuth: 'off' });
+    const health = await open.inject({ method: 'GET', url: '/health' });
+    expect(health.json()).toMatchObject({ adminAuth: 'off' });
+    const minted = await open.inject({
+      method: 'POST',
+      url: '/v1/sessions',
+      payload: { agentId },
+    });
+    expect(minted.statusCode).toBe(200);
+    await open.close();
+  });
+
+  it('401s every admin route without a credential, and challenges', async () => {
+    for (const [method, url] of [
+      ['POST', '/v1/sessions'],
+      ['GET', '/v1/sessions'],
+      ['POST', `/v1/sessions/${newId('ses')}/revoke`],
+      ['DELETE', `/v1/sessions/${newId('ses')}`],
+    ] as const) {
+      const res = await fetch(`${signerUrl}${url}`, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        ...(method === 'POST' && url === '/v1/sessions'
+          ? { body: JSON.stringify({ agentId }) }
+          : {}),
+      });
+      expect(res.status, `${method} ${url}`).toBe(401);
+      expect(res.headers.get('www-authenticate')).toMatch(/Bearer/);
+      expect(await res.json()).toMatchObject({ code: 'missing_credentials' });
+    }
+  });
+
+  it('401s a wrong token — including a prefix of the right one', async () => {
+    for (const bad of ['nope-nope-nope-nope', ADMIN_TOKEN.slice(0, -1), ADMIN_TOKEN + 'x']) {
+      const res = await fetch(`${signerUrl}/v1/sessions`, {
+        headers: { authorization: `Bearer ${bad}` },
+      });
+      expect(res.status).toBe(401);
+      expect(await res.json()).toMatchObject({ code: 'invalid_credentials' });
+    }
+  });
+
+  it('accepts X-Api-Key too, since some runtimes only send that', async () => {
+    const res = await fetch(`${signerUrl}/v1/sessions`, {
+      headers: { 'x-api-key': ADMIN_TOKEN },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('leaves /health and the signing hot path open — the session token is that credential', async () => {
+    const health = await fetch(`${signerUrl}/health`);
+    expect(health.status).toBe(200);
+    expect(await health.json()).toMatchObject({ adminAuth: 'bearer' });
+
+    // No admin header: refused for the session token, not for the credential.
+    const { intent, decision } = await evaluateFor(engine, agentId);
+    const res = await fetch(`${signerUrl}/v1/sign`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sessionToken: 'not-a-real-token',
+        requirement: makeRequirement(),
+        intent,
+        decision,
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'session_unknown' });
   });
 });
 

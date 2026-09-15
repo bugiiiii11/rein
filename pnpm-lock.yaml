@@ -381,13 +381,13 @@ importers:
   services/signer:
     dependencies:
       '@reinconsole/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       '@reinconsole/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/sdk
       '@reinconsole/x402-rails':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../x402-rails
       fastify:
         specifier: ^5.2.0
@@ -421,19 +421,19 @@ importers:
         specifier: ^0.5.1
         version: 0.5.1
       '@reinconsole/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       '@reinconsole/gate':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/gate
       '@reinconsole/graph':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../graph
       '@reinconsole/policy-engine':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../policy-engine
       '@reinconsole/signer':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../signer
       fastify:
         specifier: ^5.2.0
