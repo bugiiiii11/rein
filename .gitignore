@@ -43,3 +43,12 @@ pnpm-debug.log*
 
 # Claude Code local settings (personal, not for the repo)
 .claude/settings.local.json
+
+# Internal working docs -- deliberately untracked (removed from history before
+# the repo went public). They hold session state, market research, and
+# third-party feedback that is not ours to publish.
+/handoff.md
+/handoff-archive.md
+/emergency-snapshot.md
+/RESEARCH-2026-08.md
+/ROADMAP.md

@@ -485,6 +485,14 @@ apps/
 - **Chain:** viem on Base Sepolia — EIP-712/EIP-3009 signing, `getLogs` indexing, the hosted x402.org facilitator for settlement.
 - **Dev mode:** mock x402 flows + in-memory stores behind ports, with `@reinconsole/store` (embedded PGlite Postgres) when you want state to survive restarts. No accounts or Docker required to run locally; hosted Postgres + Timescale + Redis + NATS wire in later behind the same ports.
 
+## Security
+
+Found something that could move money, mint authority, or bypass a policy decision? Report
+it privately through [GitHub's advisory flow](https://github.com/bugiiiii11/rein/security/advisories)
+rather than a public issue. [`SECURITY.md`](SECURITY.md) has the scope, the response times,
+and the list of behavior that looks alarming but is deliberate — SDK mode is advisory and
+bypassable by design, and knowing that saves everyone a round trip.
+
 ## License
 
 MIT
