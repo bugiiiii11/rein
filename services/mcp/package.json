@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Rein Guard MCP server — give any MCP-capable agent harness a spend-governed fetch: every x402 paywall is policy-checked, receipted and observable before a cent moves.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

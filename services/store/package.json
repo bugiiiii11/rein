@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/store",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rein persistence — Postgres-backed (PGlite) engine stores. Agents, policies, spend history, the signing key, and the hash-chained decision log survive restarts.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

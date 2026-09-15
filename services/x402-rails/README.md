@@ -2,7 +2,7 @@
 
 The real payment rails for **[Rein](https://github.com/bugiiiii11/rein)** — [x402](https://www.x402.org) on Base Sepolia. An EIP-3009 payer that signs real USDC payments (gasless for the agent — the facilitator submits the tx), an HTTP client for the hosted x402.org facilitator, a strict x402-v1 in-process vendor, and an on-chain indexer that reconciles USDC transfers back to the exact intents the policy engine allowed.
 
-> **Status: v0.1 — early open-source infrastructure, live on testnet.** Real USDC settled on Base Sepolia through the hosted facilitator — no API key needed. APIs may change before 1.0.
+> **Status: v0.2 — early open-source infrastructure, live on testnet.** Real USDC settled on Base Sepolia through the hosted facilitator — no API key needed. APIs may change before 1.0.
 
 ## Install
 

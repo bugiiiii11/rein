@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.1 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@reinconsole/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@reinconsole/signer`. The supply side ships as **`@reinconsole/gate`**, vendor monetization middleware (Phase 2). The stack is **durable**: `@reinconsole/store` persists the engine (agents, policies, spend, the signed decision chain), the reputation evidence, gate receipts + replay slots, and signer sessions across restarts. And **`@reinconsole/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door. Identity is on-chain: **`@reinconsole/erc8004`** keys reputation by ratified ERC-8004 registrations — **verified live against the real Base Sepolia Identity Registry**.
+> Status: **v0.2 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@reinconsole/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@reinconsole/signer`. The supply side ships as **`@reinconsole/gate`**, vendor monetization middleware (Phase 2). The stack is **durable**: `@reinconsole/store` persists the engine (agents, policies, spend, the signed decision chain), the reputation evidence, gate receipts + replay slots, and signer sessions across restarts. And **`@reinconsole/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door. Identity is on-chain: **`@reinconsole/erc8004`** keys reputation by ratified ERC-8004 registrations — **verified live against the real Base Sepolia Identity Registry**.
 
 ## Product phases
 
@@ -14,7 +14,7 @@ Rein is developer tooling and middleware for the agentic payments economy (the [
 | 2     | **Gate**  | x402 monetization middleware for API vendors (supply side)          |
 | 3     | **Graph** | Reputation scoring over agents and vendors (the data moat)          |
 
-## What's in v0.1
+## What's in v0.2
 
 A complete demand-side Guard loop, runnable two ways: fully offline on mock rails (no accounts, no Docker, no chain), or live on Base Sepolia over the real x402 stack:
 
@@ -35,7 +35,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The nine library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.1.1`, MIT, Node ≥22):
+The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.2.0`, MIT, Node ≥22):
 
 ```bash
 npx -y @reinconsole/mcp          # the guard as an MCP server — a governed fetch for any MCP harness
@@ -55,8 +55,10 @@ npm install @reinconsole/graph   # explainable reputation scoring
 | [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails) | Real rails: EIP-3009 payer + x402.org facilitator client + indexer |
 | [`@reinconsole/mock-rails`](https://www.npmjs.com/package/@reinconsole/mock-rails) | Offline x402 world: facilitator + ledger + indexer |
 | [`@reinconsole/erc8004`](https://www.npmjs.com/package/@reinconsole/erc8004) | On-chain identity: ERC-8004 registry reads/writes → link facts |
+| [`@reinconsole/signer`](https://www.npmjs.com/package/@reinconsole/signer) | Session-key custody: voucher-gated EIP-3009 signing, caps, kill switch |
+| [`@reinconsole/store`](https://www.npmjs.com/package/@reinconsole/store) | Persistence: PGlite-backed stores; engine, graph, gate and signer state survive restarts |
 
-The custody tier (`@reinconsole/signer`) and persistence layer (`@reinconsole/store`) have passed their security review and are **in the publish set**, shipping with the 0.2.0 release. Until then, build them from source (below).
+The custody tier (`@reinconsole/signer`) and persistence layer (`@reinconsole/store`) passed their security review and ship on npm as of `0.2.0`.
 
 ## Quickstart
 
@@ -468,8 +470,8 @@ services/
   x402-rails/    @reinconsole/x402-rails     — real rails: EIP-3009 payer, x402.org facilitator client, on-chain indexer  [published]
   graph/         @reinconsole/graph          — reputation: evidence off every bus, explainable scores, policy+gate feed  [published]
   erc8004/       @reinconsole/erc8004        — on-chain identity: ERC-8004 registry reads/writes → link facts            [published]
-  signer/        @reinconsole/signer         — session-key custody: voucher-gated EIP-3009 signing, caps, kill switch    [0.2.0]
-  store/         @reinconsole/store          — persistence: PGlite-backed engine + graph stores; state survives restarts [0.2.0]
+  signer/        @reinconsole/signer         — session-key custody: voucher-gated EIP-3009 signing, caps, kill switch    [published]
+  store/         @reinconsole/store          — persistence: PGlite-backed engine + graph stores; state survives restarts [published]
 apps/
   demo/          @reinconsole/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate + graph
   console/       @reinconsole/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts

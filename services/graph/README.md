@@ -2,7 +2,7 @@
 
 Phase 3 of **[Rein](https://github.com/bugiiiii11/rein)** — the reputation graph. Guard receipts say what agents tried to spend; gate receipts say what vendors actually earned. The graph listens to both, scores every vendor and payer it has evidence on, and feeds the scores back into enforcement on both sides of the wire.
 
-> **Status: v0.1 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the live scoreboard: [Rein console](https://app.reinconsole.com).
+> **Status: v0.2 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the live scoreboard: [Rein console](https://app.reinconsole.com).
 
 ## Install
 
