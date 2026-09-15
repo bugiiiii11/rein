@@ -134,6 +134,32 @@ describe('a gap has an age, not a boolean', () => {
     expect(aged.gaps[0]?.ageMs).toBeGreaterThanOrEqual(60_000);
   });
 
+  it('counts the boundary itself as unsettled, so graceMs: 0 grants no grace', async () => {
+    const engine = await allowingEngine();
+    await engine.evaluateIntent(baseIntent(newId('agt')));
+
+    // Read the recorded instant back rather than guessing it from Date.now():
+    // the boundary has to be hit exactly or this pins nothing.
+    const seen = engine.reconcile({ graceMs: 0, now: Date.now() + 1 }).gaps[0];
+    const allowedAt = seen?.allowedAt ?? 0;
+    expect(allowedAt).toBeGreaterThan(0);
+
+    // Grace that has fully elapsed is spent, so the instant it runs out the
+    // allowance is already a gap.
+    const onTheDot = engine.reconcile({ graceMs: 60_000, now: allowedAt + 60_000 });
+    expect(onTheDot.unsettled).toBe(1);
+    expect(onTheDot.gaps[0]?.state).toBe('unsettled');
+    expect(onTheDot.inFlight).toBe(0);
+
+    // The CI race this came from: reconciling in the same millisecond the
+    // allowance was written. Under a strict `>` this read as in-flight, which
+    // made every `graceMs: 0` assertion in this file a coin flip on a fast
+    // runner -- three jobs, three different failing subsets, same commit.
+    const sameInstant = engine.reconcile({ graceMs: 0, now: allowedAt });
+    expect(sameInstant.unsettled).toBe(1);
+    expect(sameInstant.gaps[0]?.ageMs).toBe(0);
+  });
+
   it('covers only the window, so an ancient allowance stops being news', async () => {
     const engine = await allowingEngine();
     await engine.evaluateIntent(baseIntent(newId('agt')));

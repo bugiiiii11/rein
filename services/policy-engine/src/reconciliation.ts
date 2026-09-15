@@ -44,7 +44,9 @@ export interface AllowanceGap {
   ageMs: number;
   /**
    * `in-flight` while younger than the grace period — expected, not an alarm.
-   * `unsettled` past it: the engine said yes and no one has seen the money.
+   * `unsettled` once it is reached: the engine said yes and no one has seen
+   * the money. The boundary itself counts as unsettled, so `graceMs: 0` means
+   * exactly that — no grace at all.
    */
   state: 'in-flight' | 'unsettled';
 }
@@ -145,7 +147,10 @@ export function reconcile(
       ...(rec.taskId !== undefined ? { taskId: rec.taskId } : {}),
       allowedAt: rec.at,
       ageMs,
-      state: ageMs > graceMs ? 'unsettled' : 'in-flight',
+      // Inclusive: grace that has fully elapsed is spent. Strict `>` would
+      // hand every allowance one millisecond of grace it was never granted,
+      // so `graceMs: 0` -- "no grace, count everything" -- could not be said.
+      state: ageMs >= graceMs ? 'unsettled' : 'in-flight',
     };
     (gap.state === 'unsettled' ? unsettled : inFlight).push(gap);
   }
