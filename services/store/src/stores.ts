@@ -268,10 +268,17 @@ export class PgSettlementStore implements SettlementStorePort {
   }
 
   async settle(rec: SettlementRecord): Promise<void> {
+    // The in-memory rule, applied on disk: the earliest confirmation wins
+    // whichever report arrived first. `DO NOTHING` here was first-ARRIVAL-wins
+    // while `mem` below was earliest-wins, so the live engine and the resumed
+    // one could give different answers for the same payment (S51).
     await this.db.query(
       `INSERT INTO settlements (intent_id, at, tx_hash, chain, amount, source)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (intent_id) DO NOTHING`,
+       ON CONFLICT (intent_id) DO UPDATE
+         SET at = excluded.at, tx_hash = excluded.tx_hash, chain = excluded.chain,
+             amount = excluded.amount, source = excluded.source
+         WHERE excluded.at < settlements.at`,
       [rec.intentId, rec.at, rec.txHash ?? null, rec.chain ?? null, rec.amount ?? null, rec.source ?? null],
     );
     this.mem.settle(rec);

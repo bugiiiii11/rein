@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ApiKeyAuth, authFromEnv } from '@reinconsole/policy-engine';
+import { ApiKeyAuth, approvalsFromEnv, authFromEnv, livenessFromEnv } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
 import { resolveGraphHost, startPersistentGraphServer, type PersistentGraph } from './graph-server.js';
 import { startPersistentEngine, type PersistentEngine } from './server.js';
@@ -53,6 +53,29 @@ describe('the persistent engine service', () => {
     const engine = await startPersistentEngine({ dir: tempDir(), port: 0 });
     running.push(engine);
     expect((engine.app.server.address() as AddressInfo).address).toBe('127.0.0.1');
+  });
+
+  it('serves the approval tier when composed with it, exactly as the standalone boot does', async () => {
+    const store = await openReinStore({ dir: tempDir() });
+    const engine = await startPersistentEngine({
+      store,
+      port: 0,
+      approvals: approvalsFromEnv({}, { store: store.approvalStore }),
+      liveness: livenessFromEnv({}, { store: store.livenessStore }),
+    });
+    running.push(engine);
+    const port = (engine.app.server.address() as AddressInfo).port;
+    // Until S53 the durable bin composed no tier at all, so this route was the
+    // 404 the MCP server reports as NOT SUPPORTED -- on exactly the deployment
+    // whose parked payments were meant to survive a restart.
+    expect((await fetch(`http://127.0.0.1:${port}/v1/approvals`)).status).toBe(200);
+  });
+
+  it('has no approval tier unless one is composed', async () => {
+    const engine = await startPersistentEngine({ dir: tempDir(), port: 0 });
+    running.push(engine);
+    const port = (engine.app.server.address() as AddressInfo).port;
+    expect((await fetch(`http://127.0.0.1:${port}/v1/approvals`)).status).toBe(404);
   });
 });
 

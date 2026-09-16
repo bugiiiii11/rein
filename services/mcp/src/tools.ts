@@ -113,7 +113,10 @@ function fetchTool(ctx: ReinToolContext): ReinTool {
       if (typeof args['body'] === 'string') init.body = args['body'];
 
       const taskId = typeof args['taskId'] === 'string' ? args['taskId'] : config.taskId;
-      const before = guard.receipts().length;
+      // Identity, not index: the receipt log is capped and evicts from the
+      // front, so a position remembered before the call can point at the
+      // wrong receipt after it. One guarded call records at most one.
+      const lastBefore = guard.receipts().at(-1);
       const wrapped = guard.wrap();
       const call = (): Promise<Response> => wrapped(url, init);
 
@@ -127,7 +130,8 @@ function fetchTool(ctx: ReinToolContext): ReinTool {
         );
       }
 
-      const receipt = guard.receipts().slice(before).at(-1);
+      const lastAfter = guard.receipts().at(-1);
+      const receipt = lastAfter !== lastBefore ? lastAfter : undefined;
       const { body, truncated } = await readBody(res, config.maxBodyBytes);
 
       // Advisory mode: policy ALLOWED the payment but no payer is configured,

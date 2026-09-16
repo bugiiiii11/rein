@@ -52,7 +52,8 @@ const signature = signApproval(privateKey, { decisionId, intentHash, verdict: 'a
 ```
 
 Environment for the standalone server: `REIN_ESCALATION_TTL_MS`,
-`REIN_TELEGRAM_BOT_TOKEN`, `REIN_TELEGRAM_CHAT_ID`.
+`REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` (both or neither -- one without the
+other is a startup error). The durable `rein-engine` bin reads the same three.
 
 ## What it does
 

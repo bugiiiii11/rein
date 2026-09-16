@@ -180,7 +180,7 @@ describe('reporting posture', () => {
     expect(engine.reconcile({ graceMs: 0 })).toMatchObject({ unsettled: 1, settlementsSeen: 1 });
   });
 
-  it('is idempotent per intent, first report winning', async () => {
+  it('is idempotent per intent, the earliest confirmation winning', async () => {
     const engine = await allowingEngine();
     const { intent } = await engine.evaluateIntent(baseIntent(newId('agt')));
     const first = new Date(Date.now() - 10_000);
@@ -193,6 +193,21 @@ describe('reporting posture', () => {
     expect(engine.settlements.count()).toBe(1);
     expect(engine.settlements.get(intent.id)?.source).toBe('indexer');
     expect(engine.settlements.get(intent.id)?.at).toBe(first.getTime());
+  });
+
+  it('keeps the earliest confirmation even when it is reported SECOND', async () => {
+    // Arrival order is not the rule. The guard reports its local clock as it
+    // pays; an indexer reports the chain's timestamp later -- and that one can
+    // be the earlier of the two. The test above passes under either rule; this
+    // one only passes under earliest-wins.
+    const engine = await allowingEngine();
+    const { intent } = await engine.evaluateIntent(baseIntent(newId('agt')));
+    const chainTime = new Date(Date.now() - 10_000);
+    await engine.recordSettlement({ intentId: intent.id, source: 'guard', confirmedAt: new Date() });
+    await engine.recordSettlement({ intentId: intent.id, source: 'indexer', confirmedAt: chainTime });
+    expect(engine.settlements.count()).toBe(1);
+    expect(engine.settlements.get(intent.id)?.source).toBe('indexer');
+    expect(engine.settlements.get(intent.id)?.at).toBe(chainTime.getTime());
   });
 
   it('does not let a settlement report change any decision', async () => {

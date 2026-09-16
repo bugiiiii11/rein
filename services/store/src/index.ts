@@ -2,7 +2,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { Decision } from '@reinconsole/core';
 import { DecisionLog } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
-import { loadOrCreateKeyPair } from './keys.js';
+import { loadOrCreateKeyPair, type KeySource, type SigningKeyInput } from './keys.js';
 import {
   PgAgentRegistry,
   PgApiKeyStore,
@@ -29,11 +29,20 @@ export { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 export { PgSessionStore } from './signer-stores.js';
 export { PgGateStore } from './gate-stores.js';
 export { openDb } from './db.js';
-export { loadOrCreateKeyPair } from './keys.js';
+export { loadOrCreateKeyPair, parseSigningKey } from './keys.js';
+export type { KeySource, SigningKeyInput } from './keys.js';
 
 export interface ReinStoreOptions {
   /** PGlite data directory. Omit for an ephemeral in-memory database (tests). */
   dir?: string;
+  /**
+   * The engine's signing key, held OUTSIDE the data directory (D1(c)): a
+   * PKCS#8 ed25519 PEM from a secret manager, or a parsed pair. Omit and the
+   * store generates one on first boot and keeps it, plaintext, beside the
+   * decisions it signs. See `loadOrCreateKeyPair` for what happens when the
+   * two postures meet on one data dir.
+   */
+  signingKey?: SigningKeyInput;
 }
 
 /**
@@ -85,6 +94,8 @@ export interface ReinStore {
   gate: PgGateStore;
   /** The engine's public verification key — stable across restarts. */
   publicKeyPem: string;
+  /** `'stored'` (plaintext in `engine_keys`) or `'external'` (`signingKey` supplied). */
+  keySource: KeySource;
   /** True when this open CREATED the store (nothing resumed) — callers may seed. */
   fresh: boolean;
   /** Number of decisions resumed from disk (0 on first boot). */
@@ -130,7 +141,7 @@ const PRUNE_RESOLVED_APPROVALS_MS = 7 * 86_400_000;
 export async function openReinStore(options: ReinStoreOptions = {}): Promise<ReinStore> {
   const db = await openDb(options.dir);
   try {
-    const { keyPair, created } = await loadOrCreateKeyPair(db);
+    const { keyPair, created, source } = await loadOrCreateKeyPair(db, options.signingKey);
     const agents = await PgAgentRegistry.open(db);
     const policies = await PgPolicyStore.open(db);
     const spend = await PgSpendStore.open(db);
@@ -195,6 +206,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       sessions,
       gate,
       publicKeyPem: log.publicKeyPem,
+      keySource: source,
       fresh: created,
       resumedDecisions: resume.length,
       resumedSubjects: ledger.size,

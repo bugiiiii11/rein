@@ -59,9 +59,14 @@ is welcome but they are known, documented, and not treated as vulnerabilities:
   the `report` scope once `REIN_GRAPH_API_KEY` is set, and a graph with no key set binds
   loopback and refuses a public bind. Running one open on a public interface still works —
   `REIN_GRAPH_PUBLIC=1` — but that is then a deployment choice, not a bug.
-- **The engine's signing key is stored as a plaintext PEM in the data directory** (created
-  `0700`). This is the documented single-node posture; production deployments belong behind
-  a KMS or HSM.
+- **The engine's signing key is stored as a plaintext PEM in the data directory by default**
+  (created `0700`) -- the single-node posture. A production deployment should hold it in a
+  secret manager instead: set `REIN_ENGINE_SIGNING_KEY` (a PKCS#8 ed25519 PEM,
+  `openssl genpkey -algorithm ed25519`) and the data directory keeps only the public half. A
+  plaintext copy left by an earlier boot is erased on the first boot with the matching key, a
+  different key is refused rather than allowed to fork the chain, and once the key is external
+  a boot without it fails instead of minting a new one. Signing through a remote KMS/HSM,
+  where the private key never enters the process at all, is not wired yet.
 - **API keys are stored as sha256 digests, never as secrets.** A secret is returned exactly
   once, at issuance, and a stolen database yields nothing that authenticates. Back the key
   store with the durable one (`api_keys`, reached as `reinStore.apiKeys`) in any deployment

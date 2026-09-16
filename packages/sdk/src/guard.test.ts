@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { newId } from '@reinconsole/core';
 import { buildServer } from '@reinconsole/policy-engine';
@@ -210,6 +210,60 @@ describe('Guard (against a live policy engine)', () => {
     expect(second.status).toBe(200);
     expect(guard.receipts()).toHaveLength(1);
     expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
+  });
+
+  it('keeps only the most recent maxReceipts, while onReceipt still sees every one', async () => {
+    const agentId = await newAgent();
+    const vendor = mockVendor('10000');
+    const seen: string[] = [];
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      onBlocked: 'respond',
+      maxReceipts: 2,
+      onReceipt: (r) => seen.push(r.id),
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_shut',
+      appliesTo: { agents: [agentId] },
+      default: 'deny',
+    });
+    const guarded = guard.wrap();
+    for (let i = 0; i < 3; i++) await guarded('https://api.vendor.test/v1/answer');
+    expect(seen).toHaveLength(3);
+    // The log is a session convenience, so it holds the newest two; the
+    // stream is the record, so it saw all three.
+    expect(guard.receipts().map((r) => r.id)).toEqual(seen.slice(-2));
+  });
+
+  it('forgets an advisory receipt whose retry never came (pendingTtlMs)', async () => {
+    const agentId = await newAgent();
+    const vendor = mockVendor('10000');
+    const guard = createGuard({ engineUrl, agentId, fetch: vendor.fetchImpl, pendingTtlMs: 1_000 });
+    await guard.client.addPolicy({
+      policyId: 'pol_advisory_ttl',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+    const guarded = guard.wrap();
+    const url = 'https://api.vendor.test/v1/answer';
+    expect((await guarded(url)).status).toBe(402);
+
+    // The retry window closes. Date only, from the real instant (S50).
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+    try {
+      vi.setSystemTime(Date.now() + 1_001);
+      const late = await guarded(url, { headers: { 'X-PAYMENT': 'signed-by-x402-fetch' } });
+      expect(late.status).toBe(200);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The vendor was paid, but the guard no longer holds the receipt that
+    // retry would have settled: it stays an allowance, and reconciliation --
+    // not this log -- is what finds it.
+    expect(guard.receipts()).toHaveLength(1);
+    expect(guard.receipts()[0]?.settlement).toBeUndefined();
   });
 
   it('reports its settlements, so the engine can close the allowance (B1)', async () => {

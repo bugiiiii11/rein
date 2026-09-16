@@ -274,9 +274,28 @@ write too. Neither failure announces itself in a log.
 route, so every key it holds comes from `REIN_GRAPH_API_KEY` and is rebuilt
 identically on each boot. There is no runtime state to lose.
 
+`rein-engine` also runs the approval tier and the dead-man monitor on the store's durable
+halves, from the same variables the in-memory engine reads: `REIN_ESCALATION_TTL_MS` (default
+10 minutes), and `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` to page a human -- both
+or neither; one without the other is a startup error, because a token that quietly pages
+nobody is worse than no token. (Until S53 the durable bin composed neither, so a parked
+payment had nowhere to park and `/v1/approvals` answered 404 on exactly the deployment meant
+to survive a restart.) To prove the Telegram leg against the real Bot API rather than a mock,
+run the live-gated test with your token and chat id exported:
+`RUN_LIVE=1 pnpm --filter @reinconsole/policy-engine test -- channels.live`.
+
 The data directory is created `0700` now (POSIX only): `engine_keys.private_pem` lives in it,
 and the default umask would have left it world-readable. Directories that already exist are
 not re-chmodded -- tighten those by hand if an older deploy created one.
+
+Better: keep the key out of the data directory altogether. Generate one with
+`openssl genpkey -algorithm ed25519` and set it as `REIN_ENGINE_SIGNING_KEY` (the PEM; a
+flattened `\n` form is accepted). `rein-engine` then signs with it and the volume holds only
+the public half. On a data directory that already has a plaintext key, supply THAT key -- the
+stored copy is erased on the first boot -- because a different one is refused: the resumed
+chain was signed by the old key, and it cannot be continued under a new one. From then on the
+variable is required; a boot without it fails rather than starting a second chain. The boot
+log says which posture is live: `signing key stored` or `signing key external`.
 
 ## Verifying a deploy
 

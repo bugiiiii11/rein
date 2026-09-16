@@ -236,7 +236,8 @@ ALTER TABLE spend_records
  *
  * Mode 0o700, because `engine_keys.private_pem` lives in here: the key that
  * signs every decision, sitting in a directory the default umask would have
- * made world-readable. (Only directories this call CREATES are affected —
+ * made world-readable. (With an external `signingKey` the row holds only the
+ * public half, and the mode is merely prudent.) (Only directories this call CREATES are affected —
  * node's mkdir does not chmod an existing one, and silently tightening a
  * directory an operator already placed is not this function's business. On
  * Windows the mode is ignored, as it is for every POSIX mode there.)

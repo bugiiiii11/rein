@@ -12,7 +12,7 @@ import {
   verifyDecisionChain,
 } from '@reinconsole/policy-engine';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
-import { openReinStore, type ReinStore } from './index.js';
+import { loadOrCreateKeyPair, openDb, openReinStore, type ReinStore } from './index.js';
 
 function intent(agentId: string, amount: string) {
   return {
@@ -35,8 +35,8 @@ function tempDir(): string {
 }
 
 /** Track every store so afterEach can close stragglers (double-close is fine). */
-async function open(dir?: string): Promise<ReinStore> {
-  const store = await openReinStore(dir ? { dir } : {});
+async function open(dir?: string, signingKey?: string): Promise<ReinStore> {
+  const store = await openReinStore({ ...(dir ? { dir } : {}), ...(signingKey ? { signingKey } : {}) });
   opened.push(store);
   return store;
 }
@@ -151,6 +151,25 @@ describe('openReinStore', () => {
     expect(report).toMatchObject({ allowed: 2, settled: 1, unsettled: 1, settlementsSeen: 1 });
     expect(report.gaps[0]?.intentId).toBe(lost.intent.id);
     expect(b.settlements.get(paid.intent.id)?.txHash).toBe('0xdeadbeef');
+  });
+
+  it('the earliest confirmation wins on disk too, so a restart cannot flip the answer (S51)', async () => {
+    const dir = tempDir();
+    const intentId = newId('int');
+    const a = await open(dir);
+    // The later confirmation arrives FIRST. Until S53 the row on disk was
+    // first-arrival-wins while the engine in memory was earliest-wins: the
+    // live engine answered 100 and the resumed one answered 200.
+    await a.settlements.settle({ intentId, at: 200, source: 'guard', txHash: '0xguard' });
+    await a.settlements.settle({ intentId, at: 100, source: 'indexer', txHash: '0xchain' });
+    await a.settlements.settle({ intentId, at: 150, source: 'facilitator' });
+    const live = a.settlements.get(intentId);
+    expect(live).toMatchObject({ at: 100, source: 'indexer', txHash: '0xchain' });
+    await a.close();
+
+    const b = await open(dir);
+    expect(b.settlements.count()).toBe(1);
+    expect(b.settlements.get(intentId)).toEqual(live);
   });
 
   it('reads a pre-B1 spend row as unattributed, never as a gap', async () => {
@@ -391,6 +410,71 @@ describe('openReinStore', () => {
     // the persisted key: restart left no seam.
     expect(verifyDecisionChain(all, b.publicKeyPem)).toBe(true);
     expect(all.map((d) => d.outcome)).toEqual(['allow', 'deny', 'allow']);
+  });
+
+  describe('an externally held signing key (D1(c))', () => {
+    const pkcs8 = () =>
+      generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+
+    it('signs the chain without the private half ever touching the data dir', async () => {
+      const dir = tempDir();
+      const pem = pkcs8();
+      const a = await open(dir, pem);
+      expect(a.keySource).toBe('external');
+      expect(a.fresh).toBe(true);
+      const engineA = new PolicyEngine(a);
+      await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+      await engineA.evaluateIntent(intent(newId('agt'), '1.00'));
+      const keyPem = a.publicKeyPem;
+      await a.close();
+
+      // The same key resumes the chain across the seam exactly as a stored one
+      // does -- here in the flattened form a secret manager hands back.
+      const b = await open(dir, pem.replace(/\n/g, '\\n'));
+      expect(b.keySource).toBe('external');
+      expect(b.fresh).toBe(false);
+      expect(b.publicKeyPem).toBe(keyPem);
+      const engineB = new PolicyEngine(b);
+      await engineB.evaluateIntent(intent(newId('agt'), '2.00'));
+      expect(verifyDecisionChain(engineB.decisions(), b.publicKeyPem)).toBe(true);
+      await b.close();
+
+      // Nothing private was written: the data dir alone cannot continue the
+      // chain, and says so instead of quietly minting a new key under it.
+      await expect(open(dir)).rejects.toThrow(/held externally/);
+    });
+
+    it('refuses a different key rather than fork the chain', async () => {
+      const dir = tempDir();
+      const a = await open(dir, pkcs8());
+      await a.close();
+      await expect(open(dir, pkcs8())).rejects.toThrow(/does not match/);
+    });
+
+    it('erases the stored plaintext copy once the same key is supplied from outside', async () => {
+      const dir = tempDir();
+      const a = await open(dir);
+      expect(a.keySource).toBe('stored');
+      const engineA = new PolicyEngine(a);
+      await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+      await engineA.evaluateIntent(intent(newId('agt'), '1.00'));
+      await a.close();
+
+      // Read the key the way an operator migrating it would: from the row.
+      const db = await openDb(dir);
+      const { keyPair } = await loadOrCreateKeyPair(db);
+      const pem = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      await db.close();
+
+      const b = await open(dir, pem);
+      expect(b.keySource).toBe('external');
+      expect(b.resumedDecisions).toBe(1);
+      expect(verifyDecisionChain(new PolicyEngine(b).decisions(), b.publicKeyPem)).toBe(true);
+      await b.close();
+
+      // The plaintext copy is gone: the data dir alone can no longer sign.
+      await expect(open(dir)).rejects.toThrow(/held externally/);
+    });
   });
 
   it('rolling budgets remember spend from before the restart', async () => {

@@ -83,10 +83,15 @@ export interface SettlementRecord {
  */
 export interface SettlementStorePort {
   /**
-   * Record a settlement. Idempotent by intent id, FIRST report wins: a
-   * settlement can be observed twice (the paying guard and an indexer both
-   * see it), and the earliest confirmation is the one that happened. A later
-   * report must not be able to move a settled payment's clock forward.
+   * Record a settlement. Idempotent by intent id, and the EARLIEST
+   * confirmation wins regardless of which report arrived first: a settlement
+   * can be observed twice (the paying guard and an indexer both see it), and
+   * the earliest confirmation is the one that happened. Arrival order is the
+   * property least worth depending on -- the guard reports its local clock as
+   * it pays, an indexer reports the chain's timestamp later -- so a report
+   * that arrives second with an earlier `at` REPLACES the record, whole, and
+   * a report with a later or equal `at` changes nothing. Every store must
+   * give the same answer live and after a restart.
    */
   settle(rec: SettlementRecord): MaybePromise<void>;
   get(intentId: string): SettlementRecord | undefined;
@@ -190,8 +195,9 @@ export class InMemorySettlementStore implements SettlementStorePort {
 
   settle(rec: SettlementRecord): void {
     const seen = this.byIntent.get(rec.intentId);
-    // First report wins (see the port). A second observer of the same payment
-    // adds nothing; it must not overwrite the confirmation time either.
+    // Earliest confirmation wins (see the port). A second observer with a
+    // later or equal time adds nothing; an earlier one is the confirmation
+    // that actually happened, and replaces the record whole.
     if (seen && seen.at <= rec.at) return;
     this.byIntent.set(rec.intentId, rec);
   }

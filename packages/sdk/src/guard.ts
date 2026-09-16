@@ -67,6 +67,22 @@ export interface GuardOptions {
   /** Called once per receipt, as it is recorded. */
   onReceipt?: (receipt: Receipt) => void;
   /**
+   * How many receipts `receipts()` keeps, oldest evicted first. Default 1000.
+   * The log is a session convenience; `onReceipt` sees every receipt, capped
+   * or not, and is the path for anything that must not lose one. Without a
+   * cap a long-lived guard -- an MCP server -- grows without bound.
+   */
+  maxReceipts?: number;
+  /**
+   * In advisory mode (no `payer`) an allowed 402 is released upward and its
+   * receipt waits for the payment layer's X-PAYMENT retry to settle it. A
+   * retry that never comes would leave that entry forever; after this many
+   * milliseconds it is forgotten and the receipt stays unsettled -- which
+   * reconciliation, not this log, is there to notice. Default 300 000: the
+   * x402 authorization window, after which the retry could not pay anyway.
+   */
+  pendingTtlMs?: number;
+  /**
    * Tell the engine when a payment settles, so reconciliation can close the
    * allowance (B1). On by default: without a report from somewhere, every
    * allowance the engine made reads as a gap, and the one component that sees
@@ -109,6 +125,9 @@ export interface EscalationOptions {
  * back through the guard, which attaches the settlement to the receipt.
  * Alternatively, pass a `payer` and the guard completes the payment itself.
  */
+const DEFAULT_MAX_RECEIPTS = 1000;
+const DEFAULT_PENDING_TTL_MS = 300_000;
+
 export class Guard {
   readonly client: EngineClient;
   private readonly options: GuardOptions;
@@ -130,7 +149,7 @@ export class Guard {
     });
   }
 
-  /** Every receipt this guard has recorded, oldest first. */
+  /** The most recent `maxReceipts` receipts this guard has recorded, oldest first. */
   receipts(): readonly Receipt[] {
     return this.log;
   }
@@ -198,6 +217,7 @@ export class Guard {
         // Advisory mode: release the 402 to the payment layer above us; its
         // X-PAYMENT retry will come back through and settle the receipt.
         const receipt = this.record(intent, decision, url, init);
+        this.sweepPending();
         this.pendingByUrl.set(url, receipt);
         return res;
       }
@@ -247,6 +267,8 @@ export class Guard {
       createdAt: new Date(),
     });
     this.log.push(receipt);
+    const max = this.options.maxReceipts ?? DEFAULT_MAX_RECEIPTS;
+    if (this.log.length > max) this.log.splice(0, this.log.length - max);
     this.options.onReceipt?.(receipt);
     if (settlement) this.announceSettlement(receipt);
     return receipt;
@@ -291,7 +313,16 @@ export class Guard {
     return { request: view.request, ...(view.decision ? { decision: view.decision } : {}) };
   }
 
+  /** Drop advisory receipts whose retry window has passed -- see `pendingTtlMs`. */
+  private sweepPending(): void {
+    const cutoff = Date.now() - (this.options.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS);
+    for (const [url, receipt] of this.pendingByUrl) {
+      if (receipt.createdAt.getTime() < cutoff) this.pendingByUrl.delete(url);
+    }
+  }
+
   private settlePending(url: string, res: Response): void {
+    this.sweepPending();
     const receipt = this.pendingByUrl.get(url);
     if (!receipt || !res.ok) return;
     const settlement = parseSettlement(res);

@@ -20,9 +20,13 @@ import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import {
-  PolicyEngine,
-  buildServer,
+  ApprovalService,
+  approvalsFromEnv,
   authFromEnv,
+  buildServer,
+  livenessFromEnv,
+  LivenessMonitor,
+  PolicyEngine,
   resolveHost,
   type ApiKeyAuth,
 } from '@reinconsole/policy-engine';
@@ -57,17 +61,43 @@ export async function startPersistentEngine(options: {
    * will not bind a public interface without it.
    */
   auth?: ApiKeyAuth;
+  /** Forwarded to `openReinStore` with `dir`; ignored with `store` (already open). */
+  signingKey?: string;
+  /**
+   * The approval tier and the dead-man monitor. The standalone boot builds
+   * both from env on the store's durable halves (`approvalStore`,
+   * `livenessStore`). Omit them and the engine has no approval service -- a
+   * parked payment then has nowhere to park and `/v1/approvals` answers 404 --
+   * so an embedded caller that wants escalations composes its own. Their
+   * sweepers start with the server and stop with `close()`.
+   */
+  approvals?: ApprovalService;
+  liveness?: LivenessMonitor;
 }): Promise<PersistentEngine> {
   if ((options.dir === undefined) === (options.store === undefined)) {
     throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
   }
-  const store = options.store ?? (await openReinStore({ dir: options.dir! }));
-  const engine = new PolicyEngine(store);
+  const store =
+    options.store ??
+    (await openReinStore({
+      dir: options.dir!,
+      ...(options.signingKey ? { signingKey: options.signingKey } : {}),
+    }));
+  const engine = new PolicyEngine({
+    ...store,
+    ...(options.approvals ? { approvals: options.approvals } : {}),
+    ...(options.liveness ? { liveness: options.liveness } : {}),
+  });
+  // Nothing else will ever expire a parked payment or notice a silent agent.
+  const stops: Array<() => void> = [];
+  if (options.approvals) stops.push(engine.startExpirySweeper());
+  if (options.liveness) stops.push(engine.startLivenessSweeper());
   const app = buildServer(engine, { ...(options.auth ? { auth: options.auth } : {}) });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
   } catch (err) {
     // A failed listen (port in use) must not leak the open PGlite handle.
+    for (const stop of stops) stop();
     await store.close().catch(() => undefined);
     throw err;
   }
@@ -76,6 +106,7 @@ export async function startPersistentEngine(options: {
     engine,
     store,
     close: async () => {
+      for (const stop of stops) stop();
       try {
         await app.close();
       } finally {
@@ -101,7 +132,9 @@ if (isMainModule()) {
   // The store opens FIRST so the keys can be durable: `/v1/keys` issues them
   // at runtime, and an in-memory key store would drop every one at the next
   // restart while quietly resurrecting the ones an operator had revoked.
-  const store = await openReinStore({ dir });
+  // REIN_ENGINE_SIGNING_KEY moves the signing key out of the data dir (D1(c)).
+  const signingKey = process.env.REIN_ENGINE_SIGNING_KEY;
+  const store = await openReinStore({ dir, ...(signingKey ? { signingKey } : {}) });
   try {
     const auth = await authFromEnv(process.env, store.apiKeys);
     // Throws rather than binding a public interface without a key — the same
@@ -109,7 +142,21 @@ if (isMainModule()) {
     // can reach an open engine can rewrite policy and authorize spend.
     const { host, warning } = resolveHost(process.env, auth !== undefined);
     if (warning) console.warn(`[rein] ${warning}`);
-    await startPersistentEngine({ store, port, host, ...(auth ? { auth } : {}) });
+    // The approval tier and the dead-man run here too, on the durable halves:
+    // without them a parked payment has nowhere to park and a silent agent is
+    // never noticed -- the two things a restart must not forget. Same env as
+    // the in-memory engine: REIN_ESCALATION_TTL_MS, REIN_TELEGRAM_BOT_TOKEN +
+    // REIN_TELEGRAM_CHAT_ID (both or neither -- half is a startup error).
+    const approvals = approvalsFromEnv(process.env, { store: store.approvalStore });
+    const liveness = livenessFromEnv(process.env, { store: store.livenessStore });
+    await startPersistentEngine({
+      store,
+      port,
+      host,
+      approvals,
+      liveness,
+      ...(auth ? { auth } : {}),
+    });
     const resumed = store.fresh
       ? 'fresh store'
       : `resumed ${store.resumedDecisions} decisions, ` +
@@ -119,7 +166,7 @@ if (isMainModule()) {
       `[rein] persistent policy-engine listening on http://${host}:${port} ` +
         `(auth: ${auth ? 'api-key' : 'none'})`,
     );
-    console.log(`[rein] data dir ${dir} — ${resumed}`);
+    console.log(`[rein] data dir ${dir} — ${resumed}; signing key ${store.keySource}`);
   } catch (err) {
     // The store is open by now, so a refused bind must not leak the handle.
     await store.close().catch(() => undefined);

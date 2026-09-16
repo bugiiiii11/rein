@@ -29,6 +29,8 @@ import {
   type ApprovalChannel,
 } from './approvals.js';
 import { LoggingChannel, TelegramChannel } from './channels.js';
+import type { ApprovalStorePort } from './approvals.js';
+import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
 /** Input to register an agent (server fills id/createdAt/status). */
@@ -391,11 +393,22 @@ export async function authFromEnv(
   return auth.hasKeys() ? auth : undefined;
 }
 
-/** Delivery channels shared by the approval tier and the dead-man alarms. */
-function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & AlertChannel)[] {
+/**
+ * Delivery channels shared by the approval tier and the dead-man alarms. The
+ * log is always on. Telegram needs BOTH variables: one without the other is a
+ * misconfiguration, and dropping the channel silently would leave an operator
+ * who set a token believing a human is paged when nobody is.
+ */
+export function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & AlertChannel)[] {
   const channels: (ApprovalChannel & AlertChannel)[] = [new LoggingChannel()];
   const botToken = env['REIN_TELEGRAM_BOT_TOKEN']?.trim();
   const chatId = env['REIN_TELEGRAM_CHAT_ID']?.trim();
+  if (Boolean(botToken) !== Boolean(chatId)) {
+    throw new TypeError(
+      'REIN_TELEGRAM_BOT_TOKEN and REIN_TELEGRAM_CHAT_ID must be set together: ' +
+        `${botToken ? 'REIN_TELEGRAM_CHAT_ID' : 'REIN_TELEGRAM_BOT_TOKEN'} is missing`,
+    );
+  }
   if (botToken && chatId) channels.push(new TelegramChannel({ botToken, chatId }));
   return channels;
 }
@@ -407,8 +420,12 @@ function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & AlertChanne
  * same channels the approval tier uses, because a human who cares that a
  * payment needs signing is the human who cares that an agent stopped.
  */
-export function livenessFromEnv(env: NodeJS.ProcessEnv): LivenessMonitor {
+export function livenessFromEnv(
+  env: NodeJS.ProcessEnv,
+  options: { store?: LivenessStorePort } = {},
+): LivenessMonitor {
   return new LivenessMonitor({
+    ...(options.store ? { store: options.store } : {}),
     channels: channelsFromEnv(env),
     onAlertError: (channel, error) =>
       console.error(`[rein] liveness channel "${channel}" failed:`, error),
@@ -418,10 +435,14 @@ export function livenessFromEnv(env: NodeJS.ProcessEnv): LivenessMonitor {
 }
 
 /** The approval tier the standalone server runs with. */
-export function approvalsFromEnv(env: NodeJS.ProcessEnv): ApprovalService {
+export function approvalsFromEnv(
+  env: NodeJS.ProcessEnv,
+  options: { store?: ApprovalStorePort } = {},
+): ApprovalService {
   const channels: ApprovalChannel[] = channelsFromEnv(env);
   const ttl = Number(env['REIN_ESCALATION_TTL_MS'] ?? DEFAULT_ESCALATION_TTL_MS);
   return new ApprovalService({
+    ...(options.store ? { store: options.store } : {}),
     channels,
     ttlMs: Number.isFinite(ttl) && ttl > 0 ? ttl : DEFAULT_ESCALATION_TTL_MS,
     onDeliveryError: (channel, error) =>
