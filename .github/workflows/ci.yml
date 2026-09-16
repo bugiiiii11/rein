@@ -97,7 +97,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+          # No `cache: pnpm` here, unlike the other jobs: this one deliberately
+          # never installs (see the note below), so the pnpm store never exists
+          # and setup-node's post-run cache save fails the whole job with a Path
+          # Validation Error -- a passing audit reported as a red run (S59).
 
       # --prod because a dev-only advisory does not ship to anyone: it would
       # turn this gate into noise that gets ignored, which is how the real
