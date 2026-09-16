@@ -82,6 +82,30 @@ valid engine-signed allow voucher, replays a spent voucher, evades a session or 
 forges or breaks the decision hash chain, or turns an escalation into an approval without a
 registered approver's signature.
 
+## What an org-scoped API key can reach
+
+An engine key carries an optional `orgId`, and it is a hard boundary rather than a default:
+a key issued with one can only read, spend, approve and govern inside that org. Another
+org's agents, policies, decisions, parked escalations, approver keys and API keys are
+answered exactly as a non-existent object is, so a scoped caller cannot enumerate what it
+cannot reach. Two rules hold it up. Org scoping is applied before policy targeting, so a
+tenant's policy — whose default `appliesTo` matches every agent — is never a candidate for
+another tenant's payment. And a route with no tenant rule is unreachable by a scoped key at
+all, which makes a route added later over-restricted rather than over-shared. A key may be
+narrowed further with `agentIds`, which is what an agent runtime should carry: a stolen
+runtime key then spends one agent's budget rather than the org's, and cannot mint itself a
+wider one.
+
+A key with NO `orgId` is an unscoped operator key and reaches everything, which is what a
+self-hosted single-tenant engine and every `REIN_ENGINE_API_KEY` boot secret have always
+been. Tenancy is opted into at issuance; it never changed an existing key's reach.
+
+Two limits are worth stating plainly. The decision chain a scoped caller reads is not
+verifiable end to end on its own, because its `prevHash` links point at decisions in other
+orgs that it cannot see — whole-chain verification is an operator's job. And a decision
+written before org attribution existed carries none, so it is shown to unscoped operators
+only: an unattributed row cannot be proven to belong to whichever tenant asks for it first.
+
 ## Security model in one paragraph
 
 Rein is non-custodial: funds never pass through it, and it governs authority rather than

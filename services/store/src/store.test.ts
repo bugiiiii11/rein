@@ -612,3 +612,63 @@ describe('durable API keys', () => {
     expect(new ApiKeyAuth({ store: resumed.apiKeys }).list()[0]?.lastUsedAt).toBeInstanceOf(Date);
   });
 });
+
+/**
+ * Sprint 2's durable half: org attribution is a SIDECAR column, because a
+ * `Decision` has no agentId and its canonical form hashes a fixed field set.
+ * If the column did not resume, every decision on disk would read as
+ * unattributed after a restart and a tenant's own history would vanish from
+ * its own console.
+ */
+describe('durable tenant attribution', () => {
+  const ORG = newId('org');
+
+  async function agentIn(engine: PolicyEngine, orgId: string, name: string) {
+    return engine.registerAgent({ id: newId('agt'), orgId, name, createdAt: new Date() });
+  }
+
+  it('resumes the decision-to-agent map, so scoped reads survive a restart', async () => {
+    const dir = tempDir();
+    const a = await open(dir);
+    const engineA = new PolicyEngine(a);
+    await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+    const mine = await agentIn(engineA, ORG, 'mine');
+    const theirs = await agentIn(engineA, newId('org'), 'theirs');
+    await engineA.evaluateIntent(intent(mine.id, '0.10'));
+    await engineA.evaluateIntent(intent(theirs.id, '0.20'));
+    expect(engineA.decisions({ orgId: ORG })).toHaveLength(1);
+    await a.close();
+
+    const b = await open(dir);
+    const engineB = new PolicyEngine(b);
+    expect(b.resumedDecisions).toBe(2);
+    // The whole chain is still there for an operator...
+    expect(engineB.decisions()).toHaveLength(2);
+    expect(verifyDecisionChain(engineB.decisions(), b.log.publicKeyPem)).toBe(true);
+    // ...and exactly one of them belongs to this org, after the restart.
+    const scoped = engineB.decisions({ orgId: ORG });
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0]?.intentHash).toBe(engineA.decisions({ orgId: ORG })[0]?.intentHash);
+  });
+
+  it('leaves a decision written before the column unattributed, and so invisible to a tenant', async () => {
+    const dir = tempDir();
+    const a = await open(dir);
+    const engineA = new PolicyEngine(a);
+    await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+    const mine = await agentIn(engineA, ORG, 'mine');
+    await engineA.evaluateIntent(intent(mine.id, '0.10'));
+    await a.close();
+
+    // Exactly what a pre-tenancy row looks like: the doc is intact, the
+    // sidecar is NULL. Nobody can prove it belongs to the org now asking.
+    const db = await openDb(dir);
+    await db.query('UPDATE decisions SET agent_id = NULL');
+    await db.close();
+
+    const b = await open(dir);
+    const engineB = new PolicyEngine(b);
+    expect(engineB.decisions()).toHaveLength(1);
+    expect(engineB.decisions({ orgId: ORG })).toEqual([]);
+  });
+});

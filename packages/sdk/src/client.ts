@@ -322,8 +322,22 @@ export class EngineClient {
 
   // --- API keys (admin scope) ---
 
-  /** Mint a key. The secret in the response is the only copy that will exist. */
-  issueApiKey(input: { name: string; scopes: ApiKeyScope[] }): Promise<IssuedApiKey> {
+  /**
+   * Mint a key. The secret in the response is the only copy that will exist.
+   *
+   * `orgId` confines the new key to one tenant and `agentIds` narrows it
+   * further to named agents — what an agent runtime should carry, so a stolen
+   * key spends one agent's budget rather than the whole org's. Omitting both
+   * mints an unscoped operator key, which is what a single-tenant self-hosted
+   * engine wants and has always had. A caller that is itself org-scoped has
+   * its own org applied regardless of what it asks for here.
+   */
+  issueApiKey(input: {
+    name: string;
+    scopes: ApiKeyScope[];
+    orgId?: string;
+    agentIds?: string[];
+  }): Promise<IssuedApiKey> {
     return this.request('POST', '/v1/keys', IssuedApiKey, input);
   }
 

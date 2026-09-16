@@ -41,12 +41,14 @@ export type ApprovalFailureCode =
   | 'unknown_approver'
   | 'approver_revoked'
   | 'intent_hash_mismatch'
-  | 'bad_signature';
+  | 'bad_signature'
+  /** The approver key belongs to a different org than the escalating agent. */
+  | 'approver_wrong_org';
 
 /** A refused approval submission. Fails closed: the request stays pending. */
 export class ApprovalError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409,
+    readonly status: 400 | 403 | 404 | 409,
     readonly code: ApprovalFailureCode,
     message: string,
   ) {
@@ -186,6 +188,11 @@ export class ApprovalService {
     return this.store.listApprovers();
   }
 
+  /** One approver key, for an ownership check before revoking it. */
+  getApprover(id: string): ApproverKey | undefined {
+    return this.store.getApprover(id);
+  }
+
   /** True once a key exists that could actually answer a challenge. */
   hasActiveApprover(): boolean {
     return this.store.listApprovers().some((k) => k.revokedAt === undefined);
@@ -205,7 +212,7 @@ export class ApprovalService {
   async open(
     intent: PaymentIntent,
     decision: Decision,
-    context: { breakers?: string[] } = {},
+    context: { breakers?: string[]; orgId?: string } = {},
   ): Promise<ApprovalRequest> {
     const createdAt = new Date(this.now());
     const request = ApprovalRequest.parse({
@@ -213,6 +220,7 @@ export class ApprovalService {
       intentId: intent.id,
       intentHash: decision.intentHash,
       agentId: intent.agentId,
+      ...(context.orgId !== undefined ? { orgId: context.orgId } : {}),
       vendorHost: intent.vendor.host,
       resource: intent.resource,
       amount: intent.amount,
@@ -295,6 +303,19 @@ export class ApprovalService {
     }
     if (approver.revokedAt) {
       throw new ApprovalError(409, 'approver_revoked', 'approver key has been revoked');
+    }
+    // The approver must belong to the org whose agent is spending. Nothing in
+    // the signature itself says so: a valid ed25519 signature from ANY key the
+    // engine has registered would otherwise release ANY tenant's parked
+    // payment, which made every registered approver an approver for everyone.
+    // A request with no org predates the stamp (or came from an unregistered
+    // agent) and is answerable by any registered approver, exactly as before.
+    if (request.orgId !== undefined && approver.orgId !== request.orgId) {
+      throw new ApprovalError(
+        403,
+        'approver_wrong_org',
+        'approver key belongs to a different org than the escalating agent',
+      );
     }
 
     const content: ApprovalContent = {

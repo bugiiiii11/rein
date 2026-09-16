@@ -2,7 +2,7 @@
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   Agent,
@@ -30,13 +30,20 @@ import {
   type ApprovalChannel,
 } from './approvals.js';
 import { LoggingChannel, TelegramChannel } from './channels.js';
+import { TenantError, ownsOrg, scopeOf, type TenantScope } from './tenant.js';
 import type { ApprovalStorePort } from './approvals.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
 /** Input to register an agent (server fills id/createdAt/status). */
 const AgentInput = z.object({
-  orgId: OrgId,
+  /**
+   * Optional, because an org-SCOPED caller has no business naming one: its own
+   * org is applied regardless, and a tenant that has never been told its org
+   * id would otherwise be unable to register an agent at all. Still required
+   * of an unscoped operator key, which has to say which org the agent is in.
+   */
+  orgId: OrgId.optional(),
   name: z.string().min(1).max(200),
   erc8004Id: z.string().optional(),
   labels: Agent.shape.labels.optional(),
@@ -46,12 +53,17 @@ const AgentInput = z.object({
 const ApiKeyInput = z.object({
   name: z.string().min(1).max(200),
   scopes: z.array(ApiKeyScope).min(1),
+  /** Confine the new key to an org. Forced to the caller's own when scoped. */
+  orgId: OrgId.optional(),
+  /** Narrow the new key to named agents (see `ApiKey.agentIds`). */
+  agentIds: z.array(AgentId).max(64).optional(),
 });
 
 const RotateInput = z.object({ graceMs: z.number().int().nonnegative().optional() });
 
 const ApproverInput = z.object({
-  orgId: OrgId,
+  /** Optional for a scoped caller, for the same reason as `AgentInput.orgId`. */
+  orgId: OrgId.optional(),
   name: z.string().min(1).max(200),
   publicKey: z.string().min(1),
 });
@@ -101,6 +113,81 @@ export function requiredScope(method: string, pathname: string): ApiKeyScope {
   return 'admin';
 }
 
+/**
+ * Every route that has a tenant rule, as {method, path-matcher} pairs.
+ *
+ * This is the second half of the fail-closed pair `requiredScope` started, and
+ * it is separate from it for one reason: forgetting to CLASSIFY a route is a
+ * different mistake from forgetting to PROTECT one. A new route is already
+ * over-protected by `requiredScope` (it demands `admin`); this table makes it
+ * additionally unreachable by any org-scoped key until somebody decides what
+ * "your own" means for it. The failure mode that is impossible by
+ * construction, then, is the one that matters: a route added later, reachable
+ * by a tenant, that returns everybody's rows.
+ *
+ * `server-auth.test.ts` walks Fastify's own route table and asserts every
+ * registered route is listed here — the check that keeps the mirror honest as
+ * routes are added.
+ */
+const TENANT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: 'GET', path: /^\/health$/ },
+  { method: 'POST', path: /^\/v1\/agents$/ },
+  { method: 'GET', path: /^\/v1\/agents$/ },
+  { method: 'POST', path: /^\/v1\/agents\/[^/]+\/(freeze|unfreeze|heartbeat)$/ },
+  { method: 'GET', path: /^\/v1\/agents\/[^/]+\/breakers$/ },
+  { method: 'PUT', path: /^\/v1\/agents\/[^/]+\/liveness$/ },
+  { method: 'DELETE', path: /^\/v1\/agents\/[^/]+\/liveness$/ },
+  { method: 'GET', path: /^\/v1\/liveness$/ },
+  { method: 'POST', path: /^\/v1\/policies$/ },
+  { method: 'GET', path: /^\/v1\/policies$/ },
+  { method: 'POST', path: /^\/v1\/evaluate$/ },
+  { method: 'GET', path: /^\/v1\/decisions$/ },
+  { method: 'POST', path: /^\/v1\/settlements$/ },
+  { method: 'GET', path: /^\/v1\/reconciliation$/ },
+  { method: 'POST', path: /^\/v1\/keys$/ },
+  { method: 'GET', path: /^\/v1\/keys$/ },
+  { method: 'POST', path: /^\/v1\/keys\/[^/]+\/(rotate|revoke)$/ },
+  { method: 'POST', path: /^\/v1\/approvers$/ },
+  { method: 'GET', path: /^\/v1\/approvers$/ },
+  { method: 'POST', path: /^\/v1\/approvers\/[^/]+\/revoke$/ },
+  { method: 'GET', path: /^\/v1\/approvals$/ },
+  { method: 'GET', path: /^\/v1\/approvals\/[^/]+$/ },
+  { method: 'POST', path: /^\/v1\/approvals\/[^/]+\/resolve$/ },
+];
+
+/** One entry of the router's own table — see `buildServer`'s `onRoute` hook. */
+export interface RegisteredRoute {
+  method: string;
+  /** The declared path, params included, e.g. `/v1/agents/:id/freeze`. */
+  path: string;
+}
+
+/** Every route Fastify actually registered on this instance. */
+export function registeredRoutes(app: FastifyInstance): RegisteredRoute[] {
+  return (app as FastifyInstance & { reinRoutes?: RegisteredRoute[] }).reinRoutes ?? [];
+}
+
+/** Does this route know how to confine an org-scoped caller? */
+export function tenantRoute(method: string, pathname: string): boolean {
+  const m = method === 'HEAD' ? 'GET' : method;
+  return TENANT_ROUTES.some((r) => r.method === m && r.path.test(pathname));
+}
+
+/**
+ * The tenant scope of the request being served, or undefined for an unscoped
+ * operator key (and for an engine running without auth at all — the embedded
+ * console world and the demos).
+ *
+ * A WeakMap rather than a property on the request: nothing on the wire can
+ * spoof a key that is not a string, the entry dies with the request, and no
+ * route can accidentally serialize the scope into a response body.
+ */
+const SCOPES = new WeakMap<FastifyRequest, TenantScope>();
+
+export function scopeFor(req: FastifyRequest): TenantScope | undefined {
+  return SCOPES.get(req);
+}
+
 /** Query parsing for `GET /v1/reconciliation`, shared with the tests. */
 const ReconcileQuery = z.object({
   window: Window.optional(),
@@ -130,6 +217,17 @@ export function buildServer(
   const app = Fastify({ logger: false });
   const auth = options.auth;
 
+  // Fastify's own view of what got registered, captured as it happens. It is
+  // what `tenant.test.ts` walks to prove `TENANT_ROUTES` still mirrors the
+  // real surface: a route added without a tenant rule is caught by a test
+  // reading the router, not by a human remembering to update a list.
+  const registeredRoutes: RegisteredRoute[] = [];
+  app.addHook('onRoute', (route) => {
+    const methods = Array.isArray(route.method) ? route.method : [route.method];
+    for (const method of methods) registeredRoutes.push({ method, path: route.url });
+  });
+  app.decorate('reinRoutes', registeredRoutes);
+
   // Turn known error types into clean statuses instead of 500s.
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof z.ZodError) {
@@ -139,6 +237,9 @@ export function buildServer(
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (err instanceof ApprovalError) {
+      return reply.status(err.status).send({ error: err.code, message: err.message });
+    }
+    if (TenantError.is(err)) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (err instanceof LivenessError) {
@@ -156,7 +257,21 @@ export function buildServer(
       const pathname = (req.url ?? '/').split('?')[0] ?? '/';
       if (pathname === '/health') return;
       try {
-        auth.authenticate(req.headers, requiredScope(req.method, pathname));
+        const key = auth.authenticate(req.headers, requiredScope(req.method, pathname));
+        const scope = scopeOf(key);
+        if (scope) {
+          // Classify before routing, for the same reason authentication runs
+          // before routing: a route nobody taught to confine a tenant must be
+          // unreachable by one, not reachable-and-unfiltered.
+          if (!tenantRoute(req.method, pathname)) {
+            throw new AuthError(
+              403,
+              'route_not_scopable',
+              'this route has no tenant rule; it is reachable only by an unscoped key',
+            );
+          }
+          SCOPES.set(req, scope);
+        }
       } catch (err) {
         if (AuthError.is(err)) {
           if (err.status === 401) reply.header('WWW-Authenticate', 'Bearer realm="rein-engine"');
@@ -180,9 +295,15 @@ export function buildServer(
   // --- Agents ---
   app.post('/v1/agents', (req) => {
     const input = AgentInput.parse(req.body);
+    const scope = scopeFor(req);
     return engine.registerAgent({
       id: newId('agt'),
-      orgId: input.orgId,
+      // The caller's org WINS over the body's. A scoped key that asks to
+      // register an agent into another org is not refused, it is simply
+      // obeyed in its own — there is no legitimate reason for a tenant to
+      // name an org at all, and a 400 here would only teach an attacker
+      // which org ids exist.
+      orgId: resolveOrg(scope, input.orgId),
       name: input.name,
       erc8004Id: input.erc8004Id,
       labels: input.labels ?? [],
@@ -192,28 +313,35 @@ export function buildServer(
     });
   });
 
-  app.get('/v1/agents', () => engine.agents.list());
+  app.get('/v1/agents', (req) => engine.visibleAgents(scopeFor(req)));
 
   app.post('/v1/agents/:id/freeze', async (req, reply) => {
-    await engine.freeze((req.params as { id: string }).id);
+    const id = (req.params as { id: string }).id;
+    engine.requireAgent(id, scopeFor(req));
+    await engine.freeze(id);
     return reply.status(204).send();
   });
 
   app.post('/v1/agents/:id/unfreeze', async (req, reply) => {
-    await engine.unfreeze((req.params as { id: string }).id);
+    const id = (req.params as { id: string }).id;
+    engine.requireAgent(id, scopeFor(req));
+    await engine.unfreeze(id);
     return reply.status(204).send();
   });
 
   // Where the agent's breakers stand right now — read-only observability, so
   // an operator can see WHY an agent is escalating before a challenge lands.
-  app.get('/v1/agents/:id/breakers', (req) =>
-    engine.breakerStates((req.params as { id: string }).id),
-  );
+  app.get('/v1/agents/:id/breakers', (req) => {
+    const id = (req.params as { id: string }).id;
+    engine.requireAgent(id, scopeFor(req));
+    return engine.breakerStates(id);
+  });
 
   // --- Dead-man monitoring (B2) ---
   // Declaring an expectation is configuration, so it sits at `admin`; the
   // heartbeat that answers it does not (see requiredScope).
   app.put('/v1/agents/:id/liveness', async (req, reply) => {
+    engine.requireAgent((req.params as { id: string }).id, scopeFor(req));
     const input = LivenessWatchInput.parse({
       ...(req.body as object | null ?? {}),
       agentId: (req.params as { id: string }).id,
@@ -222,12 +350,14 @@ export function buildServer(
   });
 
   app.delete('/v1/agents/:id/liveness', async (req, reply) => {
+    engine.requireAgent((req.params as { id: string }).id, scopeFor(req));
     const removed = await requireLiveness(engine).unwatch((req.params as { id: string }).id);
     return removed ? reply.status(204).send() : reply.status(404).send({ error: 'not_watched' });
   });
 
   app.post('/v1/agents/:id/heartbeat', async (req, reply) => {
     requireLiveness(engine);
+    engine.requireAgent((req.params as { id: string }).id, scopeFor(req));
     const beat = Heartbeat.parse({
       ...(req.body as object | null ?? {}),
       agentId: (req.params as { id: string }).id,
@@ -239,69 +369,151 @@ export function buildServer(
     return state ? reply.status(202).send(state) : reply.status(404).send({ error: 'not_watched' });
   });
 
-  app.get('/v1/liveness', () => engine.livenessStates());
+  app.get('/v1/liveness', (req) => engine.visibleLivenessStates(scopeFor(req)));
 
   // --- Policies ---
-  app.post('/v1/policies', (req) => engine.addPolicy(Policy.parse(req.body)));
-  app.get('/v1/policies', () => engine.policies.list());
+  app.post('/v1/policies', (req) => {
+    const scope = scopeFor(req);
+    const policy = Policy.parse(req.body);
+    // Stamped with the caller's org, so a tenant cannot write a GLOBAL policy
+    // (`orgId` absent) — which, with the default `appliesTo: {}`, would govern
+    // every other tenant's agents.
+    return engine.addPolicy(scope ? { ...policy, orgId: scope.orgId } : policy);
+  });
+  app.get('/v1/policies', (req) => engine.visiblePolicies(scopeFor(req)));
 
   // --- The hot path ---
-  app.post('/v1/evaluate', (req) => engine.evaluateIntent(IntentInput.parse(req.body)));
+  app.post('/v1/evaluate', (req) => {
+    const input = IntentInput.parse(req.body);
+    const scope = scopeFor(req);
+    // 403 rather than 404: the caller is spending, and being told plainly
+    // that this agent is not theirs is worth more than hiding whether the id
+    // exists. A runtime key narrowed to one agent gets the same answer for
+    // every other agent in its own org.
+    if (scope && !engine.ownsAgentId(input.agentId, scope)) {
+      throw new AuthError(403, 'agent_not_in_scope', 'this API key cannot spend for that agent');
+    }
+    return engine.evaluateIntent(input);
+  });
 
   // --- Audit ---
-  app.get('/v1/decisions', () => engine.decisions());
+  app.get('/v1/decisions', (req) => engine.decisions(scopeFor(req)));
 
   // --- Reconciliation (B1): allowed but never settled ---
   // The write is the settlement half of the join — see requiredScope for why
   // it sits at `evaluate` rather than `admin`.
   app.post('/v1/settlements', async (req, reply) =>
-    reply.status(202).send(await engine.recordSettlement(SettlementReport.parse(req.body))),
+    reply
+      .status(202)
+      .send(await engine.recordSettlement(SettlementReport.parse(req.body), scopeFor(req))),
   );
 
-  app.get('/v1/reconciliation', (req) => engine.reconcile(reconcileOptionsFromQuery(req.query)));
+  app.get('/v1/reconciliation', (req) =>
+    engine.reconcile(reconcileOptionsFromQuery(req.query), scopeFor(req)),
+  );
 
   // --- API keys (admin scope; see requiredScope) ---
   app.post('/v1/keys', async (req, reply) => {
     const a = requireAuth(auth);
     const input = ApiKeyInput.parse(req.body);
-    const issued = await a.issue(input);
+    const scope = scopeFor(req);
+    if (scope) {
+      // A tenant admin mints inside its own org and nowhere else, and an
+      // agent-narrowed key can only mint keys narrower than itself —
+      // otherwise the narrowing would be one API call away from undone.
+      if (scope.agentIds) {
+        const requested = input.agentIds ?? [];
+        const outside = requested.filter((id) => !scope.agentIds?.includes(id));
+        if (requested.length === 0 || outside.length > 0) {
+          throw new AuthError(
+            403,
+            'agent_not_in_scope',
+            'this API key can only issue keys narrowed to its own agents',
+          );
+        }
+      }
+    }
+    const issued = await a.issue({
+      name: input.name,
+      scopes: input.scopes,
+      ...(scope ? { orgId: scope.orgId } : input.orgId !== undefined ? { orgId: input.orgId } : {}),
+      ...(input.agentIds?.length ? { agentIds: input.agentIds } : {}),
+    });
     // 201 with the secret in the body: the only time it exists outside the
     // caller's hands. Nothing logs it, and no later read can recover it.
     return reply.status(201).send(issued);
   });
 
-  app.get('/v1/keys', () => requireAuth(auth).list());
+  app.get('/v1/keys', (req) => {
+    const scope = scopeFor(req);
+    return requireAuth(auth)
+      .list()
+      .filter((key) => ownsOrg(scope, key.orgId));
+  });
 
   app.post('/v1/keys/:id/rotate', async (req) => {
+    const a = requireAuth(auth);
+    const id = (req.params as { id: string }).id;
+    requireOwnKey(a, id, scopeFor(req));
     const { graceMs } = RotateInput.parse(req.body ?? {});
-    return requireAuth(auth).rotate((req.params as { id: string }).id, { ...(graceMs !== undefined ? { graceMs } : {}) });
+    return a.rotate(id, { ...(graceMs !== undefined ? { graceMs } : {}) });
   });
 
   app.post('/v1/keys/:id/revoke', async (req, reply) => {
-    const key = await requireAuth(auth).revoke((req.params as { id: string }).id);
+    const a = requireAuth(auth);
+    const id = (req.params as { id: string }).id;
+    requireOwnKey(a, id, scopeFor(req));
+    const key = await a.revoke(id);
     return key ? key : reply.status(404).send({ error: 'unknown_key_id' });
   });
 
   // --- Approver keys ---
   app.post('/v1/approvers', async (req, reply) => {
     const input = ApproverInput.parse(req.body);
-    return reply.status(201).send(await requireApprovals(engine).registerApprover(input));
+    const scope = scopeFor(req);
+    // Registered into the CALLER's org: an approver is authority over that
+    // org's parked payments, and `verify()` refuses a key from another one.
+    return reply
+      .status(201)
+      .send(
+        await requireApprovals(engine).registerApprover({
+          ...input,
+          orgId: resolveOrg(scope, input.orgId),
+        }),
+      );
   });
 
-  app.get('/v1/approvers', () => requireApprovals(engine).listApprovers());
+  app.get('/v1/approvers', (req) => {
+    const scope = scopeFor(req);
+    return requireApprovals(engine)
+      .listApprovers()
+      .filter((key) => ownsOrg(scope, key.orgId));
+  });
 
   app.post('/v1/approvers/:id/revoke', async (req, reply) => {
-    const key = await requireApprovals(engine).revokeApprover((req.params as { id: string }).id);
+    const approvals = requireApprovals(engine);
+    const id = (req.params as { id: string }).id;
+    const scope = scopeFor(req);
+    const existing = approvals.getApprover(id);
+    if (existing && !ownsOrg(scope, existing.orgId)) {
+      return reply.status(404).send({ error: 'unknown_approver' });
+    }
+    const key = await approvals.revokeApprover(id);
     return key ? key : reply.status(404).send({ error: 'unknown_approver' });
   });
 
   // --- Escalations awaiting a signature ---
-  app.get('/v1/approvals', () => requireApprovals(engine).pending());
+  app.get('/v1/approvals', (req) => {
+    requireApprovals(engine);
+    return engine.visibleApprovals(scopeFor(req));
+  });
 
   app.get('/v1/approvals/:decisionId', (req, reply) => {
     const approvals = requireApprovals(engine);
     const request = approvals.get((req.params as { decisionId: string }).decisionId);
-    if (!request) return reply.status(404).send({ error: 'unknown_request' });
+    if (!request || !ownsOrg(scopeFor(req), request.orgId)) {
+      return reply.status(404).send({ error: 'unknown_request' });
+    }
     const decision = request.finalDecisionId
       ? findDecision(engine, request.finalDecisionId)
       : undefined;
@@ -310,17 +522,58 @@ export function buildServer(
     return { request, challenges: approvals.challengesFor(request), ...(decision ? { decision } : {}) };
   });
 
-  app.post('/v1/approvals/:decisionId/resolve', async (req) => {
-    requireApprovals(engine);
+  app.post('/v1/approvals/:decisionId/resolve', async (req, reply) => {
+    const approvals = requireApprovals(engine);
+    const decisionId = (req.params as { decisionId: string }).decisionId;
+    const parked = approvals.get(decisionId);
+    // A foreign escalation is 404, not 403: a scoped caller must not be able
+    // to probe which decision ids exist in other orgs. The signature check
+    // inside `verify()` is the second gate, and it refuses a foreign approver
+    // even on a request this one does reach.
+    if (parked && !ownsOrg(scopeFor(req), parked.orgId)) {
+      return reply.status(404).send({ error: 'unknown_request' });
+    }
     const body = GrantInput.parse(req.body);
-    const grant = ApprovalGrant.parse({
-      decisionId: (req.params as { decisionId: string }).decisionId,
-      ...body,
-    });
+    const grant = ApprovalGrant.parse({ decisionId, ...body });
     return engine.resolveEscalation(grant);
   });
 
   return app;
+}
+
+/**
+ * A scoped caller may only rotate or revoke keys in its own org. The answer
+ * for a foreign key is the same 404 an unknown id gets, so the key list of
+ * another org cannot be enumerated one id at a time.
+ */
+function requireOwnKey(auth: ApiKeyAuth, keyId: string, scope: TenantScope | undefined): void {
+  if (!scope) return;
+  const key = auth.get(keyId);
+  if (!key || !ownsOrg(scope, key.orgId)) {
+    throw new TenantError(404, 'not_found', `no such key: ${keyId}`);
+  }
+}
+
+/**
+ * Which org a write lands in: the caller's when it has one, the body's when it
+ * is an unscoped operator key. An operator that names none is a 400 — an agent
+ * or an approver with no org is exactly the unattributed row that later has to
+ * be hidden from every tenant.
+ */
+function resolveOrg(scope: TenantScope | undefined, requested: string | undefined): string {
+  if (scope) return scope.orgId;
+  if (requested === undefined) {
+    throw new z.ZodError([
+      {
+        code: 'invalid_type',
+        expected: 'string',
+        received: 'undefined',
+        path: ['orgId'],
+        message: 'orgId is required for an unscoped key',
+      },
+    ]);
+  }
+  return requested;
 }
 
 function requireAuth(auth: ApiKeyAuth | undefined): ApiKeyAuth {

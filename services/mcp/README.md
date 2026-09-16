@@ -44,6 +44,19 @@ registering an agent and writing a policy.
 
 Everything is fixed at startup. Nothing here is reachable from a tool call.
 
+On a HOSTED engine, `REIN_ENGINE_API_KEY` should be an `evaluate` key issued with the org
+and narrowed to this one agent:
+
+```
+POST /v1/keys
+{ "name": "claude-desktop", "scopes": ["evaluate"], "orgId": "org_01J...", "agentIds": ["agt_01J..."] }
+```
+
+That is the whole blast radius of the secret sitting in a desktop config file: it can
+submit intents for this agent and nothing else — not another agent in the same org, not
+policy, not keys, not other tenants' anything. Against a self-hosted single-tenant engine,
+omit both fields and the key behaves exactly as it always has.
+
 ## Tools
 
 | Tool               | Read-only | What it answers                                                 |

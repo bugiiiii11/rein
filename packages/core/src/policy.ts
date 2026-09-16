@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Chain } from './chain.js';
+import { OrgId } from './ids.js';
 import { DecimalString } from './money.js';
 
 /** A rolling-window spec, e.g. "24h", "1h", "30m", "7d". */
@@ -155,6 +156,18 @@ export type Escalation = z.infer<typeof Escalation>;
 export const Policy = z.object({
   policyId: z.string().min(1),
   version: z.string().default('1'),
+  /**
+   * The org this policy governs. ABSENT means GLOBAL — it is considered for
+   * every agent, which is what every policy written before tenancy existed is
+   * and stays.
+   *
+   * This is separate from {@link AppliesTo} on purpose, and it has to be:
+   * `appliesTo: {}` matches every agent, so a tenant's policy carrying the
+   * default targeting would otherwise govern other tenants' agents the moment
+   * it was written. Org scoping is applied BEFORE targeting — a policy whose
+   * `orgId` is not the agent's org is not a candidate at all.
+   */
+  orgId: OrgId.optional(),
   appliesTo: AppliesTo.default({}),
   rules: z.array(Rule).default([]),
   /**

@@ -51,6 +51,14 @@ function outcome(result: 'allow' | 'deny', label: string, detail: string) {
 
 // ─── main ─────────────────────────────────────────────────────────────────────
 
+/**
+ * One org for the whole demo world. The approver registered below answers for
+ * these agents, and since S56 an approver key from a different org cannot
+ * release a parked payment at all — a per-agent throwaway org would leave the
+ * escalation scene unresolvable.
+ */
+const DEMO_ORG = newId('org');
+
 async function main() {
   const t0 = Date.now();
 
@@ -100,7 +108,7 @@ async function main() {
   const agentId = newId('agt');
   await engine.registerAgent({
     id: agentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'research-agent',
     wallets: [{ chain: 'base', address: WALLET, mode: 'sdk' }],
     status: 'active',
@@ -199,7 +207,7 @@ async function main() {
   const ksAgentId = newId('agt');
   await engine.registerAgent({
     id: ksAgentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'ks-agent',
     wallets: [{ chain: 'base', address: ksWallet, mode: 'sdk' }],
     status: 'active',
@@ -277,7 +285,7 @@ async function main() {
   // for the human, so the demo can produce a real signature.
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const approver = await approvals.registerApprover({
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'Finance (demo key)',
     publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
   });
@@ -286,7 +294,7 @@ async function main() {
   const brAgentId = newId('agt');
   await engine.registerAgent({
     id: brAgentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'breaker-agent',
     wallets: [{ chain: 'base', address: brWallet, mode: 'sdk' }],
     status: 'active',
@@ -362,7 +370,7 @@ async function main() {
   const tbAgentId = newId('agt');
   await engine.registerAgent({
     id: tbAgentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'task-agent',
     wallets: [{ chain: 'base', address: tbWallet, mode: 'sdk' }],
     status: 'active',
@@ -418,7 +426,7 @@ async function main() {
   const rcAgentId = newId('agt');
   await engine.registerAgent({
     id: rcAgentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'reconcile-agent',
     wallets: [{ chain: 'base', address: rcWallet, mode: 'sdk' }],
     status: 'active',
@@ -485,7 +493,7 @@ async function main() {
   const dmAgentId = newId('agt');
   await engine.registerAgent({
     id: dmAgentId,
-    orgId: newId('org'),
+    orgId: DEMO_ORG,
     name: 'poller-agent',
     wallets: [{ chain: 'base', address: dmWallet, mode: 'sdk' }],
     status: 'active',

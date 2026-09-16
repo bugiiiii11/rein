@@ -113,3 +113,14 @@ export {
   type LoggingChannelOptions,
   type TelegramChannelOptions,
 } from './channels.js';
+export {
+  TenantError,
+  ownsAgent,
+  ownsAgentId,
+  ownsOrg,
+  readablePolicies,
+  scopeOf,
+  visiblePolicies,
+  type TenantFailureCode,
+  type TenantScope,
+} from './tenant.js';

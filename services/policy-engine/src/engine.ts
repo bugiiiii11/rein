@@ -43,6 +43,14 @@ import {
   type SettlementStorePort,
 } from './stores.js';
 import { reconcile, type ReconcileOptions, type ReconciliationReport } from './reconciliation.js';
+import {
+  TenantError,
+  ownsAgent,
+  ownsOrg,
+  readablePolicies,
+  visiblePolicies,
+  type TenantScope,
+} from './tenant.js';
 import type { LivenessAlert, LivenessMonitor, LivenessState } from './liveness.js';
 import { DecisionLog } from './decision-log.js';
 import { ApprovalService } from './approvals.js';
@@ -180,10 +188,53 @@ export class PolicyEngine {
     return agent;
   }
 
+  /**
+   * Upsert a policy. `policyId` is a GLOBAL primary key — one row per id, in
+   * the store and in the durable schema — so two orgs cannot each own a policy
+   * called `default`. The second one is refused with a 409 rather than
+   * silently overwriting the first, which is what an upsert keyed on id alone
+   * would do: one tenant would be able to rewrite another's spend controls by
+   * guessing an obvious name.
+   */
   async addPolicy(input: z.input<typeof Policy>): Promise<Policy> {
     const policy = Policy.parse(input);
+    const existing = this.policies.get(policy.policyId);
+    if (existing && existing.orgId !== policy.orgId) {
+      throw new TenantError(
+        409,
+        'policy_id_taken',
+        `policy id ${policy.policyId} already exists in another org`,
+      );
+    }
     await this.policies.add(policy);
     return policy;
+  }
+
+  /** The policies a caller may read: the global ones, plus its own org's. */
+  visiblePolicies(scope?: TenantScope): Policy[] {
+    return readablePolicies(this.policies.list(), scope);
+  }
+
+  /** The agents a caller may see. An unscoped operator sees all of them. */
+  visibleAgents(scope?: TenantScope): Agent[] {
+    return this.agents.list().filter((agent) => ownsAgent(scope, agent));
+  }
+
+  /**
+   * Assert the caller may act on this agent, or throw. Used by every route
+   * that names an agent in its path — the ownership test and the "does it
+   * exist" test are the same question, answered the same way, so a scoped
+   * caller cannot map another org's agents by their error codes.
+   */
+  /** Is this agent inside the caller's scope? Unscoped callers own everything. */
+  ownsAgentId(agentId: string, scope?: TenantScope): boolean {
+    return ownsAgent(scope, this.agents.get(agentId));
+  }
+
+  requireAgent(agentId: string, scope?: TenantScope): void {
+    if (!ownsAgent(scope, this.agents.get(agentId))) {
+      throw new TenantError(404, 'not_found', `no such agent: ${agentId}`);
+    }
   }
 
   async freeze(agentId: string): Promise<void> {
@@ -220,6 +271,7 @@ export class PolicyEngine {
     const intent = this.normalize(input);
     this.emit({ type: 'intent.created', at: new Date(), intent });
 
+    const actor = this.agents.get(intent.agentId);
     let result: EvaluationResult;
     if (this.agents.isFrozen(intent.agentId)) {
       result = {
@@ -233,7 +285,9 @@ export class PolicyEngine {
       const ctx = this.spend.contextFor(intent.agentId, intent.createdAt.getTime());
       // The agent document (labels) rides along so appliesTo.labels can match;
       // unregistered agents pass undefined and never match a labels policy.
-      result = evaluate(intent, this.policies.list(), ctx, this.agents.get(intent.agentId));
+      // Org scoping happens BEFORE targeting: another tenant's policy is not a
+      // candidate at all, however broadly its `appliesTo` is written.
+      result = evaluate(intent, visiblePolicies(this.policies.list(), actor), ctx, actor);
     }
 
     const latencyMs = performance.now() - start;
@@ -243,6 +297,7 @@ export class PolicyEngine {
       intentId: intent.id,
       intentHash,
       latencyMs,
+      agentId: intent.agentId,
     });
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
@@ -270,6 +325,9 @@ export class PolicyEngine {
     if (decision.outcome === 'escalate' && this.approvals) {
       const request = await this.approvals.open(intent, decision, {
         breakers: result.breakers ?? [],
+        // Stamped from the AGENT's document, never from the caller: the org
+        // that owns the agent is the org whose approvers may answer for it.
+        ...(actor ? { orgId: actor.orgId } : {}),
       });
       this.emit({ type: 'approval.requested', at: new Date(), request });
       return { intent, decision, approval: request };
@@ -320,8 +378,21 @@ export class PolicyEngine {
    * spend, alter a decision, or unblock anything. Idempotent by intent id,
    * first report winning, so two observers of one payment agree.
    */
-  async recordSettlement(input: z.input<typeof SettlementReport>): Promise<SettlementReport> {
+  async recordSettlement(
+    input: z.input<typeof SettlementReport>,
+    scope?: TenantScope,
+  ): Promise<SettlementReport> {
     const report = SettlementReport.parse(input);
+    // A settlement names an intent and nothing else, so ownership is resolved
+    // through the decisions that judged that intent. A scoped caller reporting
+    // against an intent it does not own is answered 404, not 403: whether an
+    // intent id exists in another org is itself the other org's business.
+    if (scope) {
+      const agentId = this.log.agentForIntent(report.intentId);
+      if (agentId === undefined || !ownsAgent(scope, this.agents.get(agentId))) {
+        throw new TenantError(404, 'not_found', `no such intent: ${report.intentId}`);
+      }
+    }
     await this.settlements.settle({
       intentId: report.intentId,
       at: report.confirmedAt.getTime(),
@@ -340,8 +411,13 @@ export class PolicyEngine {
    * it, and running it changes nothing. See reconciliation.ts for why an
    * unsettled allowance keeps its charge against the budget.
    */
-  reconcile(options: ReconcileOptions = {}): ReconciliationReport {
-    return reconcile(this.spend, this.settlements, options);
+  reconcile(options: ReconcileOptions = {}, scope?: TenantScope): ReconciliationReport {
+    return reconcile(this.spend, this.settlements, {
+      ...options,
+      ...(scope
+        ? { agentFilter: (agentId: string) => ownsAgent(scope, this.agents.get(agentId)) }
+        : {}),
+    });
   }
 
   /**
@@ -379,6 +455,7 @@ export class PolicyEngine {
       policyId: 'approval',
       policyVersion: '1',
       latencyMs: performance.now() - start,
+      agentId: request.agentId,
     });
     this.emit({ type: 'decision.made', at: new Date(), decision });
 
@@ -450,6 +527,7 @@ export class PolicyEngine {
         policyId: 'approval',
         policyVersion: '1',
         latencyMs: performance.now() - start,
+        agentId: request.agentId,
       });
       this.emit({ type: 'decision.made', at: new Date(), decision });
       const settled = await approvals.settle(request.decisionId, {
@@ -607,7 +685,9 @@ export class PolicyEngine {
       nonce: 'probe',
       createdAt: new Date(now),
     });
-    const policy = this.policies.list().find((p) => policyApplies(p, probe, agent));
+    const policy = visiblePolicies(this.policies.list(), agent).find((p) =>
+      policyApplies(p, probe, agent),
+    );
     if (!policy) return [];
     const ctx = this.spend.contextFor(agentId, now);
     const resets = this.spend.breakerResets(agentId);
@@ -627,7 +707,36 @@ export class PolicyEngine {
     });
   }
 
-  decisions(): readonly Decision[] {
-    return this.log.all();
+  /**
+   * The decision chain. A scoped caller sees only the decisions attributed to
+   * agents it owns; an UNATTRIBUTED decision (written before the sidecar
+   * column existed) is shown to unscoped operators only, because a row with no
+   * org cannot be proven to belong to the tenant asking for it.
+   *
+   * The chain a scoped caller reads is therefore not verifiable end to end on
+   * its own — `prevHash` links point at decisions it cannot see. That is the
+   * correct trade: whole-chain verification is an operator's job, and the
+   * alternative is handing every tenant every other tenant's payment history.
+   */
+  decisions(scope?: TenantScope): readonly Decision[] {
+    if (!scope) return this.log.all();
+    return this.log.all().filter((d) => {
+      const agentId = this.log.agentOf(d.id);
+      return agentId !== undefined && ownsAgent(scope, this.agents.get(agentId));
+    });
+  }
+
+  /** Liveness rows for the agents a caller owns. */
+  visibleLivenessStates(scope?: TenantScope, now?: number): LivenessState[] {
+    const states = this.livenessStates(now);
+    if (!scope) return states;
+    return states.filter((s) => ownsAgent(scope, this.agents.get(s.agentId)));
+  }
+
+  /** Parked escalations a caller may answer for — its own org's, only. */
+  visibleApprovals(scope?: TenantScope): ApprovalRequest[] {
+    const pending = this.approvals?.pending() ?? [];
+    if (!scope) return pending;
+    return pending.filter((r) => ownsOrg(scope, r.orgId));
   }
 }

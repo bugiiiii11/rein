@@ -110,7 +110,16 @@ export type AuthFailureCode =
   | 'key_revoked'
   | 'secret_expired'
   | 'insufficient_scope'
-  | 'unknown_key_id';
+  | 'unknown_key_id'
+  /** The key is confined to an org, and the named agent is not in it. */
+  | 'agent_not_in_scope'
+  /**
+   * The key is confined to an org and the route has no tenant rule, so there
+   * is no way to confine the call. Fail closed: an unclassified route is
+   * reachable only by an unscoped operator key, exactly as an unclassified
+   * route already demands `admin`.
+   */
+  | 'route_not_scopable';
 
 /**
  * Every rejected request throws one of these. It carries the HTTP status so a
@@ -171,19 +180,36 @@ export class ApiKeyAuth {
     this.now = options.now ?? Date.now;
   }
 
-  /** Mint a key. The secret in the result is the only copy that will exist. */
+  /**
+   * Mint a key. The secret in the result is the only copy that will exist.
+   *
+   * `orgId` confines the key to one tenant; omitting it mints the unscoped
+   * operator key that every deployment had before tenancy. `agentIds` narrows
+   * an org-scoped key to named agents and is refused without an org, because a
+   * scope with no org cannot say which policies or approvers the key may
+   * reach — and a half-defined scope is the kind that fails open.
+   */
   async issue(input: {
     name: string;
     scopes: ApiKeyScope[];
+    /** Confine the key to one org. Omit for an unscoped operator key. */
+    orgId?: string;
+    /** Narrow an org-scoped key to named agents (max 64). */
+    agentIds?: string[];
     /** Adopt a caller-supplied secret (env-seeded boot keys). */
     secret?: string;
   }): Promise<IssuedApiKey> {
     if (input.scopes.length === 0) throw new TypeError('an API key needs at least one scope');
+    if (input.agentIds?.length && input.orgId === undefined) {
+      throw new TypeError('agentIds narrows an org-scoped key; pass orgId as well');
+    }
     const secret = input.secret ?? mintSecret();
     const record = ApiKeyRecord.parse({
       id: newId('key'),
       name: input.name,
       scopes: input.scopes,
+      ...(input.orgId !== undefined ? { orgId: input.orgId } : {}),
+      ...(input.agentIds?.length ? { agentIds: input.agentIds } : {}),
       createdAt: new Date(this.now()),
       secretHash: hashSecret(secret),
     });
@@ -226,6 +252,12 @@ export class ApiKeyAuth {
 
   list(): ApiKey[] {
     return this.store.list().map(toPublicApiKey);
+  }
+
+  /** One key's public record, for an ownership check before rotate/revoke. */
+  get(keyId: string): ApiKey | undefined {
+    const record = this.store.get(keyId);
+    return record === undefined ? undefined : toPublicApiKey(record);
   }
 
   /** True once at least one key exists — what "auth is configured" means. */

@@ -150,6 +150,19 @@ const FEED_CAP = 300;
  */
 const AGENT_BREAKERS = [{ id: 'velocity', window: '24h', txCount: 6 }] as const;
 
+/**
+ * The one org this console's world belongs to.
+ *
+ * Every agent and the registered approver share it, and that is not cosmetic:
+ * tenant isolation (S56) scopes policies, decisions and approvals by org, and
+ * an approver key in a different org than the agent it answers for cannot
+ * release that agent's parked payment at all. Minting a throwaway `newId('org')`
+ * per agent — what this file did while `orgId` was a field nobody read — would
+ * now put every agent in a tenant of its own and leave the approver outside all
+ * of them.
+ */
+const WORLD_ORG = newId('org');
+
 /** The reputation cast, seeded with BACKDATED history at boot (same-day
  * evidence is confidence-discounted to 40%, by design — see @reinconsole/graph):
  * a reputable feed, a sketchy broker that pockets most payments, and a wallet
@@ -1295,7 +1308,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     }
     try {
       const key = await approvals.registerApprover({
-        orgId: newId('org'),
+        orgId: WORLD_ORG,
         name: process.env['REIN_APPROVER_NAME']?.trim() || 'operator',
         publicKey: pem,
       });
@@ -1357,7 +1370,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
         const agentId = newId('agt');
         agent = await engine.registerAgent({
           id: agentId,
-          orgId: newId('org'),
+          orgId: WORLD_ORG,
           name: `sepolia-agent-${ref.tokenId}`,
           erc8004Id,
           labels: ['sepolia'],
@@ -1507,7 +1520,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     const registration = registry.register({ owner: wallet.address });
     const agent = await engine.registerAgent({
       id: agentId,
-      orgId: newId('org'),
+      orgId: WORLD_ORG,
       name,
       erc8004Id: registration.erc8004Id,
       // The role slug ("research-agent-3" → "research") becomes a semantic

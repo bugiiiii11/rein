@@ -58,6 +58,14 @@ export const ApprovalRequest = z.object({
   /** Binds the approval to the exact transfer — the signed bytes commit to it. */
   intentHash: z.string(),
   agentId: AgentId,
+  /**
+   * The org the escalating agent belongs to, stamped when the request is
+   * parked. ABSENT means the agent was never registered (or the request
+   * predates tenancy), and such a request is answerable only by an unscoped
+   * operator — there is no org to check an approver against, and guessing one
+   * is how a cross-tenant approval happens.
+   */
+  orgId: OrgId.optional(),
   vendorHost: z.string(),
   resource: z.string(),
   amount: DecimalString,

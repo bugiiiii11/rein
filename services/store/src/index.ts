@@ -154,18 +154,30 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const sessions = await PgSessionStore.open(db);
     const gate = await PgGateStore.open(db);
 
-    const persisted = await db.query<{ doc: string }>('SELECT doc FROM decisions ORDER BY seq');
+    const persisted = await db.query<{ doc: string; agent_id: string | null }>(
+      'SELECT doc, agent_id FROM decisions ORDER BY seq',
+    );
     // doc is the exact JSON.stringify of the decision; zod re-validates and
     // coerces decidedAt back to a Date, which canonicalizes to the same bytes.
     const resume = persisted.rows.map((row) => Decision.parse(JSON.parse(row.doc)));
+    // The tenancy sidecar, rebuilt from its own column rather than from `doc`
+    // (which cannot carry it -- see the schema note in db.ts). A row with a
+    // NULL agent_id resumes unattributed and stays invisible to scoped reads.
+    const attribution: Record<string, string> = {};
+    for (const [i, row] of persisted.rows.entries()) {
+      const id = resume[i]?.id;
+      if (id !== undefined && row.agent_id) attribution[id] = row.agent_id;
+    }
 
     const log = new DecisionLog({
       keyPair,
       resume,
-      persist: async (decision) => {
-        await db.query('INSERT INTO decisions (id, doc) VALUES ($1, $2)', [
+      attribution,
+      persist: async (decision, agentId) => {
+        await db.query('INSERT INTO decisions (id, doc, agent_id) VALUES ($1, $2, $3)', [
           decision.id,
           JSON.stringify(decision),
+          agentId ?? null,
         ]);
       },
     });

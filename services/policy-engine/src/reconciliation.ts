@@ -96,6 +96,19 @@ export interface ReconcileOptions {
   limit?: number;
   /** Narrow to a single agent. */
   agentId?: string;
+  /**
+   * Narrow to the agents a caller owns. Supplied by the engine from the
+   * caller's tenant scope, so a scoped report is built from owned allowances
+   * only rather than filtered afterwards — a count computed over rows the
+   * caller may not see would leak the other tenant's volume through the
+   * totals even with the `gaps` list trimmed.
+   *
+   * `settlementsSeen` is the deliberate exception: it counts every settlement
+   * this ENGINE was ever told about, because its job is to answer "is any
+   * reporter connected at all", which is a property of the deployment rather
+   * than of a tenant. Nothing about another org's payments can be read off it.
+   */
+  agentFilter?: (agentId: string) => boolean;
 }
 
 /**
@@ -125,6 +138,7 @@ export function reconcile(
 
   for (const rec of spend.allowancesIn(from, now)) {
     if (options.agentId !== undefined && rec.agentId !== options.agentId) continue;
+    if (options.agentFilter && !options.agentFilter(rec.agentId)) continue;
     if (rec.intentId === undefined) {
       unattributed += 1;
       continue;

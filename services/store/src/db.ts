@@ -26,6 +26,13 @@ import { PGlite } from '@electric-sql/pglite';
  * - `breaker_resets` is the A3 counting FLOOR, one row per (agent, breaker) —
  *   it must be durable, or a restart would silently re-trip every breaker a
  *   human had already cleared and ask them the same question again.
+ * - `decisions.agent_id` is the tenancy SIDECAR: a `Decision` has no agentId
+ *   and `canonicalDecision` hashes a fixed field set, so attribution cannot go
+ *   inside `doc` without either breaking every chain already on disk or adding
+ *   a field the signature does not cover. It rides beside the row instead.
+ *   NULL on rows written before tenancy, and a NULL row is visible only to an
+ *   unscoped operator key -- an unattributed decision cannot be proven to
+ *   belong to whichever tenant asks for it first.
  * - `spend_records.intent_id` / `.decision_id` are the B1 join keys: they make
  *   the spend ledger the ALLOWANCE ledger. Nullable, and rows written before
  *   B1 keep NULL — reconciliation counts those as unattributed rather than as
@@ -104,9 +111,10 @@ CREATE TABLE IF NOT EXISTS vendor_reputation (
 );
 
 CREATE TABLE IF NOT EXISTS decisions (
-  seq BIGSERIAL PRIMARY KEY,
-  id  TEXT NOT NULL UNIQUE,
-  doc TEXT NOT NULL
+  seq      BIGSERIAL PRIMARY KEY,
+  id       TEXT NOT NULL UNIQUE,
+  doc      TEXT NOT NULL,
+  agent_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS graph_subjects (
@@ -223,6 +231,8 @@ ALTER TABLE spend_records
   ADD COLUMN IF NOT EXISTS intent_id TEXT;
 ALTER TABLE spend_records
   ADD COLUMN IF NOT EXISTS decision_id TEXT;
+ALTER TABLE decisions
+  ADD COLUMN IF NOT EXISTS agent_id TEXT;
 `;
 
 /**

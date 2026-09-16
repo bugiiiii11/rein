@@ -19,6 +19,19 @@ export interface DecisionInput {
   policyId: string;
   policyVersion: string;
   latencyMs: number;
+  /**
+   * Which agent this decision was about — SIDECAR attribution, never part of
+   * the decision itself.
+   *
+   * A `Decision` has no `agentId` and `canonicalDecision` hashes a fixed field
+   * set, so adding one to the record would either be invisible to the
+   * signature (an unauthenticated field on an authenticated record) or would
+   * change the canonical bytes and invalidate every chain already on disk.
+   * The log keeps the mapping beside the chain instead, and the store persists
+   * it as a column. Tenant-scoped reads need it: without attribution, "show me
+   * my org's decisions" has no answer to filter on.
+   */
+  agentId?: string;
 }
 
 export interface DecisionLogKeyPair {
@@ -37,10 +50,18 @@ export interface DecisionLogOptions {
    */
   resume?: readonly Decision[];
   /**
-   * Durable sink, awaited BEFORE an append is applied or returned: a decision
-   * either exists in the store and the chain, or in neither.
+   * Sidecar attribution for the resumed chain: decision id -> agent id. A
+   * decision missing from this map is UNATTRIBUTED — it predates the column,
+   * and a scoped reader is shown none of them rather than all of them.
    */
-  persist?: (decision: Decision) => MaybePromise<void>;
+  attribution?: Readonly<Record<string, string>>;
+  /**
+   * Durable sink, awaited BEFORE an append is applied or returned: a decision
+   * either exists in the store and the chain, or in neither. `agentId` is the
+   * sidecar attribution (see {@link DecisionInput.agentId}) — it is stored
+   * beside the row, never inside the signed document.
+   */
+  persist?: (decision: Decision, agentId?: string) => MaybePromise<void>;
 }
 
 /**
@@ -54,7 +75,12 @@ export class DecisionLog {
   private readonly privateKey: KeyObject;
   readonly publicKeyPem: string;
   private readonly chain: Decision[];
-  private readonly persist: ((decision: Decision) => MaybePromise<void>) | undefined;
+  private readonly persist:
+    | ((decision: Decision, agentId?: string) => MaybePromise<void>)
+    | undefined;
+  /** Sidecar attribution — see {@link DecisionInput.agentId}. */
+  private readonly agentByDecision = new Map<string, string>();
+  private readonly agentByIntent = new Map<string, string>();
   private tail: Promise<unknown> = Promise.resolve();
 
   constructor(options: DecisionLogOptions = {}) {
@@ -64,6 +90,32 @@ export class DecisionLog {
     this.chain = [...(options.resume ?? [])];
     this.prevHash = this.chain.at(-1)?.hash ?? 'genesis';
     this.persist = options.persist;
+    for (const decision of this.chain) {
+      const agentId = options.attribution?.[decision.id];
+      if (agentId !== undefined) this.attribute(decision, agentId);
+    }
+  }
+
+  private attribute(decision: Pick<Decision, 'id' | 'intentId'>, agentId: string): void {
+    this.agentByDecision.set(decision.id, agentId);
+    // One intent can be judged twice — an escalation and the decision that
+    // releases it — and both are the same agent's, so last write is the same
+    // answer as first.
+    this.agentByIntent.set(decision.intentId, agentId);
+  }
+
+  /** The agent a decision was about, or undefined if it was never attributed. */
+  agentOf(decisionId: string): string | undefined {
+    return this.agentByDecision.get(decisionId);
+  }
+
+  /**
+   * The agent an intent belongs to, via the decisions that judged it. This is
+   * the ownership test for anything keyed by intent — a settlement report, for
+   * one, which names an intent and nothing else.
+   */
+  agentForIntent(intentId: string): string | undefined {
+    return this.agentByIntent.get(intentId);
   }
 
   append(input: DecisionInput): Promise<Decision> {
@@ -94,10 +146,12 @@ export class DecisionLog {
       latencyMs: input.latencyMs,
       decidedAt,
     };
-    // Durable first: if the sink throws, neither store nor chain advances.
-    if (this.persist) await this.persist(decision);
+    // Durable first: if the sink throws, neither store nor chain advances —
+    // and the attribution advances with the chain, never ahead of it.
+    if (this.persist) await this.persist(decision, input.agentId);
     this.prevHash = hash;
     this.chain.push(decision);
+    if (input.agentId !== undefined) this.attribute(decision, input.agentId);
     return decision;
   }
 

@@ -18,6 +18,14 @@ import { EngineError, PaymentBlockedError } from './errors.js';
  * escalation until a signed verdict resolves it.
  */
 
+/**
+ * One org for the whole fixture: the approver is registered into the same org
+ * as the agents it answers for, which is what a real deployment looks like and
+ * what `verify()` now requires (S56 — a key from another org cannot release
+ * this org's parked payment, whoever submits the signature).
+ */
+const ORG = newId('org');
+
 const approverPair = generateKeyPairSync('ed25519');
 const approverPem = approverPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
 
@@ -41,7 +49,7 @@ beforeAll(async () => {
     default: 'allow',
   });
   approverId = (
-    await approvals.registerApprover({ orgId: newId('org'), name: 'Finance', publicKey: approverPem })
+    await approvals.registerApprover({ orgId: ORG, name: 'Finance', publicKey: approverPem })
   ).id;
 
   app = buildServer(engine, { auth });
@@ -106,7 +114,7 @@ describe('engine API key, from the SDK side', () => {
   });
 
   it('authenticates every call once a key is set', async () => {
-    const agent = await adminClient().registerAgent({ orgId: newId('org'), name: 'keyed' });
+    const agent = await adminClient().registerAgent({ orgId: ORG, name: 'keyed' });
     expect(agent.id).toMatch(/^agt_/);
     expect((await adminClient().health()).auth).toBe('api-key');
   });
@@ -118,7 +126,7 @@ describe('engine API key, from the SDK side', () => {
 
     // A read key may not write: 403, not a silent no-op.
     await reader
-      .registerAgent({ orgId: newId('org'), name: 'nope' })
+      .registerAgent({ orgId: ORG, name: 'nope' })
       .then(() => expect.unreachable('a read key must not register agents'))
       .catch((err: EngineError) => expect(err.status).toBe(403));
 
@@ -130,7 +138,7 @@ describe('engine API key, from the SDK side', () => {
 
 describe('guard escalation await path', () => {
   it('blocks immediately when not asked to wait, and says it is still pending', async () => {
-    const agent = await adminClient().registerAgent({ orgId: newId('org'), name: 'nowait' });
+    const agent = await adminClient().registerAgent({ orgId: ORG, name: 'nowait' });
     const guard = createGuard({
       engineUrl,
       apiKey: runnerSecret,
@@ -151,7 +159,7 @@ describe('guard escalation await path', () => {
   });
 
   it('waits, then pays on the follow-up decision once a signature approves it', async () => {
-    const agent = await adminClient().registerAgent({ orgId: newId('org'), name: 'waiter' });
+    const agent = await adminClient().registerAgent({ orgId: ORG, name: 'waiter' });
     const paid: string[] = [];
     const guard = createGuard({
       engineUrl,
@@ -182,7 +190,7 @@ describe('guard escalation await path', () => {
   });
 
   it('blocks with the deny decision when a signature rejects it', async () => {
-    const agent = await adminClient().registerAgent({ orgId: newId('org'), name: 'rejected' });
+    const agent = await adminClient().registerAgent({ orgId: ORG, name: 'rejected' });
     const guard = createGuard({
       engineUrl,
       apiKey: runnerSecret,
@@ -207,7 +215,7 @@ describe('guard escalation await path', () => {
   });
 
   it('reports the pending approval in respond mode instead of throwing', async () => {
-    const agent = await adminClient().registerAgent({ orgId: newId('org'), name: 'responder' });
+    const agent = await adminClient().registerAgent({ orgId: ORG, name: 'responder' });
     const guard = createGuard({
       engineUrl,
       apiKey: runnerSecret,
