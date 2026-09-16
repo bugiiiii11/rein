@@ -57,6 +57,33 @@ const KNOWN_ASSET_ADDRESSES: Record<string, Asset> = {
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: 'USDC', // USDC on Solana
 };
 
+/**
+ * Known v1 network names → CAIP-2. EVM entries are chain-id math; the Solana
+ * ids are what the live facilitator advertises. Unknown names pass through
+ * lowercased, so two spellings of an UNKNOWN network still compare equal.
+ */
+const CAIP2_ALIASES: Record<string, string> = {
+  base: 'eip155:8453',
+  'base-sepolia': 'eip155:84532',
+  polygon: 'eip155:137',
+  'polygon-amoy': 'eip155:80002',
+  bnb: 'eip155:56',
+  bsc: 'eip155:56',
+  solana: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+  'solana-devnet': 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+};
+
+/** The CAIP-2 id for a network name, or the lowercased name when unknown. */
+export function caip2Of(network: string): string {
+  const key = network.toLowerCase();
+  return CAIP2_ALIASES[key] ?? key;
+}
+
+/** Do two network ids name the same chain, across the v1/CAIP-2 divide? */
+export function sameNetwork(a: string, b: string): boolean {
+  return caip2Of(a) === caip2Of(b);
+}
+
 export function networkToChain(network: string): Chain | undefined {
   return NETWORK_TO_CHAIN[network.toLowerCase()];
 }
@@ -136,17 +163,30 @@ export interface ResolvedRequirement {
 
 /**
  * Pick the first offer the guard can govern: scheme `exact`, a network that
- * maps to a supported chain, and a resolvable asset. Returns undefined when
- * no offer qualifies — callers must treat that as fail-closed.
+ * maps to a supported chain, an allowed network, and a resolvable asset.
+ * Returns undefined when no offer qualifies — callers must treat that as
+ * fail-closed.
+ *
+ * `networks` is the testnet/mainnet boundary, and it has to live HERE rather
+ * than downstream of evaluate. `networkToChain` folds a testnet onto its
+ * mainnet — `base-sepolia` and `base` both become `'base'` — because policy
+ * is written about chains, not deployments. That is right for policy and
+ * useless as a safety rail: the engine cannot tell a Sepolia offer from a
+ * mainnet one, so a testnet agent handed a mainnet 402 would be allowed by
+ * every policy it has and would then sign for real money. Filtering before
+ * selection is what makes a network allow-list mean anything.
  */
 export function selectRequirement(
   accepts: readonly PaymentRequirement[],
   extraAddresses: Record<string, Asset> = {},
+  networks?: readonly string[],
 ): ResolvedRequirement | undefined {
+  const allowed = networks?.map(caip2Of);
   for (const requirement of accepts) {
     if (requirement.scheme.toLowerCase() !== 'exact') continue;
     const chain = networkToChain(requirement.network);
     if (!chain) continue;
+    if (allowed && !allowed.includes(caip2Of(requirement.network))) continue;
     const asset = resolveAsset(requirement, extraAddresses);
     if (!asset) continue;
     const amount = atomicToDecimal(requirement.maxAmountRequired, requirementDecimals(requirement));

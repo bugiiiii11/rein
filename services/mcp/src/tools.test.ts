@@ -4,7 +4,7 @@ import { ApprovalService, PolicyEngine, buildServer } from '@reinconsole/policy-
 import type { AddressInfo } from 'node:net';
 import { createToolContext } from './index.js';
 import { reinTools, type ReinTool, type ToolResult } from './tools.js';
-import { configFromEnv, ConfigError } from './config.js';
+import { configFromEnv, networksFor, ConfigError } from './config.js';
 
 /** Boot a real engine over loopback, so the tools talk to the real HTTP API. */
 /** `registerAgent` parses a whole Agent document, so tests supply one. */
@@ -317,6 +317,58 @@ describe('configFromEnv', () => {
     expect(config.payer).toBeUndefined();
     // An escalation TTL runs for hours; a harness's tool timeout for seconds.
     expect(config.escalationWaitMs).toBe(0);
+    // Testnet unless someone says otherwise: the default must be the one that
+    // cannot spend real money.
+    expect(config.networkProfile).toBe('testnet');
+  });
+
+  describe('REIN_NETWORK_PROFILE', () => {
+    const base = { REIN_ENGINE_URL: 'http://x', REIN_AGENT_ID: agentId };
+
+    it('accepts either profile, case-insensitively', async () => {
+      expect((await configFromEnv({ ...base, REIN_NETWORK_PROFILE: 'mainnet' })).networkProfile).toBe(
+        'mainnet',
+      );
+      expect((await configFromEnv({ ...base, REIN_NETWORK_PROFILE: ' TESTNET ' })).networkProfile).toBe(
+        'testnet',
+      );
+      expect((await configFromEnv({ ...base, REIN_NETWORK_PROFILE: '' })).networkProfile).toBe(
+        'testnet',
+      );
+    });
+
+    /**
+     * A typo must not fall back to testnet. An operator who wrote `mainet`
+     * meant mainnet, and a vendor quietly taking real requests while being
+     * paid in play money looks exactly like everything working.
+     */
+    it('refuses an unknown profile instead of defaulting', async () => {
+      await expect(
+        configFromEnv({ ...base, REIN_NETWORK_PROFILE: 'mainet' }),
+      ).rejects.toBeInstanceOf(ConfigError);
+      await expect(configFromEnv({ ...base, REIN_NETWORK_PROFILE: 'mainet' })).rejects.toThrow(
+        /"testnet" or "mainnet"/,
+      );
+    });
+
+    /**
+     * config.ts keeps its OWN copy of each profile's network ids, because
+     * importing @reinconsole/x402-rails there would pull viem into every
+     * advisory cold start. This is the pin that stops the copy drifting --
+     * a test may import the real profiles freely.
+     */
+    // 30s, not the 5s default: this is the only test here that loads
+    // @reinconsole/x402-rails, and viem behind it, so its cost is a cold
+    // module graph rather than anything it asserts. It passes in ~1.7s alone
+    // and times out inside a full parallel `turbo run test`.
+    it('lists exactly the networks the real profiles declare', { timeout: 30_000 }, async () => {
+      const { PROFILES } = await import('@reinconsole/x402-rails');
+      for (const name of ['testnet', 'mainnet'] as const) {
+        expect([...networksFor(name)].sort()).toEqual(
+          [PROFILES[name].network, PROFILES[name].caip2].sort(),
+        );
+      }
+    });
   });
 });
 

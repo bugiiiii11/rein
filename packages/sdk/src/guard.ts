@@ -64,6 +64,20 @@ export interface GuardOptions {
   payer?: Payer;
   /** Extra token-address -> symbol mappings for asset resolution. */
   assetAddresses?: Record<string, Asset>;
+  /**
+   * The networks this guard will govern payments on, as x402 ids in either
+   * dialect (`base-sepolia`, `eip155:8453`, ...). A 402 offering only
+   * networks outside the list is treated as an ungovernable paywall and
+   * fails closed, BEFORE the engine is asked.
+   *
+   * Omitted means "any network the SDK maps to a chain", which is what every
+   * guard got before profiles. Set it on anything holding a real key: the
+   * engine cannot enforce this boundary for you, because policy is written
+   * about chains and `networkToChain` folds `base-sepolia` into `base` (see
+   * selectRequirement). A testnet agent without this list will happily be
+   * allowed to pay a mainnet 402.
+   */
+  networks?: readonly string[];
   /** Called once per receipt, as it is recorded. */
   onReceipt?: (receipt: Receipt) => void;
   /**
@@ -183,7 +197,7 @@ export class Guard {
       const res = await inner(input, init);
       if (res.status !== 402) return res;
 
-      const paywall = await parse402(res, this.options.assetAddresses);
+      const paywall = await parse402(res, this.options.assetAddresses, this.options.networks);
       // Not an x402 paywall — nothing to govern, hand it back untouched.
       if (!paywall) return res;
 
@@ -365,12 +379,14 @@ interface ParsedPaywall {
 async function parse402(
   res: Response,
   assetAddresses: Record<string, Asset> | undefined,
+  networks: readonly string[] | undefined,
 ): Promise<ParsedPaywall | undefined> {
   const v2 = parsePaymentRequiredHeader(res.headers.get('PAYMENT-REQUIRED'));
   if (v2) {
     const resolved = selectRequirement(
       v2.accepts.map((offer) => requirementFromV2(offer, v2.resource)),
       assetAddresses,
+      networks,
     );
     if (resolved) {
       return v2.resource !== undefined
@@ -385,7 +401,7 @@ async function parse402(
     .catch(() => undefined);
   const parsed = PaymentRequired.safeParse(body);
   if (parsed.success) {
-    return { resolved: selectRequirement(parsed.data.accepts, assetAddresses), wire: 1 };
+    return { resolved: selectRequirement(parsed.data.accepts, assetAddresses, networks), wire: 1 };
   }
   // A v2 header alone still marks this as a paywall — one the guard must
   // fail closed on if nothing in it was governable.

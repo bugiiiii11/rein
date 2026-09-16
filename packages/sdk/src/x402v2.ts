@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { PaymentRequirement } from './x402.js';
+import { caip2Of, PaymentRequirement } from './x402.js';
+
+// caip2Of/sameNetwork LIVE in x402.ts: selectRequirement's network allow-list
+// needs them, and importing them back up from here would close a cycle
+// through this module's zod consts. Re-exported so the v2 dialect still
+// reads as their home.
+export { caip2Of, sameNetwork } from './x402.js';
 
 /**
  * x402 v2 wire dialect — CAIP-2 network ids, `PAYMENT-REQUIRED` /
@@ -17,33 +23,6 @@ import { PaymentRequirement } from './x402.js';
  * knowing v2 exists. The vendor side (@reinconsole/gate) re-exports these
  * helpers rather than owning its own copies.
  */
-
-/**
- * Known v1 network names → CAIP-2. EVM entries are chain-id math; the Solana
- * ids are what the live facilitator advertises. Unknown names pass through
- * lowercased, so two spellings of an UNKNOWN network still compare equal.
- */
-const CAIP2_ALIASES: Record<string, string> = {
-  base: 'eip155:8453',
-  'base-sepolia': 'eip155:84532',
-  polygon: 'eip155:137',
-  'polygon-amoy': 'eip155:80002',
-  bnb: 'eip155:56',
-  bsc: 'eip155:56',
-  solana: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
-  'solana-devnet': 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
-};
-
-/** The CAIP-2 id for a network name, or the lowercased name when unknown. */
-export function caip2Of(network: string): string {
-  const key = network.toLowerCase();
-  return CAIP2_ALIASES[key] ?? key;
-}
-
-/** Do two network ids name the same chain, across the v1/CAIP-2 divide? */
-export function sameNetwork(a: string, b: string): boolean {
-  return caip2Of(a) === caip2Of(b);
-}
 
 /** x402 v2 PaymentRequirements (one entry of a 402's `accepts`). */
 export const PaymentRequirementsV2 = z.object({

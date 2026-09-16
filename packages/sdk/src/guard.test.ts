@@ -662,3 +662,121 @@ describe('EngineClient', () => {
     expect((err as EngineError).status).toBe(400);
   });
 });
+
+/**
+ * A vendor whose 402 offers SEVERAL networks -- the realistic shape once a
+ * vendor is dual-stack, and the one a network allow-list exists for.
+ */
+function multiNetworkVendor(networks: readonly string[], atomicPrice = '10000') {
+  const calls: VendorCall[] = [];
+  const fetchImpl: FetchLike = async (input, init) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const payment = init?.headers ? new Headers(init.headers).get('X-PAYMENT') : null;
+    calls.push({ url, payment });
+    if (payment === null) {
+      return new Response(
+        JSON.stringify({
+          x402Version: 1,
+          accepts: networks.map((network) => ({
+            scheme: 'exact',
+            network,
+            maxAmountRequired: atomicPrice,
+            resource: new URL(url).pathname,
+            payTo: '0xVENDOR',
+            asset: 'USDC',
+          })),
+          error: 'X-PAYMENT header is required',
+        }),
+        { status: 402, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return new Response(JSON.stringify({ answer: 42 }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  return { fetchImpl, calls };
+}
+
+describe('Guard network allow-list', () => {
+  it('pays the allowed network when a 402 offers both', async () => {
+    const agentId = await newAgent();
+    const vendor = multiNetworkVendor(['base', 'base-sepolia']);
+    // The requirement handed to the payer IS the selection, so capturing it
+    // is the direct proof of which of the two offers won.
+    const paidFor: string[] = [];
+    const capturingPayer: Payer = (requirement) => {
+      paidFor.push(requirement.network);
+      return 'mock-payment-header';
+    };
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      payer: capturingPayer,
+      networks: ['base-sepolia'],
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_net_testnet',
+      appliesTo: { agents: [agentId] },
+      rules: [{ id: 'hard-cap', deny: { amountGt: '1.00' } }],
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+
+    expect(res.status).toBe(200);
+    expect(vendor.calls).toHaveLength(2);
+    // The mainnet offer came FIRST in the accepts array and was skipped.
+    expect(paidFor).toEqual(['base-sepolia']);
+  });
+
+  /**
+   * The failure this rail prevents. The engine sees `chain: 'base'` either
+   * way -- networkToChain folds the testnet into the mainnet -- so policy
+   * cannot refuse this, and the agent would sign a real-money authorization
+   * because a vendor asked it to. It must never reach evaluate.
+   */
+  it('fails closed on a mainnet-only 402 and never asks the engine', async () => {
+    const agentId = await newAgent();
+    const vendor = multiNetworkVendor(['base']);
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      payer: mockPayer,
+      networks: ['base-sepolia'],
+    });
+
+    await expect(guard.wrap()('https://api.vendor.test/v1/answer')).rejects.toThrowError(
+      UnsupportedRequirementError,
+    );
+    // One call: the 402 itself. No payment was attempted.
+    expect(vendor.calls).toHaveLength(1);
+    expect(vendor.calls[0]?.payment).toBeNull();
+    expect(guard.receipts()).toHaveLength(0);
+  });
+
+  it('pays a mainnet 402 when mainnet is what the guard allows', async () => {
+    const agentId = await newAgent();
+    const vendor = multiNetworkVendor(['base']);
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: vendor.fetchImpl,
+      payer: mockPayer,
+      networks: ['base'],
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_net_mainnet',
+      appliesTo: { agents: [agentId] },
+      rules: [{ id: 'hard-cap', deny: { amountGt: '1.00' } }],
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+    expect(res.status).toBe(200);
+    expect(vendor.calls[1]?.payment).toBe('mock-payment-header');
+  });
+});

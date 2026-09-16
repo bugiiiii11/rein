@@ -115,34 +115,50 @@ Note also that **every push to `main` auto-deploys**, and with a volume attached
 Railway stops the old container before starting the new one — so a bad start command
 is real downtime, not a failed deploy that quietly rolls back.
 
-**3. The image is READY to run as the unprivileged `node` user, and the switch is one
-commented line (S57).** It is deliberately off, and the reason is measured rather than
-guessed. Both cases were run against this image on 2026-09-16 with
-`docker run -v <volume>:/data -e REIN_CONSOLE_DATA_DIR=/data/console`:
+**3. The container runs as the unprivileged `node` user, and turning that on needs a fresh
+volume under it (S57 measured, S58 enabled).** Both cases were run against this image on
+2026-09-16 with `docker run -v <volume>:/data -e REIN_CONSOLE_DATA_DIR=/data/console`:
 
 | Volume | Result |
 |---|---|
 | Fresh, with the image's node-owned `/data` | Boots, seeds, `drwx------ node node`, SIGTERM drains, exit 0 |
-| Already exists root-owned (what Railway has) | `EACCES: permission denied, mkdir '/data/console'`, exit 1 |
+| Already exists root-owned (what Railway had) | `EACCES: permission denied, mkdir '/data/console'`, exit 1 |
 
 app.reinconsole.com's volume was created in S36 by a root container, and Docker does not
-re-initialize an existing volume from the image. So uncommenting `USER node` on its own takes
-the site down into an `ON_FAILURE` restart loop. One human step in the Railway dashboard comes
-first — pick one:
+re-initialize an existing volume from the image. **Founder call 2026-09-17: recreate the
+volume.** The console is a read-only demo exhibit — it reseeds deterministically and the
+deploy log says `fresh store (seeded)` — it is the only option that actually leaves the
+container unprivileged, and destroying the disk is also the only complete erasure of the
+plaintext signing key, which S57 proved survives an `UPDATE` in both the heap and the WAL.
+The alternatives considered and declined: chowning the mount to uid 1000 needs a one-off
+root run, which on Railway means temporarily editing the `startCommand` that caused the S36
+outage, and keeps that plaintext key on disk; `RAILWAY_RUN_UID=0` declines the change
+explicitly but closes nothing.
 
-1. **Recreate the volume.** The console is a demo exhibit; it reseeds on next boot and the
-   deploy log says `fresh store (seeded)`. Simplest, and the only one that actually leaves the
-   container unprivileged.
-2. **Chown the mount once** to uid 1000, from a one-off root run.
-3. **`RAILWAY_RUN_UID=0`** to keep running as root, which declines the change explicitly
-   rather than by omission.
+**Do the two steps in this order, and in one sitting.** Recreate-then-push is the wrong
+order and lands you back on the same EACCES with a brand-new volume: a fresh volume lands
+node-owned, but a still-root container booting onto it FIRST creates `/data/console` as
+`root:root 0700`, and the node image cannot enter it. The first process to touch the fresh
+volume must be the node one.
+
+1. Push the image with `USER node`. The deploy crash-loops with the measured EACCES on the
+   old volume — expected, and it is `ON_FAILURE` with `restartPolicyMaxRetries: 10`.
+2. Delete and recreate the volume in the Railway dashboard. The restart boots as `node`
+   onto a node-owned volume and seeds.
+3. Confirm exit code 0 and `fresh store (seeded)`, then re-record the signing-key
+   fingerprint (see "Proving persistence without log access") — the old one is gone with
+   the volume, and the new value is the baseline from here on.
+
+The window between 1 and 2 is real downtime on a public page, which is why they belong
+together rather than across sessions.
 
 The usual fix — an ENTRYPOINT that chowns and then drops privileges — does NOT apply here:
 Railway execs `startCommand` as argv and it overrides `ENTRYPOINT` (see point 1 above).
 
-A new service with its own FRESH volume has none of this history, so `rein-engine` can be
-non-root from its first deploy in Sprint 4. Whichever way this goes, check
-`docker inspect --format '{{.State.ExitCode}}'` rather than merely that the container booted.
+A new service with its own FRESH volume has none of this history, so `rein-engine` is
+non-root from its first deploy in Sprint 4 with no dashboard step at all. Whichever way this
+goes, check `docker inspect --format '{{.State.ExitCode}}'` rather than merely that the
+container booted.
 
 ## Shutdown
 
@@ -401,6 +417,132 @@ console read key and there is not going to be one: a browser cannot hold a crede
 A1b requires, and a dashboard that could read one tenant's chain from a public origin is a
 cross-tenant leak waiting for a misconfiguration. Tenant observability is the engine API with
 an org-scoped `read` key, driven by whatever the tenant already uses.
+
+## Second service: the hosted engine (S58)
+
+`rein-engine` runs as its OWN Railway service, from the SAME repo and the SAME
+image. The console's Docker build already produces everything it needs --
+`@reinconsole/console` depends on `@reinconsole/store`, so
+`turbo run build --filter=@reinconsole/console` builds the store too, and
+`services/store/dist/server.js` is in the image whether or not the console ever
+imports it. Two services, one image, different start commands.
+
+Config lives in `railway.engine.json`, selected per service with Railway's
+config-file path setting. `railway.json` continues to belong to the console.
+
+| | console | engine |
+|---|---|---|
+| start | `node apps/console/node_modules/tsx/.../standalone.ts` | `node services/store/bin/rein-engine.mjs` |
+| health | `/api/health` | `/health` |
+| data dir | `REIN_CONSOLE_DATA_DIR=/data/console` | `REIN_DATA_DIR=/data/engine` |
+| posture | read-only exhibit | the real engine |
+
+**The start command names the bin, not `dist/server.js`.** Both boot -- the bin
+re-points `argv[1]` and imports the dist file, which only starts when it
+believes it is the main module -- but the bin is the entry
+`services/store/src/engine-e2e.ts` spawns, so it is the one with test evidence
+behind it. It also turns a missing build into `dist/server.js not found — run
+pnpm build first` instead of a module-resolution stack. `deploy-config.test.ts`
+pins that agreement, along with the `railway.json` start command matching the
+Dockerfile `CMD`: S36 proved that rule cannot live in prose alone.
+
+### Human steps to create it
+
+In Railway, a NEW service on this repo:
+
+- Root Directory = repo root (NOT `services/store`) -- the workspace must
+  install and build together, same reason as the console.
+- Config file path = `railway.engine.json`.
+- Volume mounted at `/data`. It is a fresh volume, so it lands node-owned and
+  the engine is non-root from its first deploy with no dashboard dance -- the
+  console's volume history (point 3 above) does not apply here.
+- Custom domain `engine.reinconsole.com`, CNAME at the DNS host.
+- Enable Railway volume backups. The console's volume is disposable; this one
+  holds the decision chain.
+
+Environment:
+
+| Variable | Value |
+|---|---|
+| `REIN_DATA_DIR` | `/data/engine` |
+| `REIN_ENGINE_API_KEY` | bootstrap admin key; mint narrower keys via `/v1/keys` and stop using it |
+| `REIN_ENGINE_SIGNING_KEY` | a FRESH `openssl genpkey -algorithm ed25519` PEM |
+| `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
+| `REIN_ESCALATION_TTL_MS` | `3600000` |
+| `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it |
+| `HOST` | unset. A keyed engine binds `0.0.0.0` on its own; setting it is how you bind a public interface by accident |
+
+Generate the signing key BEFORE the first boot. A fresh service has no chain
+to continue, so there is no key migration -- but once the first decision is
+signed, "once external, always external" applies: the variable is required
+from then on and a boot without it fails rather than starting a second chain.
+
+### Exit checks
+
+```
+curl https://engine.reinconsole.com/health
+REIN_E2E_ENGINE_URL=https://engine.reinconsole.com REIN_ENGINE_API_KEY=... RUN_LIVE=1 \
+  pnpm --filter @reinconsole/store exec vitest run src/engine.e2e.live.test.ts
+```
+
+Then the publicKey fingerprint recipe below, across a redeploy. The restart and
+drain cases in the e2e self-skip against a remote engine: they need a process
+to signal, and a hosted one is not ours to kill.
+
+## The live workflow (S58)
+
+`.github/workflows/live.yml` runs the suites that spend real testnet money and
+talk to real third parties -- daily, and on `workflow_dispatch` with a `suite`
+input. `ci.yml` pins `RUN_LIVE` empty on purpose: settling payments is not
+something a push should decide to do, and a fork's pull request must never
+reach these secrets.
+
+`concurrency: live` with `cancel-in-progress: false` is load-bearing in both
+halves. The suites share ONE funded Sepolia wallet, so two runs race on its
+nonce and balance -- and cancelling a run mid-settlement abandons a payment
+that is already on-chain, which is worse than waiting.
+
+Each suite is `continue-on-error` with a summary step that fails the run: "the
+facilitator is down" must not hide "Telegram is also down". A failure pages the
+same Telegram chat a production escalation would, which doubles as a standing
+check that the channel still works.
+
+`.github/scripts/live-preflight.mjs` runs first and fails in seconds with
+`fund the wallet` rather than twenty minutes later with a facilitator error
+meaning the same thing. Repository secrets: `REIN_SEPOLIA_PRIVATE_KEY`,
+`REIN_SEPOLIA_VENDOR_ADDRESS`, `REIN_SEPOLIA_RPC_URL` (keyed -- the public RPC
+rate-limits), `REIN_SEPOLIA_ERC8004_ID`, the Telegram pair, and once the engine
+is up `REIN_E2E_ENGINE_URL` + `REIN_ENGINE_API_KEY`.
+
+## Network profiles (S58)
+
+`REIN_NETWORK_PROFILE` is `testnet` (the default) or `mainnet`, and an unknown
+value is a startup error rather than a fallback: an operator who typed `mainet`
+meant mainnet, and a vendor quietly taking real requests while being paid in
+play money looks exactly like everything working.
+
+It resolves a `NetworkProfile` (`services/x402-rails/src/profiles.ts`) carrying
+the chain id, USDC address, facilitator URL and EIP-712 domain for that network.
+Libraries never read the variable -- composing apps read it and pass the profile
+down, so two profiles can coexist in one process.
+
+**Two things about it are safety rails, not configuration.**
+
+The guard and the payer both take a `networks` allow-list, and both need it.
+The policy engine CANNOT enforce this boundary: `networkToChain` folds
+`base-sepolia` into `base` because policy is written about chains, not
+deployments, so by the time an intent reaches `/v1/evaluate` a testnet and a
+mainnet payment are indistinguishable and any policy allowing one allows the
+other. The offer comes from the vendor, so without an allow-list the VENDOR
+chooses which chain the agent's key spends on.
+
+The EIP-712 domain differs between the two networks -- Base Sepolia's USDC is
+named `USDC`, Base mainnet's is `USD Coin` -- and `payer.ts` used to hardcode
+the Sepolia spelling as its fallback. That signs a well-formed authorization
+the mainnet contract rejects at settlement: a failure that appears only with
+real money on the line. `profiles.live.test.ts` reads the name, version and
+decimals off the real contract (`RUN_LIVE_MAINNET=1`, read-only, no key) rather
+than letting a unit test agree with itself.
 
 ## Verifying a deploy
 

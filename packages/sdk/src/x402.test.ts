@@ -128,6 +128,50 @@ describe('selectRequirement', () => {
   it('returns undefined when nothing qualifies', () => {
     expect(selectRequirement([requirement({ network: 'arbitrum' })])).toBeUndefined();
   });
+
+  /**
+   * The testnet/mainnet boundary. It cannot live downstream of the engine:
+   * networkToChain folds base-sepolia INTO base (policy is written about
+   * chains, not deployments), so by the time an intent reaches evaluate the
+   * two are indistinguishable and every policy that allows one allows the
+   * other. Selection is the last place they can still be told apart.
+   */
+  describe('network allow-list', () => {
+    it('skips offers outside the list and picks an allowed one further down', () => {
+      const resolved = selectRequirement(
+        [
+          requirement({ network: 'base', maxAmountRequired: '9000000' }),
+          requirement({ network: 'base-sepolia', maxAmountRequired: '10000' }),
+        ],
+        {},
+        ['base-sepolia'],
+      );
+      expect(resolved?.requirement.network).toBe('base-sepolia');
+      expect(resolved?.amount).toBe('0.01');
+    });
+
+    it('matches across dialects, so a CAIP-2 offer honours a v1 allow-list', () => {
+      expect(
+        selectRequirement([requirement({ network: 'eip155:84532' })], {}, ['base-sepolia']),
+      ).toBeDefined();
+      expect(
+        selectRequirement([requirement({ network: 'base-sepolia' })], {}, ['eip155:84532']),
+      ).toBeDefined();
+    });
+
+    it('fails closed when a 402 offers only disallowed networks', () => {
+      expect(
+        selectRequirement([requirement({ network: 'base' })], {}, ['base-sepolia']),
+      ).toBeUndefined();
+      expect(
+        selectRequirement([requirement({ network: 'eip155:8453' })], {}, ['base-sepolia']),
+      ).toBeUndefined();
+    });
+
+    it('is unrestricted when no list is given (the pre-profile behaviour)', () => {
+      expect(selectRequirement([requirement({ network: 'base' })])).toBeDefined();
+    });
+  });
 });
 
 describe('toIntentSubmission', () => {

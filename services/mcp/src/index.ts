@@ -15,11 +15,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createGuard, type Guard } from '@reinconsole/sdk';
-import { resolveConfig, type ReinMcpConfig, type ResolvedMcpConfig } from './config.js';
+import {
+  networksFor,
+  resolveConfig,
+  type ReinMcpConfig,
+  type ResolvedMcpConfig,
+} from './config.js';
 import { reinTools, type ReinTool, type ReinToolContext } from './tools.js';
 
-export { configFromEnv, resolveConfig, ConfigError, DEFAULT_MAX_BODY_BYTES } from './config.js';
-export type { ReinMcpConfig, ResolvedMcpConfig } from './config.js';
+export {
+  configFromEnv,
+  resolveConfig,
+  networksFor,
+  ConfigError,
+  DEFAULT_MAX_BODY_BYTES,
+  DEFAULT_NETWORK_PROFILE,
+} from './config.js';
+export type { ReinMcpConfig, ResolvedMcpConfig, McpProfileName } from './config.js';
 export { reinTools } from './tools.js';
 export type { ReinTool, ReinToolContext, ToolResult } from './tools.js';
 
@@ -39,6 +51,10 @@ export function createToolContext(config: ReinMcpConfig): ReinToolContext {
     ...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
     ...(resolved.payer !== undefined ? { payer: resolved.payer } : {}),
     ...(resolved.fetch !== undefined ? { fetch: resolved.fetch } : {}),
+    // The testnet/mainnet boundary, enforced before the engine is asked: the
+    // engine maps base-sepolia and base onto the same chain, so it cannot
+    // tell them apart and policy alone would allow a mainnet 402 here.
+    networks: networksFor(resolved.networkProfile),
     ...(resolved.taskId !== undefined ? { taskContext: { taskId: resolved.taskId } } : {}),
     // Blocks surface as a thrown PaymentBlockedError, which `rein_fetch` turns
     // into an MCP tool error -- the honest shape for "the fetch did not happen".

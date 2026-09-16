@@ -44,6 +44,36 @@ export interface ReinMcpConfig {
   taskId?: string;
   /** Vendor-facing fetch. Defaults to global fetch. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Which network this server pays on: `testnet` (the default) or `mainnet`.
+   * It bounds both the guard and the payer, so a 402 offering only the other
+   * network fails closed instead of being signed for.
+   */
+  networkProfile?: McpProfileName;
+}
+
+export type McpProfileName = 'testnet' | 'mainnet';
+
+/**
+ * The x402 network ids each profile covers, in both dialects.
+ *
+ * Deliberately a LOCAL copy of what `@reinconsole/x402-rails` profiles.ts
+ * declares, rather than an import: that module pulls viem in behind it, and
+ * the whole point of the dynamic payer import below is that an advisory
+ * install never loads a signing stack. These are plain strings and drift is
+ * the obvious risk, so `config.test.ts` pins them against the real profiles --
+ * the test can import x402-rails freely, because a test is not a cold start.
+ */
+const PROFILE_NETWORKS: Readonly<Record<McpProfileName, readonly string[]>> = {
+  testnet: ['base-sepolia', 'eip155:84532'],
+  mainnet: ['base', 'eip155:8453'],
+};
+
+export const DEFAULT_NETWORK_PROFILE: McpProfileName = 'testnet';
+
+/** The networks a profile permits — what the guard and payer are bounded by. */
+export function networksFor(profile: McpProfileName): readonly string[] {
+  return PROFILE_NETWORKS[profile];
 }
 
 export const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
@@ -52,6 +82,7 @@ export const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 export interface ResolvedMcpConfig extends ReinMcpConfig {
   escalationWaitMs: number;
   maxBodyBytes: number;
+  networkProfile: McpProfileName;
 }
 
 export function resolveConfig(config: ReinMcpConfig): ResolvedMcpConfig {
@@ -61,6 +92,7 @@ export function resolveConfig(config: ReinMcpConfig): ResolvedMcpConfig {
     ...config,
     escalationWaitMs: config.escalationWaitMs ?? 0,
     maxBodyBytes: config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    networkProfile: config.networkProfile ?? DEFAULT_NETWORK_PROFILE,
   };
 }
 
@@ -96,14 +128,24 @@ export async function configFromEnv(env: NodeJS.ProcessEnv = process.env): Promi
     );
   }
 
+  const networkProfile = profileFromEnv(env);
+
   const privateKey = env['REIN_PAYER_PRIVATE_KEY'];
   let payer: Payer | undefined;
   if (privateKey !== undefined && privateKey !== '') {
     if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
       throw new ConfigError('REIN_PAYER_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key');
     }
-    const { createX402Payer } = await import('@reinconsole/x402-rails');
-    payer = createX402Payer({ privateKey: privateKey as `0x${string}` });
+    const { createX402Payer, PROFILES } = await import('@reinconsole/x402-rails');
+    payer = createX402Payer({
+      privateKey: privateKey as `0x${string}`,
+      // Bounded on BOTH sides on purpose. The guard refuses a foreign network
+      // before the engine is asked; this refuses one before a signature
+      // exists, which is the boundary that still holds if someone builds a
+      // payer without a guard in front of it.
+      networks: networksFor(networkProfile),
+      profile: PROFILES[networkProfile],
+    });
   }
 
   return {
@@ -114,7 +156,25 @@ export async function configFromEnv(env: NodeJS.ProcessEnv = process.env): Promi
     ...(env['REIN_MCP_TASK_ID'] ? { taskId: env['REIN_MCP_TASK_ID'] } : {}),
     escalationWaitMs: intFromEnv(env, 'REIN_MCP_ESCALATION_WAIT_MS', 0),
     maxBodyBytes: intFromEnv(env, 'REIN_MCP_MAX_BODY_BYTES', DEFAULT_MAX_BODY_BYTES),
+    networkProfile,
   };
+}
+
+/**
+ * `REIN_NETWORK_PROFILE`, defaulting to testnet.
+ *
+ * An unknown value is a ConfigError rather than a fallback to testnet: an
+ * operator who typed `mainet` meant mainnet, and silently running their
+ * production vendor against play money would look exactly like success.
+ */
+function profileFromEnv(env: NodeJS.ProcessEnv): McpProfileName {
+  const raw = env['REIN_NETWORK_PROFILE'];
+  if (raw === undefined || raw === '') return DEFAULT_NETWORK_PROFILE;
+  const key = raw.trim().toLowerCase();
+  if (key === 'testnet' || key === 'mainnet') return key;
+  throw new ConfigError(
+    `REIN_NETWORK_PROFILE must be "testnet" or "mainnet", got ${JSON.stringify(raw)}`,
+  );
 }
 
 function intFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {

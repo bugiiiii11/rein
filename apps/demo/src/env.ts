@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { profileFor, TESTNET, type NetworkProfile } from '@reinconsole/x402-rails';
 
 /**
  * Minimal .env handling for the demos: the file lives at the repo root
@@ -41,4 +42,19 @@ export function appendEnv(entries: Record<string, string>): string {
   const needsNewline = existsSync(path) && !readFileSync(path, 'utf8').endsWith('\n');
   appendFileSync(path, `${needsNewline ? '\n' : ''}${lines}\n`);
   return path;
+}
+
+/**
+ * The network profile the demos run against, from `REIN_NETWORK_PROFILE`
+ * (default testnet). This is the one place a demo learns which money it is
+ * about to move, and every rail it builds takes the returned profile rather
+ * than a Sepolia constant.
+ *
+ * Reading the env HERE rather than in @reinconsole/x402-rails is the rule the
+ * rails package keeps: libraries stay env-free so two profiles can coexist in
+ * one process; composing apps do the reading.
+ */
+export function profileFromEnv(): NetworkProfile {
+  const raw = readEnv('REIN_NETWORK_PROFILE');
+  return raw === undefined || raw === '' ? TESTNET : profileFor(raw);
 }

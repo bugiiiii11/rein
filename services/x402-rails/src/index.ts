@@ -25,6 +25,26 @@ export {
 export { intentNonce } from './nonce.js';
 export { chainIdForNetwork } from './networks.js';
 export {
+  TESTNET,
+  MAINNET,
+  PROFILES,
+  BASE_USDC,
+  BASE_SEPOLIA_USDC_ADDRESS,
+  TESTNET_FACILITATOR_URL,
+  CDP_FACILITATOR_URL,
+  parseProfileName,
+  profileFor,
+  profileForNetwork,
+  type NetworkProfile,
+  type ProfileName,
+} from './profiles.js';
+export {
+  createProfileFacilitator,
+  cdpAuthHeaders,
+  type CdpCredentials,
+  type ProfileFacilitatorOptions,
+} from './cdp.js';
+export {
   createX402Payer,
   transferWithAuthorizationTypes,
   type X402PayerOptions,
@@ -50,8 +70,11 @@ export {
   CIRCLE_FAUCET_URL,
   basescanTxUrl,
   generateWallet,
+  addressForPrivateKey,
   createBaseSepoliaClient,
+  createChainClient,
   getUsdcBalance,
+  getProfileUsdcBalance,
   type BaseSepoliaClient,
   type GeneratedWallet,
 } from './wallet.js';

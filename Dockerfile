@@ -9,7 +9,7 @@ RUN corepack enable
 WORKDIR /app
 
 # Everything the unprivileged `node` user needs is prepared here, and the switch itself is
-# the ONE line left off — read the measurements before turning it on (S57).
+# the `USER node` below -- off through S57 while it was measured, ON as of 2026-09-17.
 #
 # /app is chowned so a non-root build can write node_modules, dist and .turbo. /data is
 # created and given to node because Docker (and Railway) initialize a FRESH volume with the
@@ -19,8 +19,6 @@ RUN chown -R node:node /app && mkdir -p /data && chown -R node:node /data
 # Copy the whole monorepo (see .dockerignore for exclusions) and install from the lockfile.
 COPY --chown=node:node . .
 
-# USER node
-#
 # Measured in this image, 2026-09-16, both against `docker run -v <volume>:/data` with
 # REIN_CONSOLE_DATA_DIR=/data/console:
 #
@@ -30,13 +28,23 @@ COPY --chown=node:node . .
 #                                              '/data/console' -> exit 1
 #
 # app.reinconsole.com's volume was created in S36 by a root container, and an existing
-# volume is NOT re-initialized from the image. So enabling this line alone takes the site
-# down into an ON_FAILURE restart loop. It needs ONE deliberate human step first, in the
-# Railway dashboard: recreate the volume (the console is a demo exhibit -- it reseeds), or
-# chown the mount once, or set RAILWAY_RUN_UID=0 to keep running as root.
+# volume is NOT re-initialized from the image, so this line needs a FRESH volume under it.
+# Founder call 2026-09-17: recreate the volume. The console is a read-only demo exhibit --
+# it reseeds deterministically, and destroying the disk is also the only complete erasure
+# of the plaintext signing key S57 found surviving in the heap and the WAL.
+#
+# THE ORDER IS THE TRAP, and recreate-then-push is the WRONG one. A fresh volume lands
+# node-owned (the mkdir above), but a still-root container booting onto it FIRST creates
+# /data/console as root:root 0700, and the node image then hits the SAME EACCES on a
+# brand-new volume. The first process to touch a fresh volume must be the node one: ship
+# this line, let the deploy crash-loop on the old volume, THEN recreate it in the Railway
+# dashboard, and the restart seeds as node. That gap is real downtime on a public page, so
+# both steps belong in one sitting.
 #
 # Note also that an ENTRYPOINT that chowns and then drops privileges -- the usual fix --
 # does NOT work here: Railway execs `startCommand` as argv and it overrides ENTRYPOINT.
+USER node
+
 # pnpm 10 skips dependency build scripts by default; esbuild (used by vite + tsup) needs its
 # native binary built or the build crashes — the same gotcha as local dev, so rebuild it here.
 RUN pnpm install --frozen-lockfile \

@@ -6,6 +6,7 @@ import { PaymentRequirement } from '@reinconsole/sdk';
 import { RailsError } from './errors.js';
 import { intentNonce } from './nonce.js';
 import { createX402Payer, transferWithAuthorizationTypes } from './payer.js';
+import { BASE_USDC } from './profiles.js';
 import { decodePaymentHeader } from './wire.js';
 
 // A throwaway, publicly known key (hardhat/anvil dev account) — tests only.
@@ -151,5 +152,81 @@ describe('createX402Payer', () => {
     expect(() =>
       createX402Payer({ privateKey: KEY, account: privateKeyToAccount(KEY), now: () => NOW }),
     ).toThrowError(TypeError);
+  });
+});
+
+/**
+ * The network allow-list and the EIP-712 domain fallback: the two places a
+ * payer can be talked onto the wrong chain by a 402 it merely received.
+ */
+describe('createX402Payer network bounds', () => {
+  it('signs for a network on the allow-list, in either dialect', async () => {
+    const payer = createX402Payer({
+      privateKey: KEY,
+      now: () => NOW,
+      networks: ['base-sepolia'],
+    });
+    await expect(payer(requirement(), intent(), decision)).resolves.toContain('');
+    // The v1 name allow-listed it; the CAIP-2 spelling of the SAME chain is
+    // the same permission, because the vendor picks which dialect it offers.
+    await expect(
+      payer(requirement({ network: 'eip155:84532' }), intent(), decision),
+    ).resolves.toContain('');
+  });
+
+  /**
+   * The offer comes from the vendor. Without this list, the vendor chooses
+   * which chain the agent's key spends on — and the engine cannot object,
+   * because networkToChain folds base-sepolia and base onto one chain.
+   */
+  it('refuses a network outside the allow-list before any signature exists', async () => {
+    const payer = createX402Payer({
+      privateKey: KEY,
+      now: () => NOW,
+      networks: ['base-sepolia'],
+    });
+    await expect(
+      payer(requirement({ network: 'base' }), intent(), decision),
+    ).rejects.toThrowError(RailsError);
+    await expect(payer(requirement({ network: 'eip155:8453' }), intent(), decision)).rejects.toThrow(
+      /allow-list/,
+    );
+  });
+
+  it('signs any known network when no allow-list is given (the old behaviour)', async () => {
+    const payer = createX402Payer({ privateKey: KEY, now: () => NOW });
+    await expect(payer(requirement({ network: 'base' }), intent(), decision)).resolves.toContain('');
+  });
+
+  /**
+   * A requirement that omits `extra` is where the mainnet domain bug lived:
+   * the fallback used to be the hardcoded Sepolia spelling, so a mainnet
+   * payment was signed against domain name "USDC" and the real contract —
+   * which is "USD Coin" — would reject it at settlement.
+   */
+  it('falls back to the domain of the network being paid on, not to Sepolia', async () => {
+    const seen: { name?: unknown }[] = [];
+    const account = privateKeyToAccount(KEY);
+    const spy = createX402Payer({
+      account: {
+        address: account.address,
+        signTypedData: (params) => {
+          seen.push(params.domain as { name?: unknown });
+          return account.signTypedData(params);
+        },
+      },
+      now: () => NOW,
+    });
+
+    const bare = { network: 'base', asset: BASE_USDC, extra: undefined };
+    await spy(requirement(bare), intent(), decision);
+    expect(seen.at(-1)?.name).toBe('USD Coin');
+
+    await spy(requirement({ ...bare, network: 'base-sepolia' }), intent(), decision);
+    expect(seen.at(-1)?.name).toBe('USDC');
+
+    // The vendor's own declaration still wins over both.
+    await spy(requirement({ ...bare, extra: { name: 'Bridged USDC', version: '2' } }), intent(), decision);
+    expect(seen.at(-1)?.name).toBe('Bridged USDC');
   });
 });

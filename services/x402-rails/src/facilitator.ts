@@ -10,6 +10,19 @@ export interface FacilitatorClientOptions {
   url?: string;
   /** Transport override (tests inject a stub here). Defaults to global fetch. */
   fetch?: FetchLike;
+  /**
+   * Credentials for a facilitator that needs them, resolved per request.
+   *
+   * A function rather than a header object because every mainnet facilitator
+   * authenticates with something short-lived -- CDP's bearer is a JWT minted
+   * per call and bound to the request's method and path -- so a header
+   * captured once at construction is already expired by the second payment.
+   * The arguments are what such a signature needs to cover.
+   */
+  authHeaders?: (request: {
+    method: string;
+    path: string;
+  }) => Promise<Record<string, string>> | Record<string, string>;
 }
 
 /** Any x402 payment envelope — the POST's x402Version is read off of it. */
@@ -29,11 +42,18 @@ export type AnyPaymentRequirements = PaymentRequirement | Record<string, unknown
 export class FacilitatorClient {
   readonly url: string;
   private readonly fetch: FetchLike;
+  private readonly authHeaders: FacilitatorClientOptions['authHeaders'];
 
   constructor(options: FacilitatorClientOptions = {}) {
     this.url = (options.url ?? DEFAULT_FACILITATOR_URL).replace(/\/$/, '');
     const f = options.fetch ?? globalThis.fetch;
     this.fetch = (input, init) => f(input, init);
+    this.authHeaders = options.authHeaders;
+  }
+
+  /** Credentials for one request, or nothing on an open facilitator. */
+  private async auth(method: string, path: string): Promise<Record<string, string>> {
+    return this.authHeaders ? await this.authHeaders({ method, path }) : {};
   }
 
   async verify(
@@ -52,7 +72,9 @@ export class FacilitatorClient {
 
   /** The facilitator's advertised (x402Version, scheme, network) kinds. */
   async supported(): Promise<unknown> {
-    const res = await this.fetch(`${this.url}/supported`);
+    const res = await this.fetch(`${this.url}/supported`, {
+      headers: await this.auth('GET', '/supported'),
+    });
     if (!res.ok) throw new FacilitatorHttpError(res.status, await res.text());
     return res.json();
   }
@@ -69,7 +91,7 @@ export class FacilitatorClient {
     const x402Version = typeof claimed === 'number' ? claimed : 1;
     const res = await this.fetch(`${this.url}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(await this.auth('POST', path)) },
       body: JSON.stringify({ x402Version, paymentPayload, paymentRequirements }),
     });
     if (!res.ok) throw new FacilitatorHttpError(res.status, await res.text());

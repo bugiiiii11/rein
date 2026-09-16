@@ -240,6 +240,11 @@ function statusTool(ctx: ReinToolContext): ReinTool {
             config.payer !== undefined
               ? 'settling (a payer is configured)'
               : 'advisory (no payer configured)',
+          // Which money this is. An agent that cannot tell testnet from
+          // mainnet cannot reason about the size of what it is about to do,
+          // and the engine's own view folds the two together (policy is
+          // written about chains, not deployments).
+          network: config.networkProfile,
           engine: health.ok
             ? {
                 status: health.value.status,

@@ -78,7 +78,11 @@ beforeAll(async () => {
       ],
       rails: mockFacilitatorRails(facilitator),
       payTo: VENDOR,
-      network: 'base',
+      // Base Sepolia, matching the posture the whole repo runs in: the MCP
+      // server defaults to the testnet profile and refuses a mainnet offer
+      // (see the test below). The engine cannot tell the two apart anyway --
+      // networkToChain folds both onto 'base' -- so nothing else here changes.
+      network: 'base-sepolia',
       asset: 'USDC',
     }),
     {
@@ -182,6 +186,54 @@ describe('the deployable engine, driven the way an external agent drives it', ()
     expect(view.reconciliation.allowed).toBeGreaterThanOrEqual(2);
     // Settlements have been reported, so the "nobody reports" note stays off.
     expect(view.reconciliation.note).toBeUndefined();
+  });
+
+  /**
+   * The MCP server defaults to the TESTNET profile, and that default is a
+   * safety rail rather than a preference: the engine folds base-sepolia and
+   * base onto one chain, so policy cannot tell a play-money payment from a
+   * real one and would allow both. Against a mainnet vendor the tool must
+   * refuse before signing anything -- an agent does not acquire the ability
+   * to spend real money by installing an MCP server.
+   */
+  it('refuses a mainnet vendor by default, signing and paying nothing', async () => {
+    const mainnetVendor = createGatedFetch(
+      createGate({
+        routes: [{ path: '/v1/answer', price: '0.01' }],
+        rails: mockFacilitatorRails(facilitator),
+        payTo: VENDOR,
+        network: 'base',
+        asset: 'USDC',
+      }),
+      {
+        serve: () =>
+          new Response(JSON.stringify({ answer: 42 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    );
+    const context = createToolContext({
+      engineUrl: engine.url,
+      apiKey: agentSecret,
+      agentId,
+      payer: facilitator.payerFor(WALLET),
+      fetch: mainnetVendor as typeof globalThis.fetch,
+    });
+
+    const before = ledger.entries().length;
+    const refused = await reinTools(context)
+      .find((t) => t.name === 'rein_fetch')!
+      .handler({ url: CHEAP });
+
+    expect(refused.isError).toBe(true);
+    // Nothing was signed and nothing was paid -- the refusal happens before
+    // the payer is ever reached, which is the whole point of filtering at
+    // selection rather than after a decision.
+    expect(ledger.entries()).toHaveLength(before);
+    // The positive half (mainnet pays once mainnet is declared) is covered in
+    // packages/sdk guard.test.ts, where it does not move this engine's
+    // counters -- the restart test below asserts on them.
   });
 
   it.skipIf(remote)(
