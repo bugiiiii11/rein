@@ -6,8 +6,15 @@ import { ApiKeyId } from './ids.js';
  * the issuing/rotating key); the rest are least-privilege grants so an agent
  * runtime carrying an `evaluate` key cannot rewrite policy, and an approval
  * relay cannot read the spend history.
+ *
+ * `report` is the graph's ingestion grant, and it is deliberately NOT folded
+ * into `evaluate`: evidence written to the reputation graph is about OTHER
+ * subjects, so a fleet key that may spend its own budget has no business
+ * moving a vendor's score. The engine's own reporting routes ride `evaluate`
+ * because there the reporter IS the spender — that reasoning does not reach
+ * across to a shared graph.
  */
-export const ApiKeyScope = z.enum(['read', 'evaluate', 'approve', 'admin']);
+export const ApiKeyScope = z.enum(['read', 'evaluate', 'approve', 'report', 'admin']);
 export type ApiKeyScope = z.infer<typeof ApiKeyScope>;
 
 /**

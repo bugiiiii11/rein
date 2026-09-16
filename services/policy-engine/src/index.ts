@@ -70,6 +70,10 @@ export {
   resolveHost,
   type ServerOptions,
 } from './server.js';
+// Re-exported from @reinconsole/core/auth (moved there so the signer's admin
+// surface and the graph's ingestion routes answer "who is calling, and may
+// they do this" with the SAME code the engine does). Kept exported here on
+// purpose: `@reinconsole/policy-engine` published these at 0.2.0.
 export {
   ApiKeyAuth,
   AuthError,
@@ -82,7 +86,7 @@ export {
   type AuthFailureCode,
   type IssuedApiKey,
   type ApiKeyAuthOptions,
-} from './auth.js';
+} from '@reinconsole/core/auth';
 export {
   ApprovalService,
   ApprovalError,

@@ -13,16 +13,29 @@
  * cannot share one PGlite directory. In a single process (e.g. the console
  * world), one `openReinStore({ dir })` backs both engine and graph at once.
  *
- * NOTE ON EXPOSURE: @reinconsole/graph's HTTP API has no authentication of any
- * kind, and `POST /v1/events` accepts reputation evidence from whoever sends
- * it. So this bin binds loopback by default and REFUSES a public bind unless
- * `REIN_GRAPH_PUBLIC=1` says that is the intent — see {@link resolveGraphHost}.
+ * NOTE ON EXPOSURE: `POST /v1/events` accepts reputation evidence about
+ * subjects that did not send it, so writes demand a `report` key when one is
+ * configured (`REIN_GRAPH_API_KEY`) — D1(a). Reads stay open, because a score
+ * nobody can read governs nothing. Without a key this bin still binds loopback
+ * and refuses a public bind unless `REIN_GRAPH_PUBLIC=1` says that is the
+ * intent — see `resolveGraphHost` in @reinconsole/graph.
  */
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
-import { ReputationGraph, buildGraphServer } from '@reinconsole/graph';
+import {
+  ReputationGraph,
+  buildGraphServer,
+  graphAuthFromEnv,
+  resolveGraphHost,
+} from '@reinconsole/graph';
+import type { ApiKeyAuth } from '@reinconsole/core/auth';
 import { openReinStore, type ReinStore } from './index.js';
+
+// Re-exported, not reimplemented: this bin and @reinconsole/graph's own main
+// block make the same bind decision, and two copies of a safety rule is one
+// copy too many. Kept exported here because that is where it was tested from.
+export { resolveGraphHost };
 
 export interface PersistentGraph {
   app: FastifyInstance;
@@ -31,45 +44,14 @@ export interface PersistentGraph {
   close(): Promise<void>;
 }
 
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
-
-/**
- * Where the graph bin binds.
- *
- * The engine has `resolveHost`, which trades a public bind against an API key.
- * The graph has no key to trade — its server ships no auth — so the trade here
- * is against a deliberate statement instead: `REIN_GRAPH_PUBLIC=1`. Everything
- * else binds loopback, which leaves the documented `localhost:8788` quickstart
- * untouched and makes exposing a writable evidence ledger an act rather than
- * an oversight.
- */
-export function resolveGraphHost(env: NodeJS.ProcessEnv): { host: string; warning?: string } {
-  const requested = env['HOST']?.trim();
-  const optedIn = env['REIN_GRAPH_PUBLIC']?.trim() === '1';
-  if (optedIn) {
-    return {
-      host: requested || '0.0.0.0',
-      warning:
-        'REIN_GRAPH_PUBLIC=1 — this reputation graph is answering unauthenticated requests. ' +
-        'Anyone who can reach it can write evidence that moves scores.',
-    };
-  }
-  if (requested && !LOOPBACK.has(requested)) {
-    throw new Error(
-      `refusing to bind ${requested}: the reputation graph has no authentication.\n` +
-        '  Put it behind something that does, or\n' +
-        '  set REIN_GRAPH_PUBLIC=1 to expose an open graph deliberately.',
-    );
-  }
-  return { host: requested || '127.0.0.1' };
-}
-
 /** Compose a durable reputation graph + HTTP server on top of a data directory. */
 export async function startPersistentGraphServer(options: {
   dir: string;
   port: number;
   host?: string;
   now?: () => Date;
+  /** Gates the write routes with the `report` scope; reads stay open. */
+  auth?: ApiKeyAuth;
 }): Promise<PersistentGraph> {
   const store = await openReinStore({ dir: options.dir });
   const graph = new ReputationGraph({
@@ -77,7 +59,7 @@ export async function startPersistentGraphServer(options: {
     intents: store.intents,
     now: options.now,
   });
-  const app = buildGraphServer(graph);
+  const app = buildGraphServer(graph, { ...(options.auth ? { auth: options.auth } : {}) });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
   } catch (err) {
@@ -112,13 +94,22 @@ function isMainModule(): boolean {
 if (isMainModule()) {
   const dir = process.env.REIN_GRAPH_DATA_DIR ?? '.rein-graph-data';
   const port = Number(process.env.PORT ?? 8788);
-  const { host, warning } = resolveGraphHost(process.env);
-  if (warning) console.warn(`[rein] ${warning}`);
-  startPersistentGraphServer({ dir, port, host })
-    .then(({ store }) => {
-      const resumed = store.fresh ? 'fresh store' : `resumed ${store.resumedSubjects} subjects`;
-      console.log(`[rein] persistent graph listening on http://${host}:${port}`);
-      console.log(`[rein] data dir ${dir} — ${resumed}`);
+  graphAuthFromEnv(process.env)
+    .then((auth) => {
+      const { host, warning } = resolveGraphHost(process.env, auth !== undefined);
+      if (warning) console.warn(`[rein] ${warning}`);
+      return startPersistentGraphServer({
+        dir,
+        port,
+        host,
+        ...(auth ? { auth } : {}),
+      }).then(({ store }) => {
+        const resumed = store.fresh ? 'fresh store' : `resumed ${store.resumedSubjects} subjects`;
+        console.log(
+          `[rein] persistent graph listening on http://${host}:${port} (auth: ${auth ? 'api-key' : 'none'})`,
+        );
+        console.log(`[rein] data dir ${dir} — ${resumed}`);
+      });
     })
     .catch((err) => {
       console.error(err);

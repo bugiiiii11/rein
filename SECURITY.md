@@ -53,9 +53,12 @@ is welcome but they are known, documented, and not treated as vulnerabilities:
 - **SDK mode is advisory and bypassable by design.** An agent that holds its own wallet key
   can always pay around the guard. That is why `shadow.spend` exists — the tripwire that
   makes the bypass observable. Preventing it is what the signer tier is for.
-- **`@reinconsole/graph`'s HTTP API has no authentication**, and `POST /v1/events` accepts
-  reputation evidence. The `rein-graph` bin therefore binds loopback and refuses a public
-  bind unless `REIN_GRAPH_PUBLIC=1`. Exposing it anyway is a deployment choice, not a bug.
+- **`@reinconsole/graph`'s reads are open on purpose.** Scores and the evidence behind them
+  answer without a credential, because a reputation nobody can read governs nothing. The
+  WRITE routes (`POST /v1/events`, `/v1/reports`, `/v1/links`) require an API key holding
+  the `report` scope once `REIN_GRAPH_API_KEY` is set, and a graph with no key set binds
+  loopback and refuses a public bind. Running one open on a public interface still works —
+  `REIN_GRAPH_PUBLIC=1` — but that is then a deployment choice, not a bug.
 - **The engine's signing key is stored as a plaintext PEM in the data directory** (created
   `0700`). This is the documented single-node posture; production deployments belong behind
   a KMS or HSM.

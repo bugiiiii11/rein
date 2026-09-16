@@ -48,4 +48,9 @@ export {
   type SyncedVendorScore,
   type VendorReputationSink,
 } from './graph.js';
-export { buildGraphServer } from './server.js';
+export {
+  buildGraphServer,
+  graphAuthFromEnv,
+  resolveGraphHost,
+  type GraphServerOptions,
+} from './server.js';

@@ -1,16 +1,27 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { ApiKeyRecord, newId, toPublicApiKey, type ApiKey, type ApiKeyScope } from '@reinconsole/core';
-import type { MaybePromise } from './stores.js';
+import { ApiKeyRecord, toPublicApiKey, type ApiKey, type ApiKeyScope } from './api-key.js';
+import { newId } from './ulid.js';
 
 /**
- * API-key authentication for the engine's HTTP surface.
+ * API-key authentication for a Rein service's HTTP surface.
  *
- * Secrets are never stored: the engine keeps sha256 digests, so a leaked
+ * Secrets are never stored: a service keeps sha256 digests, so a leaked
  * database yields nothing that authenticates. A secret is returned exactly
  * once, at issuance. Rotation mints a new secret while keeping the outgoing
  * digest valid for a grace window, so a fleet rolls over without a flag-day
  * restart.
+ *
+ * This lives in core, beside the {@link ApiKeyRecord} schema it reads and
+ * writes, because three services need the SAME answer to "who is calling and
+ * may they do this" — the engine, the signer's admin surface, and the graph's
+ * ingestion routes. Two implementations of authentication is two things to get
+ * wrong. It is reached as `@reinconsole/core/auth` rather than through the
+ * package barrel ON PURPOSE: the barrel is imported by the console's BROWSER
+ * bundle, and every symbol below needs `node:crypto`.
  */
+
+/** A port may answer synchronously (in memory) or not (durable). */
+export type MaybePromise<T> = T | Promise<T>;
 
 /** The presented-secret prefix, so a leaked key is greppable in logs and repos. */
 const SECRET_PREFIX = 'rk_';
@@ -93,6 +104,17 @@ export type AuthFailureCode =
  * silently.
  */
 export class AuthError extends Error {
+  /**
+   * A brand, because `instanceof` is not enough here. Every service bundles
+   * `@reinconsole/core` into its own output (`noExternal`, for self-contained
+   * deploys), so an `ApiKeyAuth` built from one package and handed to a server
+   * in another throws an AuthError from a DIFFERENT copy of this class. An
+   * `instanceof` check in the catching service then misses it and a 401 turns
+   * into a 500 — which is what happened the first time the graph was handed
+   * the engine's auth object.
+   */
+  readonly reinAuthError = true;
+
   constructor(
     readonly status: 401 | 403 | 404,
     readonly code: AuthFailureCode,
@@ -100,6 +122,16 @@ export class AuthError extends Error {
   ) {
     super(message);
     this.name = 'AuthError';
+  }
+
+  /** Use this, never a bare `instanceof`, when catching across packages. */
+  static is(err: unknown): err is AuthError {
+    return (
+      err instanceof AuthError ||
+      (typeof err === 'object' &&
+        err !== null &&
+        (err as { reinAuthError?: unknown }).reinAuthError === true)
+    );
   }
 }
 

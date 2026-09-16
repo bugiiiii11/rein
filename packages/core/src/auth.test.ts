@@ -125,3 +125,34 @@ describe('ApiKeyAuth', () => {
     await expect(auth.issue({ name: 'useless', scopes: [] })).rejects.toThrow(/at least one scope/);
   });
 });
+
+describe('AuthError across package boundaries', () => {
+  it('recognises an AuthError thrown by a DIFFERENT bundled copy of itself', () => {
+    const auth = new ApiKeyAuth();
+    let thrown: unknown;
+    try {
+      auth.authenticate({}, 'read');
+    } catch (err) {
+      thrown = err;
+    }
+    expect(AuthError.is(thrown)).toBe(true);
+
+    // What a second copy looks like from here: every service bundles core into
+    // its own output, so an auth object built in one package throws a class
+    // the catching package has never seen. `instanceof` misses it and the 401
+    // becomes a 500 — the brand is what keeps the status honest.
+    const foreign = Object.assign(new Error('unknown API key'), {
+      name: 'AuthError',
+      status: 401,
+      code: 'invalid_key',
+      reinAuthError: true,
+    });
+    expect(foreign instanceof AuthError).toBe(false);
+    expect(AuthError.is(foreign)).toBe(true);
+
+    // Not so loose that anything error-shaped passes.
+    expect(AuthError.is(new Error('nope'))).toBe(false);
+    expect(AuthError.is({ reinAuthError: 'yes' })).toBe(false);
+    expect(AuthError.is(undefined)).toBe(false);
+  });
+});

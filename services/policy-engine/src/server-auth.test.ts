@@ -2,7 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import { newId } from '@reinconsole/core';
 import { authFromEnv, buildServer, requiredScope, resolveHost } from './server.js';
-import { ApiKeyAuth } from './auth.js';
+import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { ApprovalService, signApproval } from './approvals.js';
 import { PolicyEngine } from './engine.js';
 

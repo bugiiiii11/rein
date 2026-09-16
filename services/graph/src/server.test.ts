@@ -35,7 +35,7 @@ describe('graph HTTP API', () => {
     const app = buildGraphServer();
     const res = await app.inject({ method: 'GET', url: '/health' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok', subjects: 0 });
+    expect(res.json()).toEqual({ status: 'ok', subjects: 0, auth: 'none' });
   });
 
   it('ingests a single event or a batch on /v1/events', async () => {

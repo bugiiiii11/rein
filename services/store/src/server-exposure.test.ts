@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, describe, expect, it } from 'vitest';
 import { ApiKeyAuth } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
-import { resolveGraphHost } from './graph-server.js';
+import { resolveGraphHost, startPersistentGraphServer, type PersistentGraph } from './graph-server.js';
 import { startPersistentEngine, type PersistentEngine } from './server.js';
 
 /**
@@ -17,6 +17,7 @@ import { startPersistentEngine, type PersistentEngine } from './server.js';
 
 const dirs: string[] = [];
 const running: PersistentEngine[] = [];
+const runningGraphs: PersistentGraph[] = [];
 
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'rein-exposure-'));
@@ -26,6 +27,7 @@ function tempDir(): string {
 
 afterAll(async () => {
   for (const engine of running) await engine.close().catch(() => undefined);
+  for (const graph of runningGraphs) await graph.close().catch(() => undefined);
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -54,13 +56,14 @@ describe('the persistent engine service', () => {
 });
 
 describe('resolveGraphHost', () => {
-  it('binds loopback by default — the graph API has no auth at all', () => {
+  it('binds loopback by default — an unkeyed graph is not reachable by accident', () => {
     expect(resolveGraphHost({}).host).toBe('127.0.0.1');
     expect(resolveGraphHost({ HOST: 'localhost' }).host).toBe('localhost');
   });
 
-  it('refuses a public bind, naming the way out', () => {
+  it('refuses a public bind, naming both ways out', () => {
     expect(() => resolveGraphHost({ HOST: '0.0.0.0' })).toThrow(/REIN_GRAPH_PUBLIC=1/);
+    expect(() => resolveGraphHost({ HOST: '0.0.0.0' })).toThrow(/REIN_GRAPH_API_KEY/);
     expect(() => resolveGraphHost({ HOST: '10.0.0.4' })).toThrow(/no authentication/);
   });
 
@@ -70,6 +73,38 @@ describe('resolveGraphHost', () => {
     expect(resolved.warning).toMatch(/unauthenticated/);
     // The opt-in is the string "1", not any truthy-looking value.
     expect(() => resolveGraphHost({ HOST: '0.0.0.0', REIN_GRAPH_PUBLIC: 'true' })).toThrow();
+  });
+
+  it('takes a key as payment for a public bind, and says nothing alarming', () => {
+    // D1(a): the graph finally has something to trade. A keyed graph binds
+    // public with no warning, because its writes are no longer anonymous —
+    // exactly the deal the engine's resolveHost offers.
+    expect(resolveGraphHost({ HOST: '0.0.0.0' }, true)).toEqual({ host: '0.0.0.0' });
+    expect(resolveGraphHost({}, true).host).toBe('0.0.0.0');
+  });
+});
+
+describe('the persistent graph bin', () => {
+  it('gates writes and leaves reads open when a key is configured', async () => {
+    const auth = new ApiKeyAuth();
+    const { secret } = await auth.issue({ name: 'indexer', scopes: ['report'] });
+    const graph = await startPersistentGraphServer({ dir: tempDir(), port: 0, auth });
+    runningGraphs.push(graph);
+
+    const anonymous = await graph.app.inject({ method: 'POST', url: '/v1/events', payload: {} });
+    expect(anonymous.statusCode).toBe(401);
+    // Reads never needed a key, and still do not.
+    expect((await graph.app.inject({ method: 'GET', url: '/v1/scores' })).statusCode).toBe(200);
+    expect((await graph.app.inject({ method: 'GET', url: '/health' })).json().auth).toBe('api-key');
+    // The key gets past the gate; the 400 is the empty payload, which is proof
+    // enough that authentication no longer stands in the way.
+    const keyed = await graph.app.inject({
+      method: 'POST',
+      url: '/v1/events',
+      headers: { authorization: `Bearer ${secret}` },
+      payload: {},
+    });
+    expect(keyed.statusCode).toBe(400);
   });
 });
 

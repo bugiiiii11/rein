@@ -42,7 +42,7 @@ npx -p @reinconsole/store rein-graph    # durable reputation graph
 | Bin | Default posture | To expose it |
 | --- | --- | --- |
 | `rein-engine` | No key set → loopback only. A public bind without a key is a **startup error** | `REIN_ENGINE_API_KEY=<secret>` (or `REIN_ENGINE_AUTH=off` to accept an open engine deliberately) |
-| `rein-graph` | Loopback only. `@reinconsole/graph` ships no auth and `POST /v1/events` **writes** reputation evidence, so there is no key to trade against | `REIN_GRAPH_PUBLIC=1` (the literal string), which logs a warning naming what is open |
+| `rein-graph` | No key set → loopback only. A public bind without a key is a **startup error**. With a key, the **write** routes demand the `report` scope and reads stay open | `REIN_GRAPH_API_KEY=<secret>` (comma-separated for several), or `REIN_GRAPH_PUBLIC=1` (the literal string) to expose an open graph deliberately |
 
 Data directories: `REIN_DATA_DIR` / `REIN_GRAPH_DATA_DIR`. Directories this package creates are made `0700` on POSIX — `engine_keys.private_pem` lives in one, and the default umask would leave it world-readable. Existing directories are **not** re-chmodded; tighten those by hand.
 

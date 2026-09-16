@@ -21,7 +21,7 @@ import {
 } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
 import type { ReconcileOptions } from './reconciliation.js';
-import { ApiKeyAuth, AuthError } from './auth.js';
+import { ApiKeyAuth, AuthError } from '@reinconsole/core/auth';
 import {
   ApprovalError,
   ApprovalService,
@@ -132,7 +132,7 @@ export function buildServer(
     if (err instanceof z.ZodError) {
       return reply.status(400).send({ error: 'validation_error', issues: err.issues });
     }
-    if (err instanceof AuthError) {
+    if (AuthError.is(err)) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (err instanceof ApprovalError) {
@@ -155,7 +155,7 @@ export function buildServer(
       try {
         auth.authenticate(req.headers, requiredScope(req.method, pathname));
       } catch (err) {
-        if (err instanceof AuthError) {
+        if (AuthError.is(err)) {
           if (err.status === 401) reply.header('WWW-Authenticate', 'Bearer realm="rein-engine"');
           return reply.status(err.status).send({ error: err.code, message: err.message });
         }

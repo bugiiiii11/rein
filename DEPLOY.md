@@ -252,7 +252,7 @@ its variable set BEFORE it ever is.
 | Bin | Rule | To expose it |
 |---|---|---|
 | `rein-engine` | Inherits `authFromEnv` + `resolveHost`: no key, loopback only; public bind without a key is a startup error | `REIN_ENGINE_API_KEY=<secret>` (or `REIN_ENGINE_AUTH=off` to accept an open engine deliberately) |
-| `rein-graph` | `@reinconsole/graph` ships no auth at all and `POST /v1/events` writes reputation evidence, so there is no key to trade against -- loopback only, public bind is a startup error | `REIN_GRAPH_PUBLIC=1` (the literal string `1`), which logs a warning naming what is open |
+| `rein-graph` | Inherits `graphAuthFromEnv` + `resolveGraphHost`: no key, loopback only; public bind without a key is a startup error. A key gates the WRITE routes (`POST /v1/events`, `/v1/reports`, `/v1/links`) with the `report` scope -- reads stay open, because a score nobody can read governs nothing | `REIN_GRAPH_API_KEY=<secret>` (comma-separated for several), or `REIN_GRAPH_PUBLIC=1` (the literal string `1`) to expose an OPEN graph deliberately, which logs a warning naming what is open |
 | signer service | `buildSignerServer(signer, { adminToken })` -- the session-admin routes mint spending authority against custodied wallets, so omitting both `adminToken` and `adminAuth: 'off'` throws at construction | Pass an `adminToken` of at least 16 characters; callers send `Authorization: Bearer` or `X-Api-Key` |
 
 The data directory is created `0700` now (POSIX only): `engine_keys.private_pem` lives in it,
