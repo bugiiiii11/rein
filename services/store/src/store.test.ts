@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
@@ -27,6 +27,35 @@ function intent(agentId: string, amount: string) {
 
 const dirs: string[] = [];
 const opened: ReinStore[] = [];
+
+/**
+ * The base64 body of a PEM, without header, footer or line breaks — the
+ * shape the bytes actually take inside a Postgres heap page. Searching for the
+ * whole PEM would miss a copy stored with different line endings; searching
+ * for a long slice of the body cannot match by accident.
+ */
+function keyBody(pem: string): string {
+  const body = pem
+    .split('\n')
+    .filter((line) => !line.startsWith('-----') && line.trim() !== '')
+    .join('');
+  return body.slice(0, 40);
+}
+
+/** Does any file under `dir` contain this needle? The attacker's-eye view. */
+function dirContains(dir: string, needle: string): boolean {
+  const target = Buffer.from(needle, 'utf8');
+  for (const entry of readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath ?? dir, entry.name);
+    try {
+      if (readFileSync(path).includes(target)) return true;
+    } catch {
+      // A file that vanished under us cannot be holding the key.
+    }
+  }
+  return false;
+}
 
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'rein-store-'));
@@ -474,6 +503,36 @@ describe('openReinStore', () => {
 
       // The plaintext copy is gone: the data dir alone can no longer sign.
       await expect(open(dir)).rejects.toThrow(/held externally/);
+    });
+
+    it('the old private key is really gone from the volume, not just from the column', async () => {
+      // The claim this pins is the one that was FALSE before Sprint 3: an
+      // `UPDATE ... SET private_pem = ''` under MVCC writes a new row version
+      // and leaves the old one -- key and all -- readable in the heap. So a
+      // migration that "moved the key out of the data directory" had left a
+      // perfectly good copy inside it. The check is a raw byte scan of the
+      // directory, because that is what an attacker with the volume does.
+      const dir = tempDir();
+      const a = await open(dir);
+      const engineA = new PolicyEngine(a);
+      await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+      await engineA.evaluateIntent(intent(newId('agt'), '1.00'));
+      await a.close();
+
+      const db = await openDb(dir);
+      const { keyPair } = await loadOrCreateKeyPair(db);
+      const pem = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      await db.close();
+
+      // Sanity: the bytes ARE findable before the migration, or this test
+      // would pass just as happily against a scanner that never works.
+      expect(dirContains(dir, keyBody(pem))).toBe(true);
+
+      const b = await open(dir, pem);
+      expect(b.keySource).toBe('external');
+      await b.close();
+
+      expect(dirContains(dir, keyBody(pem))).toBe(false);
     });
   });
 

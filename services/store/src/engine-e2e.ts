@@ -40,17 +40,32 @@ export interface EngineUnderTest {
   readonly adminSecret: string;
   /** False when `REIN_E2E_ENGINE_URL` pointed the test at an engine we do not own. */
   readonly local: boolean;
-  /** SIGTERM the child and wait for it to exit. No-op for a remote engine. */
-  stop(): Promise<void>;
+  /**
+   * SIGTERM the child and wait for it to exit, reporting how it went. This is
+   * the only place the SHUTDOWN path is observable: the drain lines go to the
+   * child's stdout and the exit code says whether the backstop fired.
+   * A remote engine is not ours to kill, so this reports nothing.
+   */
+  stop(): Promise<ExitReport>;
   /** Start the child again on the SAME data dir and port. Throws for a remote engine. */
   restart(): Promise<void>;
   /** Stop the child and delete its data dir. */
   dispose(): Promise<void>;
 }
 
+/** How a child engine went away, for the SIGTERM-drain assertion. */
+export interface ExitReport {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  /** Everything the child wrote to stdout and stderr, boot line onwards. */
+  output: string;
+}
+
 interface Child {
   process: ChildProcess;
   url: string;
+  /** Accumulates for the child's whole life, not just until it listened. */
+  log: string[];
 }
 
 export async function engineUnderTest(): Promise<EngineUnderTest> {
@@ -66,7 +81,7 @@ export async function engineUnderTest(): Promise<EngineUnderTest> {
       url: remote.replace(/\/+$/, ''),
       adminSecret,
       local: false,
-      stop: async () => undefined,
+      stop: async () => ({ code: null, signal: null, output: '' }),
       restart: async () => {
         throw new Error('a remote engine is not ours to restart');
       },
@@ -84,9 +99,9 @@ export async function engineUnderTest(): Promise<EngineUnderTest> {
     },
     adminSecret,
     local: true,
-    stop: () => stop(child.process),
+    stop: () => stop(child),
     restart: async () => {
-      await stop(child.process);
+      await stop(child);
       // Same data dir, same port: the deployment this stands in for keeps
       // both across a restart. One retry covers the OS still releasing the
       // listener the killed process held.
@@ -98,7 +113,7 @@ export async function engineUnderTest(): Promise<EngineUnderTest> {
       }
     },
     dispose: async () => {
-      await stop(child.process);
+      await stop(child);
       try {
         rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
       } catch {
@@ -176,14 +191,24 @@ async function boot(dir: string, adminSecret: string, port: number): Promise<Chi
       reject(err);
     });
   });
-  return { process: proc, url };
+  return { process: proc, url, log };
 }
 
-async function stop(proc: ChildProcess): Promise<void> {
-  if (proc.exitCode !== null || proc.signalCode !== null) return;
-  const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()));
+async function stop(child: Child): Promise<ExitReport> {
+  const proc = child.process;
+  if (proc.exitCode !== null || proc.signalCode !== null) {
+    return { code: proc.exitCode, signal: proc.signalCode, output: child.log.join('') };
+  }
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+    proc.once('exit', (code, signal) => resolve({ code, signal })),
+  );
   proc.kill('SIGTERM');
   const forced = setTimeout(() => proc.kill('SIGKILL'), EXIT_TIMEOUT_MS);
-  await exited;
+  const { code, signal } = await exited;
   clearTimeout(forced);
+  // The exit event can beat the last stdout chunk to the event loop, and the
+  // drain line is the last thing written — give the pipe a tick to flush or
+  // the assertion races the evidence it is looking for.
+  await sleep(50);
+  return { code, signal, output: child.log.join('') };
 }

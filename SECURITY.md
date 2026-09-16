@@ -67,6 +67,15 @@ is welcome but they are known, documented, and not treated as vulnerabilities:
   different key is refused rather than allowed to fork the chain, and once the key is external
   a boot without it fails instead of minting a new one. Signing through a remote KMS/HSM,
   where the private key never enters the process at all, is not wired yet.
+
+  **What "erased" means, precisely.** Until S57 it meant only that the column was blanked,
+  which under MVCC left the old row version -- private key and all -- readable in the heap
+  file and in the write-ahead log. Both are now actually reclaimed (`VACUUM FULL` plus WAL
+  turnover), and a test scans the raw data directory for the key's bytes rather than trusting
+  the query. The caveat that survives all of it: **a volume that was ever exposed while it
+  held a stored key must be treated as compromised.** The remedy is a NEW key, and a new key
+  starts a new decision chain -- the old one stays verifiable under the old public half, but
+  it cannot be continued. Erasure protects a volume you still control; it un-leaks nothing.
 - **API keys are stored as sha256 digests, never as secrets.** A secret is returned exactly
   once, at issuance, and a stolen database yields nothing that authenticates. Back the key
   store with the durable one (`api_keys`, reached as `reinStore.apiKeys`) in any deployment
@@ -76,6 +85,23 @@ is welcome but they are known, documented, and not treated as vulnerabilities:
   and silently, so it is worth stating plainly.
 - **Wallet private keys are never persisted and no endpoint accepts one.** If you find a
   path that stores or transports one, that *is* a vulnerability — please report it.
+
+- **Rate limits are a capacity control, not a security boundary.** The engine's per-IP and
+  per-key token buckets exist so that one misbehaving client degrades itself rather than the
+  deployment. An attacker with many source addresses defeats the per-IP limiter, and a
+  legitimate key defeats the per-key one by asking for a bigger one. Do not treat a 429 as an
+  authorization decision: a throttled request was never judged by policy, which is why it is
+  reported as a rate limit and never as a denial.
+
+## Known advisories
+
+Advisories accepted with no fix available are listed in `package.json` under
+`pnpm.auditConfig.ignoreGhsas`, and every one of them belongs here with the date it was
+accepted and the reason. CI runs `pnpm audit --prod --audit-level=high` on every push, so an
+entry in that list is the ONLY way a high-severity production advisory can be in the tree --
+which is why an ignore with no expiry and no stated reason is itself a defect.
+
+_None accepted as of 2026-09-16._
 
 Findings we are especially interested in: anything that releases a signature without a
 valid engine-signed allow voucher, replays a spent voucher, evades a session or budget cap,

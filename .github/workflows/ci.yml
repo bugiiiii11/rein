@@ -88,6 +88,32 @@ jobs:
       - name: Test
         run: pnpm test
 
+  audit:
+    name: audit (production dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # --prod because a dev-only advisory does not ship to anyone: it would
+      # turn this gate into noise that gets ignored, which is how the real
+      # finding gets missed. high and above, because "moderate" on a transitive
+      # dev-adjacent package is where an audit stops being actionable.
+      #
+      # An advisory with NO fix available goes in package.json's
+      # pnpm.auditConfig.ignoreGhsas WITH a dated entry under SECURITY.md's
+      # "Known advisories" -- an ignore with no expiry and no reason is how a
+      # permanent hole gets shipped as a config line nobody rereads.
+      #
+      # No install step: `pnpm audit` reads the lockfile, so this job stays
+      # fast and cannot be influenced by whatever an install would run.
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level=high
+
   package-smoke:
     name: package smoke (pack -> install -> import)
     runs-on: ubuntu-latest

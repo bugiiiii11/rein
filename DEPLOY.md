@@ -115,10 +115,40 @@ Note also that **every push to `main` auto-deploys**, and with a volume attached
 Railway stops the old container before starting the new one — so a bad start command
 is real downtime, not a failed deploy that quietly rolls back.
 
+**3. The image is READY to run as the unprivileged `node` user, and the switch is one
+commented line (S57).** It is deliberately off, and the reason is measured rather than
+guessed. Both cases were run against this image on 2026-09-16 with
+`docker run -v <volume>:/data -e REIN_CONSOLE_DATA_DIR=/data/console`:
+
+| Volume | Result |
+|---|---|
+| Fresh, with the image's node-owned `/data` | Boots, seeds, `drwx------ node node`, SIGTERM drains, exit 0 |
+| Already exists root-owned (what Railway has) | `EACCES: permission denied, mkdir '/data/console'`, exit 1 |
+
+app.reinconsole.com's volume was created in S36 by a root container, and Docker does not
+re-initialize an existing volume from the image. So uncommenting `USER node` on its own takes
+the site down into an `ON_FAILURE` restart loop. One human step in the Railway dashboard comes
+first — pick one:
+
+1. **Recreate the volume.** The console is a demo exhibit; it reseeds on next boot and the
+   deploy log says `fresh store (seeded)`. Simplest, and the only one that actually leaves the
+   container unprivileged.
+2. **Chown the mount once** to uid 1000, from a one-off root run.
+3. **`RAILWAY_RUN_UID=0`** to keep running as root, which declines the change explicitly
+   rather than by omission.
+
+The usual fix — an ENTRYPOINT that chowns and then drops privileges — does NOT apply here:
+Railway execs `startCommand` as argv and it overrides `ENTRYPOINT` (see point 1 above).
+
+A new service with its own FRESH volume has none of this history, so `rein-engine` can be
+non-root from its first deploy in Sprint 4. Whichever way this goes, check
+`docker inspect --format '{{.State.ExitCode}}'` rather than merely that the container booted.
+
 ## Shutdown
 
 `standalone.ts` handles SIGTERM/SIGINT and drains the store before exiting, because
-`world.close()` is the only thing that flushes the write-behind tail. Persist-then-
+`world.close()` is the only thing that flushes the write-behind tail. As of S57 the three
+standalone bins do the same through `installShutdown` — see "Drain on SIGTERM" below. Persist-then-
 cache state (signer sessions, spend, revocations, gate replay slots) is acknowledged
 on disk and safe regardless; what an un-drained exit loses is up to 30 seconds of
 gate receipts and reputation evidence — everything since the last maintenance flush.
@@ -297,6 +327,80 @@ stored copy is erased on the first boot -- because a different one is refused: t
 chain was signed by the old key, and it cannot be continued under a new one. From then on the
 variable is required; a boot without it fails rather than starting a second chain. The boot
 log says which posture is live: `signing key stored` or `signing key external`.
+
+## Rate limiting, bounded reads and lifecycle (S57)
+
+The deployed bins get three things an embedded engine never needs. All of them are OFF for
+`buildServer(engine)` with no options -- the console world, the demos and every in-process
+test -- because an engine sharing a process with its only caller can only ever throttle the
+application that owns it.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `REIN_ENGINE_RATE_LIMIT_PER_KEY` / `_PER_KEY_BURST` | 10 rps / 120 | Per authenticated API key, applied AFTER auth resolves the key id |
+| `REIN_ENGINE_RATE_LIMIT_PER_IP` / `_PER_IP_BURST` | 1 rps / 30 | Per client IP, applied BEFORE auth -- `/health` included |
+| `REIN_ENGINE_RATE_LIMIT=off` | on | The deliberate opt-out, mirroring `REIN_ENGINE_AUTH=off` |
+| `REIN_TRUST_PROXY=1` | off | Read the client IP from `X-Forwarded-For` |
+| `REIN_PRUNE_INTERVAL_MS` | 1800000 | Sweep the TTL'd burn tables this often; `0` disables |
+
+Over the limit is `429` with `Retry-After` in seconds. A non-numeric or zero override is a
+startup ERROR, not a silent fallback: somebody typing `PER_KEY=0` means "no limit", and
+reading that as the default would leave them believing a limiter is off while it is fully on.
+
+**`REIN_TRUST_PROXY=1` is required on Railway and dangerous anywhere else.** Behind a proxy
+every socket address is the proxy's, so an untrusting engine rate-limits all tenants as one
+client. In FRONT of one, a header nobody strips is a header anybody can forge, which turns the
+per-IP limiter into a no-op. Only set it where the platform actually overwrites the header.
+(Safe as of Sprint 1's fastify bump -- fastify < 5.12.1 had an `X-Forwarded-*` spoofing
+advisory of its own.)
+
+Bodies are capped at 64 KiB (`413`) and a request must arrive complete within 30s.
+
+`GET /v1/decisions` is now a PAGE: 500 by default, 1000 maximum, `?after=<index>&limit=<n>`.
+The body is still a bare array, so a 0.2.0 SDK parses it unchanged -- and what it gets is a
+valid verifying PREFIX of the chain rather than an unverifiable slice. `Rein-Chain-Length`
+gives the total; `Rein-Next-After` appears only while more remain, so its ABSENCE is how a
+client knows it has reached the head. The SDK's `decisionsPage()` walks it.
+
+The console caps concurrent SSE streams at `REIN_CONSOLE_MAX_SSE` (default 64); the 65th gets
+`503` with `Retry-After`. An uncapped `/api/events` is the cheapest way to make a public
+dashboard hold unbounded memory, and no credential is involved -- the feed is the read-only
+half that stays open on purpose.
+
+### Drain on SIGTERM
+
+All three persistent bins now install `installShutdown` (`services/store/src/lifecycle.ts`):
+close the server, then the store, then exit. Before S57 they simply died on redeploy and the
+write-behind tail went with them -- silently, because nothing about a SIGKILLed process says a
+flush was owed. A drain that wedges is abandoned after 10s and exits NON-ZERO, so a deploy
+that could not flush is visible rather than indistinguishable from one that did.
+
+Evidence to look for in the deploy log, exactly as with the console:
+
+```
+[rein] rein-engine: SIGTERM received - draining the store
+[rein] rein-engine: store drained, exiting cleanly
+```
+
+The same `exec`-form start-command rule applies to every bin: **pnpm does not forward SIGTERM
+to the node it spawns**, so a `pnpm --filter ... start` command makes all of this dead code.
+See "Why it must not start via pnpm" above.
+
+### One engine per data directory
+
+PGlite admits a single writer, so this is a constraint, not a tuning knob: `numReplicas: 1`,
+no overlapping deploys (the old process must exit before the new one opens the directory), and
+to scale, SHARD tenants across engines with a data dir each rather than adding replicas to one.
+Retention and what is never pruned: `services/store/README.md`.
+
+### The public console is an exhibit, not a tenant dashboard
+
+app.reinconsole.com is a single-world demonstration with its own embedded mock-railed engine,
+and it must NEVER be pointed at the hosted engine with authority over real agents. There is no
+console read key and there is not going to be one: a browser cannot hold a credential the way
+A1b requires, and a dashboard that could read one tenant's chain from a public origin is a
+cross-tenant leak waiting for a misconfiguration. Tenant observability is the engine API with
+an org-scoped `read` key, driven by whatever the tenant already uses.
 
 ## Verifying a deploy
 

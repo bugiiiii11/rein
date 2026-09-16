@@ -1,0 +1,30 @@
+version: 2
+
+# Minor and patch updates arrive GROUPED, as one PR per ecosystem per week.
+# Ungrouped, a pnpm workspace with eleven published packages produces a dozen
+# near-identical PRs a week, and a review queue that size is a review queue
+# nobody reads -- which is the state in which a security update sits unmerged.
+# Majors stay separate on purpose: those are the ones that need a human to read
+# a changelog, and burying one inside a group of patches is how it gets merged
+# unread.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch

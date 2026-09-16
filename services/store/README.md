@@ -54,6 +54,28 @@ Data directories: `REIN_DATA_DIR` / `REIN_GRAPH_DATA_DIR`. Directories this pack
 - **Replay protection is durable.** A gate payment settled before a restart is refused as a replay after it, and a signer voucher burned before a restart stays burned.
 - **Wallet private keys are deliberately never here.** The signer re-registers them at boot; the engine's own signing key is a plaintext PEM in the `0700` data dir by default (the single-node posture), or held outside it entirely with `openReinStore({ signingKey })` / `REIN_ENGINE_SIGNING_KEY` on the bin -- then only the public half is on disk, a plaintext copy from an earlier boot is erased, and a different key is refused rather than allowed to fork the chain.
 - **API keys are durable, and revocations with them.** `store.apiKeys` backs an `ApiKeyAuth` (`new ApiKeyAuth({ store: reinStore.apiKeys })`): an issued key still authenticates after a restart, a revoked one stays dead, and a rotation's grace window resumes on its original deadline rather than being cut short. Rows are sha256 digests, never secrets. Without this the failure is silent and points the wrong way — a key withdrawn after a leak comes back alive on the next boot.
-- **Two tables would grow forever, so prune them.** `store.prune()` TTL-drops burned vouchers (1h), gate replay slots (24h) and resolved approvals (7d — the decision chain is the authoritative record). It runs once at open; long-lived servers should call it periodically.
+- **The bins drain on SIGTERM.** Every container runtime stops a deploy with a signal and kills what is left seconds later. `installShutdown` (`src/lifecycle.ts`) closes the server and then the store, so the write-behind tail -- reputation evidence, gate telemetry, API-key usage touches -- is flushed instead of dying with the process. A wedged drain is abandoned after 10s and exits non-zero, because a shutdown that cannot flush must not look like one that did.
+
+## Retention
+
+`store.prune()` TTL-drops the three tables that would otherwise grow forever. It runs once at open, and the bins re-run it every 30 minutes (`REIN_PRUNE_INTERVAL_MS`, `0` to disable) -- a boot-time-only sweep covers a service that restarts often and leaves one that stays up accreting for as long as it stays healthy, which is exactly backwards.
+
+| Table | Pruned after | Why it is safe to drop |
+|-------|--------------|------------------------|
+| `signer_used_decisions` | 1 h | A burned voucher is dead once the signer's 300s staleness window has long passed. |
+| `gate_replays` | 24 h | A replay slot is dead once the payment's on-chain authorization (~300s) has expired. Generous because MOCK rails have no expiry -- see `PgGateStore.pruneReplays`. |
+| `approval_requests` (RESOLVED only) | 7 d | The decision chain is the authoritative record of what was approved; these rows are a convenience copy for the console panel. |
+
+**PENDING approval requests are never pruned, at any TTL.** A lapsed escalation is still owed its deny on the chain.
+
+**Never pruned, at any age:** `decisions`, `spend_records`, `settlements`, `breaker_resets`, `agent_liveness`, `api_keys`. These are not history, they are the state the engine reasons from -- a pruned decision breaks the hash chain, a pruned spend record refills a budget, a pruned reset re-trips a breaker somebody already answered for, and a pruned key resurrects a revocation.
+
+## Single node, by construction
+
+One engine per data directory. PGlite admits a single writer, so this is not a tuning choice:
+
+- `numReplicas: 1`. Two replicas on one volume is data corruption, not contention.
+- No overlapping deploys. The old process must exit before the new one opens the directory.
+- To scale, SHARD tenants across engines (one data dir each) rather than adding replicas to one.
 
 MIT © Rein contributors · [Repository](https://github.com/bugiiiii11/rein) · [Issues](https://github.com/bugiiiii11/rein/issues)

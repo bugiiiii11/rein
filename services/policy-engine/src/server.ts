@@ -2,7 +2,11 @@
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import { z } from 'zod';
 import {
   Agent,
@@ -31,6 +35,7 @@ import {
 } from './approvals.js';
 import { LoggingChannel, TelegramChannel } from './channels.js';
 import { TenantError, ownsOrg, scopeOf, type TenantScope } from './tenant.js';
+import { buildRateLimiters, rateLimitFromEnv, type RateLimitOptions } from './rate-limit.js';
 import type { ApprovalStorePort } from './approvals.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
@@ -83,7 +88,60 @@ export interface ServerOptions {
    * {@link ApiKeyAuth} and EVERY route but /health demands a credential.
    */
   auth?: ApiKeyAuth;
+  /**
+   * Rate limiting, per IP before auth and per API key after it. Omit — as
+   * every embedded caller does — and there is no limiter at all: an engine
+   * sharing a process with its only caller can only ever throttle the
+   * application that owns it. The bins build this from
+   * {@link rateLimitFromEnv}.
+   */
+  rateLimit?: RateLimitOptions;
+  /**
+   * Trust `X-Forwarded-For` when deciding a request's client IP. Required
+   * behind a reverse proxy (Railway is one), where every socket address is the
+   * proxy's and an untrusting engine would rate-limit all tenants as one
+   * client. Dangerous in front of one: a header nobody strips is a header
+   * anybody can forge, which turns the per-IP limiter into a no-op. Off by
+   * default; `REIN_TRUST_PROXY=1` on the bins.
+   */
+  trustProxy?: boolean;
 }
+
+/**
+ * Request body ceiling. Every body this API accepts is a handful of small JSON
+ * objects — the largest realistic one is a policy with many rules — so 64 KiB
+ * is generous by two orders of magnitude while still bounding what an
+ * unauthenticated caller can make the process buffer. Fastify answers a body
+ * over the limit with 413 before the route ever runs.
+ */
+const BODY_LIMIT_BYTES = 65_536;
+
+/**
+ * How long the server waits for a complete request. A socket that opens and
+ * dribbles bytes forever costs a connection slot indefinitely otherwise; this
+ * is the read side only, so it bounds nothing a handler does.
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Page size for `GET /v1/decisions` when the caller names none. */
+const DECISIONS_DEFAULT_LIMIT = 500;
+/** The most decisions one page will ever carry, whatever `limit` asks for. */
+const DECISIONS_MAX_LIMIT = 1000;
+
+/**
+ * Paging for the decision chain.
+ *
+ * `after` is a POSITION in the sequence this caller can see — for an unscoped
+ * operator that is the chain index itself, and for an org-scoped caller it is
+ * an index into its own filtered view. Either way the sequence is append-only
+ * (decisions are never pruned, see `services/store/README.md`), so a position
+ * means the same thing on the next request as it did on the last one.
+ */
+const DecisionsQuery = z.object({
+  /** Index of the last decision the caller already has; the page starts after it. */
+  after: z.coerce.number().int().nonnegative().optional(),
+  limit: z.coerce.number().int().positive().max(DECISIONS_MAX_LIMIT).optional(),
+});
 
 /**
  * What scope a route demands.
@@ -214,8 +272,21 @@ export function buildServer(
   engine: PolicyEngine = new PolicyEngine(),
   options: ServerOptions = {},
 ): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    bodyLimit: BODY_LIMIT_BYTES,
+    requestTimeout: REQUEST_TIMEOUT_MS,
+    trustProxy: options.trustProxy === true,
+    // On `close()`, destroy sockets rather than waiting for keep-alive
+    // connections to go away on their own. A shutdown is not the moment to be
+    // patient with a client: the process is leaving, and every second spent
+    // waiting on a socket is a second the STORE is not draining — which is the
+    // only part of a shutdown that can lose data. Fastify's default ('idle')
+    // depends on the runtime offering closeIdleConnections; this does not.
+    forceCloseConnections: true,
+  });
   const auth = options.auth;
+  const limiters = options.rateLimit ? buildRateLimiters(options.rateLimit) : undefined;
 
   // Fastify's own view of what got registered, captured as it happens. It is
   // what `tenant.test.ts` walks to prove `TENANT_ROUTES` still mirrors the
@@ -246,18 +317,51 @@ export function buildServer(
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     const message = err instanceof Error ? err.message : String(err);
+    // Fastify's OWN refusals — a body over `bodyLimit` (413), an unsupported
+    // content type (415), malformed JSON (400) — arrive here as errors
+    // carrying their status. Relabelling those 500 would be a lie in the
+    // direction that matters: it tells a client the engine broke when in fact
+    // the engine refused, and it invites a retry of a request that can only
+    // ever fail the same way.
+    const status = (err as { statusCode?: unknown }).statusCode;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      const code = (err as { code?: unknown }).code;
+      return reply
+        .status(status)
+        .send({ error: typeof code === 'string' ? code : 'bad_request', message });
+    }
     return reply.status(500).send({ error: 'internal_error', message });
   });
 
   // Auth runs before routing, so an unknown path cannot leak whether it exists.
   // Unauthenticated is 401 with a WWW-Authenticate challenge — never a silent
   // pass, never a 404 pretending the route is missing.
-  if (auth) {
+  if (auth || limiters) {
     app.addHook('onRequest', async (req, reply) => {
       const pathname = (req.url ?? '/').split('?')[0] ?? '/';
+      // Per IP FIRST, ahead of everything including the credential check: what
+      // this bounds is precisely the work a caller who has proved nothing can
+      // make the engine do, and `/health` is in scope because it is the
+      // cheapest thing on the surface to hammer.
+      if (limiters) {
+        // `req.ip` reads the socket's remote address (or the proxy header when
+        // trustProxy is on) and can be absent on a socket that is already
+        // going away. Bucketing those together under one name is right: it is
+        // one anonymous pool, not a free pass each.
+        const verdict = limiters.perIp.take(req.ip || 'unknown');
+        if (!verdict.allowed) return tooManyRequests(reply, verdict.retryAfterSec);
+      }
       if (pathname === '/health') return;
+      if (!auth) return;
       try {
         const key = auth.authenticate(req.headers, requiredScope(req.method, pathname));
+        // Per KEY, and only now: the key id exists once auth has resolved it,
+        // and bucketing by the presented secret instead would let one caller
+        // mint a fresh allowance per header value it invents.
+        if (limiters) {
+          const verdict = limiters.perKey.take(key.id);
+          if (!verdict.allowed) return tooManyRequests(reply, verdict.retryAfterSec);
+        }
         const scope = scopeOf(key);
         if (scope) {
           // Classify before routing, for the same reason authentication runs
@@ -397,7 +501,32 @@ export function buildServer(
   });
 
   // --- Audit ---
-  app.get('/v1/decisions', (req) => engine.decisions(scopeFor(req)));
+  /**
+   * The decision chain, one bounded page at a time.
+   *
+   * The body stays a bare ARRAY of decisions rather than becoming an envelope,
+   * which is what lets a 0.2.0 SDK keep parsing this route unchanged — and it
+   * gets something better than a truncated list: the first page is a valid
+   * VERIFYING PREFIX of the chain, so `prevHash` links still check out end to
+   * end. An envelope would have broken every published client for a field they
+   * could read off a header instead.
+   *
+   * Paging state rides in `Rein-Chain-Length` (how many decisions this caller
+   * can see in total) and `Rein-Next-After` (present only while more remain —
+   * its absence is how a client knows it has reached the head, without having
+   * to compare counts).
+   */
+  app.get('/v1/decisions', (req, reply) => {
+    const query = DecisionsQuery.parse(req.query ?? {});
+    const visible = engine.decisions(scopeFor(req));
+    const start = query.after === undefined ? 0 : query.after + 1;
+    const page = visible.slice(start, start + (query.limit ?? DECISIONS_DEFAULT_LIMIT));
+    reply.header('Rein-Chain-Length', String(visible.length));
+    if (start + page.length < visible.length) {
+      reply.header('Rein-Next-After', String(start + page.length - 1));
+    }
+    return page;
+  });
 
   // --- Reconciliation (B1): allowed but never settled ---
   // The write is the settlement half of the join — see requiredScope for why
@@ -574,6 +703,25 @@ function resolveOrg(scope: TenantScope | undefined, requested: string | undefine
     ]);
   }
   return requested;
+}
+
+/**
+ * The one refusal that is about capacity rather than authority.
+ *
+ * `Retry-After` is not decoration: without it a client's only strategy is to
+ * retry immediately, which is exactly the behaviour the 429 is trying to stop.
+ * The SDK reads it, and `PaymentBlockedError` never wraps this — a throttled
+ * request was not judged, so treating it as a denial would report a policy
+ * verdict that policy never reached.
+ */
+function tooManyRequests(reply: FastifyReply, retryAfterSec: number): FastifyReply {
+  return reply
+    .header('Retry-After', String(retryAfterSec))
+    .status(429)
+    .send({
+      error: 'rate_limited',
+      message: `too many requests; retry in ${retryAfterSec}s`,
+    });
 }
 
 function requireAuth(auth: ApiKeyAuth | undefined): ApiKeyAuth {
@@ -784,10 +932,20 @@ if (isMainModule()) {
     approvals: approvalsFromEnv(process.env),
     liveness: livenessFromEnv(process.env),
   });
-  engine.startExpirySweeper();
-  // Nothing else will ever call the engine about an agent that stopped.
-  engine.startLivenessSweeper();
-  const app = buildServer(engine, { ...(auth ? { auth } : {}) });
+  const stops = [
+    engine.startExpirySweeper(),
+    // Nothing else will ever call the engine about an agent that stopped.
+    engine.startLivenessSweeper(),
+  ];
+  // A bin is reachable by strangers, so it gets the limiter an embedded engine
+  // has no use for. REIN_TRUST_PROXY only where a proxy actually strips the
+  // header — see ServerOptions.trustProxy.
+  const rateLimit = rateLimitFromEnv(process.env);
+  const app = buildServer(engine, {
+    ...(auth ? { auth } : {}),
+    ...(rateLimit ? { rateLimit } : {}),
+    trustProxy: process.env['REIN_TRUST_PROXY']?.trim() === '1',
+  });
   app
     .listen({ port, host })
     .then(() =>
@@ -800,4 +958,30 @@ if (isMainModule()) {
       console.error(err);
       process.exit(1);
     });
+
+  // Graceful shutdown. This engine holds everything in memory, so there is no
+  // tail to flush and nothing here can lose data that a restart would not lose
+  // anyway — which is exactly why it is four lines rather than the durable
+  // bins' `installShutdown` (services/store/src/lifecycle.ts, which this
+  // package cannot import: store depends on policy-engine, not the reverse).
+  // What it buys is a clean exit code and sweepers that stop, instead of a
+  // process torn down mid-response.
+  let closing = false;
+  const shutdown = (signal: string): void => {
+    if (closing) return;
+    closing = true;
+    console.log(`[rein] policy-engine: ${signal} received — closing (in-memory state is not saved)`);
+    for (const stop of stops) stop();
+    void app.close().then(
+      () => {
+        process.exitCode = 0;
+      },
+      (err: unknown) => {
+        console.error('[rein] policy-engine: close failed:', err);
+        process.exitCode = 1;
+      },
+    );
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

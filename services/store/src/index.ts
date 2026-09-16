@@ -31,6 +31,17 @@ export { PgGateStore } from './gate-stores.js';
 export { openDb } from './db.js';
 export { loadOrCreateKeyPair, parseSigningKey } from './keys.js';
 export type { KeySource, SigningKeyInput } from './keys.js';
+// A self-hoster composing their own bin needs the same drain the shipped ones
+// install: without it a container redeploy loses the write-behind tail, and
+// nothing in the logs says a flush was owed.
+export {
+  installShutdown,
+  startPeriodicPrune,
+  pruneIntervalFromEnv,
+  type InstalledShutdown,
+  type PruneOptions,
+  type ShutdownOptions,
+} from './lifecycle.js';
 
 export interface ReinStoreOptions {
   /** PGlite data directory. Omit for an ephemeral in-memory database (tests). */

@@ -81,6 +81,7 @@ export async function loadOrCreateKeyPair(
     }
     if (row.private_pem !== '') {
       await db.query(`UPDATE engine_keys SET private_pem = '' WHERE id = 'engine'`);
+      await erasePrivateKeyBytes(db);
     }
     return { keyPair, created: false, source: 'external' };
   }
@@ -108,4 +109,59 @@ export async function loadOrCreateKeyPair(
     spkiPem(keyPair.publicKey),
   ]);
   return { keyPair, created: true, source: 'stored' };
+}
+
+/**
+ * How many WAL segments to roll past before the one that recorded the key can
+ * be considered gone. See `erasePrivateKeyBytes`; the number is small because
+ * the insert being erased is always the data directory's FIRST write.
+ */
+const WAL_ROLLS = 3;
+
+/**
+ * Actually remove the old private key from the data directory.
+ *
+ * The `UPDATE` above does not, and this is the whole finding: Postgres is
+ * MVCC, so an `UPDATE ... SET private_pem = ''` writes a NEW row version and
+ * leaves the old one — private key PEM and all — readable in the heap. A D1(c)
+ * migration that "moved the key out of the volume" had in fact left a
+ * perfectly good copy inside it, which is the one claim about that feature
+ * that had to be true. Two places hold those bytes, and each needs its own
+ * statement:
+ *
+ * - the HEAP, cleared by `VACUUM FULL` — not plain `VACUUM`, which only marks
+ *   the dead tuple's space reusable. The bytes then sit on the page until
+ *   something happens to overwrite them, and on a one-row table nothing ever
+ *   will. FULL rewrites the table into a new file and unlinks the old one.
+ * - the WAL, which recorded the original INSERT verbatim. `CHECKPOINT` alone
+ *   is not enough: it makes the segment unnecessary for recovery but leaves
+ *   the file sitting there. `pg_switch_wal()` + `CHECKPOINT`, repeated, moves
+ *   the write position far enough forward that Postgres recycles past it.
+ *   Three rounds is generous rather than tuned: the write being erased is the
+ *   first one this data directory ever made, so it is in the OLDEST segment —
+ *   an engine that has been running long enough to need more rounds recycled
+ *   that segment away by itself long ago.
+ *
+ * Best-effort, and loudly so. Nothing here can fail in a way that makes the
+ * engine WRONG — the key is external now and the column is empty either way —
+ * but a failure means bytes may remain, so it is reported rather than
+ * swallowed. And the SECURITY.md caveat stands whatever happens: a volume that
+ * was ever exposed while it held a stored key must be treated as compromised.
+ * The remedy there is a new key, which starts a new chain — not a vacuum.
+ */
+async function erasePrivateKeyBytes(db: PGlite): Promise<void> {
+  try {
+    await db.query('VACUUM FULL engine_keys');
+    await db.query('CHECKPOINT');
+    for (let i = 0; i < WAL_ROLLS; i += 1) {
+      await db.query('SELECT pg_switch_wal()');
+      await db.query('CHECKPOINT');
+    }
+  } catch (err) {
+    console.warn(
+      '[rein] could not reclaim the old signing-key bytes ' +
+        `(${err instanceof Error ? err.message : String(err)}); ` +
+        'treat this data directory as still holding the previous private key',
+    );
+  }
 }

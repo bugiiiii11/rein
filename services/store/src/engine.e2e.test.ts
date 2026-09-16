@@ -11,9 +11,12 @@
  *     -> a payment over the cap is denied and never reaches the rails
  *     -> the MCP tool surface drives the same loop
  *     -> SIGTERM, respawn on the same data dir: chain, settlements, key survive
+ *     -> the chain pages, and the concatenated pages still verify
+ *     -> a final SIGTERM drains the store rather than being killed (posix)
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { newId } from '@reinconsole/core';
+import { newId, type Decision } from '@reinconsole/core';
+import { verifyDecisionChain } from '@reinconsole/policy-engine';
 import { createGate, createGatedFetch, mockFacilitatorRails } from '@reinconsole/gate';
 import { createToolContext, reinTools } from '@reinconsole/mcp';
 import { MockFacilitator, MockLedger } from '@reinconsole/mock-rails';
@@ -198,6 +201,44 @@ describe('the deployable engine, driven the way an external agent drives it', ()
       // ...and the resumed engine still governs: the same cap, the same answer.
       await expect(agentGuard().wrap()(DEAR)).rejects.toBeInstanceOf(PaymentBlockedError);
       expect((await admin.decisions()).length).toBe(chain + 1);
+    },
+    120_000,
+  );
+
+  it('pages the decision chain, and the concatenation still verifies', async () => {
+    // The hosted engine's chain will be long enough that /v1/decisions must
+    // page; this proves an outside client can walk it without losing the
+    // property the log exists for.
+    const { publicKey } = await admin.health();
+    const collected: Decision[] = [];
+    let after: number | undefined;
+    let chainLength = 0;
+    for (let guard = 0; guard < 50; guard += 1) {
+      const page = await admin.decisionsPage({ limit: 1, ...(after === undefined ? {} : { after }) });
+      collected.push(...page.decisions);
+      chainLength = page.chainLength;
+      if (page.nextAfter === undefined) break;
+      after = page.nextAfter;
+    }
+    expect(collected.length).toBe(chainLength);
+    expect(collected.length).toBeGreaterThan(1); // it really did page
+    expect(verifyDecisionChain(collected, publicKey)).toBe(true);
+  });
+
+  // Windows has no SIGTERM: Node maps kill('SIGTERM') onto TerminateProcess,
+  // which is the SIGKILL case, so there is no drain to observe. This asserts
+  // the behaviour of the platform the engine is DEPLOYED on.
+  it.skipIf(remote || process.platform === 'win32')(
+    'drains the store on SIGTERM instead of being killed with the tail unflushed',
+    async () => {
+      const exit = await engine.stop();
+      // Both halves matter. The line is the evidence a human reads in a
+      // deploy log; the exit code is what a supervisor reads, and the drain
+      // backstop deliberately exits 1, so a clean 0 means it did not fire.
+      expect(exit.output).toContain('rein-engine: SIGTERM received');
+      expect(exit.output).toContain('store drained, exiting cleanly');
+      expect(exit.code).toBe(0);
+      expect(exit.signal).toBeNull();
     },
     120_000,
   );

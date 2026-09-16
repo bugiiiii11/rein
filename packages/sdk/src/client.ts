@@ -177,12 +177,8 @@ export class EngineClient {
     this.apiKey = options.apiKey;
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-    body?: unknown,
-  ): Promise<T> {
+  /** The transport half: everything but parsing, so a caller can read headers. */
+  private async send(method: string, path: string, body?: unknown): Promise<Response> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (this.apiKey) headers['authorization'] = `Bearer ${this.apiKey}`;
@@ -198,6 +194,16 @@ export class EngineClient {
         .catch(() => res.text().catch(() => undefined));
       throw new EngineError(res.status, payload);
     }
+    return res;
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+    body?: unknown,
+  ): Promise<T> {
+    const res = await this.send(method, path, body);
     if (res.status === 204) return schema.parse(undefined);
     return schema.parse(await res.json());
   }
@@ -251,8 +257,47 @@ export class EngineClient {
     return this.request('POST', '/v1/evaluate', EvaluateResponse, submission);
   }
 
+  /**
+   * The first page of the decision chain (up to 500, the engine's default).
+   *
+   * On a chain longer than that this is a verifying PREFIX, not the whole log
+   * — `prevHash` links check out, but the newest decisions are not here. Use
+   * {@link decisionsPage} when you need to walk to the head.
+   */
   decisions(): Promise<Decision[]> {
     return this.request('GET', '/v1/decisions', z.array(Decision));
+  }
+
+  /**
+   * One page of the decision chain, plus where the next one starts.
+   *
+   * `nextAfter` is `undefined` at the head of the chain, which is the signal to
+   * stop — not an empty page, which a caller polling a live engine would see
+   * constantly and could not tell from "caught up". Feed it back as `after` to
+   * continue; concatenating the pages in order reproduces exactly what the
+   * caller is entitled to see, so `verifyDecisionChain` accepts the result.
+   *
+   * `chainLength` is how many decisions this key can see in total, which for
+   * an org-scoped key is its own rows and not the engine's chain.
+   */
+  async decisionsPage(
+    query: { after?: number; limit?: number } = {},
+  ): Promise<{ decisions: Decision[]; nextAfter?: number; chainLength: number }> {
+    const params = new URLSearchParams();
+    if (query.after !== undefined) params.set('after', String(query.after));
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await this.send('GET', `/v1/decisions${qs ? `?${qs}` : ''}`);
+    const decisions = z.array(Decision).parse(await res.json());
+    const next = res.headers.get('rein-next-after');
+    const length = res.headers.get('rein-chain-length');
+    return {
+      decisions,
+      ...(next === null ? {} : { nextAfter: Number(next) }),
+      // An engine older than this header still answers the route; fall back to
+      // what the page itself proves rather than reporting a NaN length.
+      chainLength: length === null ? decisions.length : Number(length),
+    };
   }
 
   // --- Reconciliation (B1) ---

@@ -8,8 +8,35 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
 
+# Everything the unprivileged `node` user needs is prepared here, and the switch itself is
+# the ONE line left off — read the measurements before turning it on (S57).
+#
+# /app is chowned so a non-root build can write node_modules, dist and .turbo. /data is
+# created and given to node because Docker (and Railway) initialize a FRESH volume with the
+# ownership of the directory it is mounted over: without this the mount lands root-owned.
+RUN chown -R node:node /app && mkdir -p /data && chown -R node:node /data
+
 # Copy the whole monorepo (see .dockerignore for exclusions) and install from the lockfile.
-COPY . .
+COPY --chown=node:node . .
+
+# USER node
+#
+# Measured in this image, 2026-09-16, both against `docker run -v <volume>:/data` with
+# REIN_CONSOLE_DATA_DIR=/data/console:
+#
+#   fresh volume, with the mkdir above      -> boots, seeds, `drwx------ node node`,
+#                                              SIGTERM drains, exit 0
+#   volume that ALREADY EXISTS root-owned   -> EACCES: permission denied, mkdir
+#                                              '/data/console' -> exit 1
+#
+# app.reinconsole.com's volume was created in S36 by a root container, and an existing
+# volume is NOT re-initialized from the image. So enabling this line alone takes the site
+# down into an ON_FAILURE restart loop. It needs ONE deliberate human step first, in the
+# Railway dashboard: recreate the volume (the console is a demo exhibit -- it reseeds), or
+# chown the mount once, or set RAILWAY_RUN_UID=0 to keep running as root.
+#
+# Note also that an ENTRYPOINT that chowns and then drops privileges -- the usual fix --
+# does NOT work here: Railway execs `startCommand` as argv and it overrides ENTRYPOINT.
 # pnpm 10 skips dependency build scripts by default; esbuild (used by vite + tsup) needs its
 # native binary built or the build crashes — the same gotcha as local dev, so rebuild it here.
 RUN pnpm install --frozen-lockfile \
@@ -19,6 +46,13 @@ RUN pnpm install --frozen-lockfile \
 # Must stay AFTER the install above: set earlier, pnpm skips devDependencies and tsx —
 # which the start command runs — is not in the image.
 ENV NODE_ENV=production
+
+# Liveness only, and deliberately against /api/health rather than /api/state: the probe
+# used to serialize the whole world every few seconds, which made a full state dump the
+# cheapest request on the box. Railway runs its own healthcheck from railway.json; this
+# one is for `docker run` and any other runtime that reads the image's own declaration.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4173)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # standalone.ts serves apps/console/dist + the console API/SSE on $PORT (Railway injects PORT).
 #

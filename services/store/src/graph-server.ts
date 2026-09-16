@@ -31,6 +31,7 @@ import {
 } from '@reinconsole/graph';
 import type { ApiKeyAuth } from '@reinconsole/core/auth';
 import { openReinStore, type ReinStore } from './index.js';
+import { installShutdown, pruneIntervalFromEnv, startPeriodicPrune } from './lifecycle.js';
 
 // Re-exported, not reimplemented: this bin and @reinconsole/graph's own main
 // block make the same bind decision, and two copies of a safety rule is one
@@ -52,6 +53,8 @@ export async function startPersistentGraphServer(options: {
   now?: () => Date;
   /** Gates the write routes with the `report` scope; reads stay open. */
   auth?: ApiKeyAuth;
+  /** Periodic sweep of the TTL'd burn tables (0 = never). See lifecycle.ts. */
+  pruneIntervalMs?: number;
 }): Promise<PersistentGraph> {
   const store = await openReinStore({ dir: options.dir });
   const graph = new ReputationGraph({
@@ -59,11 +62,21 @@ export async function startPersistentGraphServer(options: {
     intents: store.intents,
     now: options.now,
   });
+  const stops: Array<() => void> = [];
+  if (options.pruneIntervalMs !== 0) {
+    stops.push(
+      startPeriodicPrune({
+        prune: () => store.prune(),
+        ...(options.pruneIntervalMs !== undefined ? { intervalMs: options.pruneIntervalMs } : {}),
+      }),
+    );
+  }
   const app = buildGraphServer(graph, { ...(options.auth ? { auth: options.auth } : {}) });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
   } catch (err) {
     // A failed listen (port in use) must not leak the open PGlite handle.
+    for (const stop of stops) stop();
     await store.close().catch(() => undefined);
     throw err;
   }
@@ -72,6 +85,7 @@ export async function startPersistentGraphServer(options: {
     graph,
     store,
     close: async () => {
+      for (const stop of stops) stop();
       try {
         await app.close();
       } finally {
@@ -103,7 +117,12 @@ if (isMainModule()) {
         port,
         host,
         ...(auth ? { auth } : {}),
-      }).then(({ store }) => {
+        pruneIntervalMs: pruneIntervalFromEnv(process.env),
+      }).then((graph) => {
+        const { store } = graph;
+        // The graph's write-behind evidence ledger is exactly the state a
+        // SIGKILLed redeploy used to drop on the floor.
+        installShutdown({ name: 'rein-graph', close: () => graph.close() });
         const resumed = store.fresh ? 'fresh store' : `resumed ${store.resumedSubjects} subjects`;
         console.log(
           `[rein] persistent graph listening on http://${host}:${port} (auth: ${auth ? 'api-key' : 'none'})`,

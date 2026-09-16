@@ -27,7 +27,21 @@ export interface ApiOptions {
    * freeze/unfreeze/ping/demo cannot be reached at all.
    */
   readOnly?: boolean;
+  /**
+   * How many SSE streams may be open at once; the 65th is refused with 503.
+   *
+   * The console pushes every world event to every subscriber and holds a
+   * response object per stream, so an uncapped `/api/events` is the cheapest
+   * way to make a public dashboard hold unbounded memory — no credential
+   * needed, since the feed is the read-only half that stays open on purpose.
+   * The cap is a ceiling on a page nobody is watching, not a capacity plan:
+   * 64 is far above what a handful of humans with a dashboard open produce.
+   */
+  maxSseClients?: number;
 }
+
+/** `REIN_CONSOLE_MAX_SSE` default — see `ApiOptions.maxSseClients`. */
+const DEFAULT_MAX_SSE_CLIENTS = 64;
 
 /** Constant-time secret comparison over digests, so length and prefix do not leak. */
 function secretMatches(presented: string, expected: string): boolean {
@@ -70,6 +84,8 @@ function bearerOf(req: IncomingMessage): string | undefined {
 export function createApiHandler(world: World, options: ApiOptions = {}) {
   const writable = options.readOnly !== true;
   const startedAt = new Date();
+  const maxSseClients = options.maxSseClients ?? DEFAULT_MAX_SSE_CLIENTS;
+  let sseClients = 0;
 
   /**
    * Gate every state change. Returns true when the request was refused (and
@@ -130,6 +146,19 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
 
     // GET /api/events — Server-Sent Events stream
     if (method === 'GET' && pathname === '/api/events') {
+      if (sseClients >= maxSseClients) {
+        // 503 with Retry-After, not 429: the refusal is about this server's
+        // capacity, not about anything this client did — it may be its first
+        // request. A browser EventSource reconnects on its own, so the header
+        // is advice about when, and the UI keeps polling /api/state meanwhile.
+        res.setHeader('Retry-After', '30');
+        sendJson(res, 503, {
+          error: 'too_many_streams',
+          message: `this console already has ${maxSseClients} event streams open`,
+        });
+        return true;
+      }
+      sseClients += 1;
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
@@ -142,7 +171,13 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
         res.write(`data: ${JSON.stringify(ev)}\n\n`);
       });
       const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
+      let released = false;
       req.on('close', () => {
+        // `close` can fire more than once on a socket that errors; a double
+        // decrement would leak capacity upward until the cap meant nothing.
+        if (released) return;
+        released = true;
+        sseClients -= 1;
         clearInterval(heartbeat);
         unsubscribe();
       });
@@ -227,6 +262,24 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
 
+/**
+ * `REIN_CONSOLE_MAX_SSE`, or the default. A non-numeric or non-positive value
+ * is a startup ERROR rather than a silent fallback: `0` reads as "unlimited"
+ * to whoever typed it, and quietly substituting 64 would leave an operator
+ * believing they had removed a cap that is in fact still there.
+ */
+function maxSseFromEnv(env: NodeJS.ProcessEnv): number {
+  const raw = env['REIN_CONSOLE_MAX_SSE']?.trim();
+  if (!raw) return DEFAULT_MAX_SSE_CLIENTS;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new TypeError(
+      `REIN_CONSOLE_MAX_SSE must be a positive integer, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
 export interface ConsolePosture extends ApiOptions {
   host: string;
   warning?: string;
@@ -245,12 +298,14 @@ export function resolveConsolePosture(env: NodeJS.ProcessEnv): ConsolePosture {
   const host = env['REIN_CONSOLE_HOST']?.trim() || env['HOST']?.trim() || '0.0.0.0';
   const apiKey = env['REIN_CONSOLE_API_KEY']?.trim();
   const forcedReadOnly = env['REIN_CONSOLE_READONLY']?.trim() === '1';
+  const maxSseClients = maxSseFromEnv(env);
 
-  if (forcedReadOnly) return { host, readOnly: true };
-  if (apiKey) return { host, apiKey };
-  if (LOOPBACK.has(host)) return { host };
+  if (forcedReadOnly) return { host, maxSseClients, readOnly: true };
+  if (apiKey) return { host, maxSseClients, apiKey };
+  if (LOOPBACK.has(host)) return { host, maxSseClients };
   return {
     host,
+    maxSseClients,
     readOnly: true,
     warning:
       `no REIN_CONSOLE_API_KEY set and binding ${host} — serving READ-ONLY. ` +

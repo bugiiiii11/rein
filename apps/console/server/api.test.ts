@@ -190,4 +190,48 @@ describe('SSE stream', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(fake.listeners.size).toBe(0);
   });
+
+  it('caps concurrent streams and hands the slot back when one closes', async () => {
+    // An uncapped /api/events is the cheapest way to make a PUBLIC dashboard
+    // hold unbounded memory: the feed is the read-only half that stays open on
+    // purpose, so no credential is involved, and the console keeps a response
+    // object plus a subscription per stream.
+    const capped = makeFakeWorld();
+    const handle = createApiHandler(capped.world, { maxSseClients: 2 });
+    const server2 = createServer((req, res) => {
+      if (!handle(req, res)) {
+        res.writeHead(418);
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => server2.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(server2.address() as AddressInfo).port}/api/events`;
+    const open = (): Promise<import('node:http').IncomingMessage> =>
+      new Promise((resolve, reject) => get(url, resolve).on('error', reject));
+
+    try {
+      const first = await open();
+      const second = await open();
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+
+      const third = await open();
+      // 503, not 429: the refusal is about this server's capacity, not about
+      // anything this client did — it may be its first request.
+      expect(third.statusCode).toBe(503);
+      expect(third.headers['retry-after']).toBe('30');
+      third.resume();
+
+      // A closed stream returns its slot; a cap that only ever counted up
+      // would make the console degrade permanently after a busy afternoon.
+      first.destroy();
+      await new Promise((r) => setTimeout(r, 100));
+      const fourth = await open();
+      expect(fourth.statusCode).toBe(200);
+      second.destroy();
+      fourth.destroy();
+    } finally {
+      await new Promise<void>((resolve) => server2.close(() => resolve()));
+    }
+  });
 });

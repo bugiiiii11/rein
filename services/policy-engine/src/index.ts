@@ -70,6 +70,17 @@ export {
   resolveHost,
   type ServerOptions,
 } from './server.js';
+export {
+  TokenBucketLimiter,
+  buildRateLimiters,
+  rateLimitFromEnv,
+  DEFAULT_PER_IP,
+  DEFAULT_PER_KEY,
+  type RateLimiters,
+  type RateLimitOptions,
+  type RateLimitVerdict,
+  type TokenBucketOptions,
+} from './rate-limit.js';
 // Re-exported from @reinconsole/core/auth (moved there so the signer's admin
 // surface and the graph's ingestion routes answer "who is calling, and may
 // they do this" with the SAME code the engine does). Kept exported here on

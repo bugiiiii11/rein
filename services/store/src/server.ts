@@ -28,10 +28,13 @@ import {
   livenessFromEnv,
   LivenessMonitor,
   PolicyEngine,
+  rateLimitFromEnv,
   resolveHost,
   type ApiKeyAuth,
+  type RateLimitOptions,
 } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
+import { installShutdown, pruneIntervalFromEnv, startPeriodicPrune } from './lifecycle.js';
 
 export interface PersistentEngine {
   app: FastifyInstance;
@@ -74,6 +77,21 @@ export async function startPersistentEngine(options: {
    */
   approvals?: ApprovalService;
   liveness?: LivenessMonitor;
+  /**
+   * Rate limiting for the HTTP surface, and whether a proxy's
+   * `X-Forwarded-For` may name the client. Both are forwarded verbatim to
+   * `buildServer`; omitted, this engine has no limiter — see
+   * `ServerOptions.rateLimit`.
+   */
+  rateLimit?: RateLimitOptions;
+  trustProxy?: boolean;
+  /**
+   * Sweep the TTL'd burn tables every this many ms (0 = never). The store
+   * prunes once at open, which covers a service that restarts often and leaves
+   * one that stays up accreting replay slots forever — exactly backwards for
+   * the deployment this bin exists to be.
+   */
+  pruneIntervalMs?: number;
 }): Promise<PersistentEngine> {
   if ((options.dir === undefined) === (options.store === undefined)) {
     throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
@@ -93,7 +111,19 @@ export async function startPersistentEngine(options: {
   const stops: Array<() => void> = [];
   if (options.approvals) stops.push(engine.startExpirySweeper());
   if (options.liveness) stops.push(engine.startLivenessSweeper());
-  const app = buildServer(engine, { ...(options.auth ? { auth: options.auth } : {}) });
+  if (options.pruneIntervalMs !== 0) {
+    stops.push(
+      startPeriodicPrune({
+        prune: () => store.prune(),
+        ...(options.pruneIntervalMs !== undefined ? { intervalMs: options.pruneIntervalMs } : {}),
+      }),
+    );
+  }
+  const app = buildServer(engine, {
+    ...(options.auth ? { auth: options.auth } : {}),
+    ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
+    ...(options.trustProxy !== undefined ? { trustProxy: options.trustProxy } : {}),
+  });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
   } catch (err) {
@@ -150,6 +180,10 @@ if (isMainModule()) {
     // REIN_TELEGRAM_CHAT_ID (both or neither -- half is a startup error).
     const approvals = approvalsFromEnv(process.env, { store: store.approvalStore });
     const liveness = livenessFromEnv(process.env, { store: store.livenessStore });
+    // A bin is reachable by strangers and stays up for weeks, so it gets both
+    // things an embedded engine has no use for: a rate limiter, and a
+    // maintenance sweep that is not just the one at open.
+    const rateLimit = rateLimitFromEnv(process.env);
     const engine = await startPersistentEngine({
       store,
       port,
@@ -157,7 +191,15 @@ if (isMainModule()) {
       approvals,
       liveness,
       ...(auth ? { auth } : {}),
+      ...(rateLimit ? { rateLimit } : {}),
+      trustProxy: process.env['REIN_TRUST_PROXY']?.trim() === '1',
+      pruneIntervalMs: pruneIntervalFromEnv(process.env),
     });
+    // Without this the process is SIGKILLed on every redeploy and the
+    // write-behind tail dies with it — see lifecycle.ts. Installed only after
+    // a successful listen: a boot that failed has its own cleanup below, and
+    // a handler racing that would close the store twice.
+    installShutdown({ name: 'rein-engine', close: () => engine.close() });
     // The BOUND port, not the requested one: with PORT=0 the OS picks, and the
     // boot line is how a supervisor or a test discovers where the engine went.
     const bound = (engine.app.server.address() as AddressInfo).port;
