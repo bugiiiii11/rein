@@ -151,25 +151,39 @@ export interface TelegramChannelOptions {
  */
 export class TelegramChannel implements ApprovalChannel, AlertChannel, NotifyChannel {
   readonly name: string;
-  private readonly url: string;
+  /**
+   * The Bot API authenticates by PATH (`/bot<token>/sendMessage`), so the
+   * request URL is the secret. It is therefore never stored: the token lives
+   * in a private field, the URL is assembled inside `send()` and discarded,
+   * and a transport failure -- undici's "fetch failed" with its cause chain,
+   * a proxy's rejection, a redirect -- is rethrown REDACTED: the diagnosis
+   * kept, the token scrubbed, no `cause` attached for a logger to print.
+   */
+  readonly #token: string;
+  private readonly apiBase: string;
   private readonly chatId: string;
   private readonly fetchImpl: typeof globalThis.fetch;
 
   constructor(options: TelegramChannelOptions) {
     if (!options.botToken) throw new TypeError('TelegramChannel needs a botToken');
     this.name = options.name ?? 'telegram';
-    const base = (options.apiBase ?? 'https://api.telegram.org').replace(/\/+$/, '');
-    this.url = `${base}/bot${options.botToken}/sendMessage`;
+    this.#token = options.botToken;
+    this.apiBase = (options.apiBase ?? 'https://api.telegram.org').replace(/\/+$/, '');
     this.chatId = String(options.chatId);
     this.fetchImpl = options.fetch ?? globalThis.fetch;
   }
 
   async send(text: string): Promise<void> {
-    const res = await this.fetchImpl(this.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: this.chatId, text, disable_web_page_preview: true }),
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.apiBase}/bot${this.#token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chat_id: this.chatId, text, disable_web_page_preview: true }),
+      });
+    } catch (err) {
+      throw new Error(`telegram sendMessage failed: ${this.redact(describeFailure(err))}`);
+    }
     if (!res.ok) {
       // Surfaced to the caller's error hook: a parked escalation stays parked,
       // and an alarm that did not arrive is not counted as delivered.
@@ -184,6 +198,30 @@ export class TelegramChannel implements ApprovalChannel, AlertChannel, NotifyCha
   alert(alert: LivenessAlert): Promise<void> {
     return this.send(formatAlert(alert));
   }
+
+  private redact(text: string): string {
+    return text.split(this.#token).join('[redacted]');
+  }
+}
+
+/**
+ * A transport failure, flattened: every `name: message` down the cause chain
+ * (`TypeError: fetch failed -> Error: connect ECONNREFUSED ...`), because the
+ * useful part of an undici failure sits two causes deep. Codes ride along.
+ */
+function describeFailure(err: unknown): string {
+  const parts: string[] = [];
+  for (let e: unknown = err, depth = 0; e !== null && e !== undefined && depth < 5; depth += 1) {
+    if (e instanceof Error) {
+      const code = (e as { code?: unknown }).code;
+      parts.push(`${e.name}: ${e.message}${typeof code === 'string' ? ` (${code})` : ''}`);
+      e = e.cause;
+    } else {
+      parts.push(String(e));
+      break;
+    }
+  }
+  return parts.join(' -> ');
 }
 
 /**

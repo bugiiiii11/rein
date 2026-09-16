@@ -51,7 +51,7 @@ export {
 } from './stores.js';
 export { gateMiddleware, type GateMiddlewareOptions } from './node.js';
 export { createGatedFetch, type GatedFetchOptions } from './fetch.js';
-export { inspectPaymentHeader, type InspectedPayment } from './wire.js';
+export { inspectPaymentHeader, MAX_PAYMENT_HEADER_CHARS, type InspectedPayment } from './wire.js';
 export { GateError, type GateRefusalCode } from './errors.js';
 
 // Re-exported for convenience so gate users rarely need the other packages.

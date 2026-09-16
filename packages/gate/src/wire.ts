@@ -65,7 +65,23 @@ export interface InspectedPayment {
   envelope: unknown;
 }
 
+/**
+ * Longest payment header the gate will decode. A real x402 envelope is a few
+ * hundred bytes of base64; 16 KiB leaves room for every dialect and any
+ * facilitator extension, while refusing -- before `Buffer.from` allocates a
+ * byte -- the multi-megabyte header a hostile client can attach for free.
+ * (Node's own HTTP parser caps headers near this size; the gate is
+ * transport-agnostic and the in-process fetch adapter has no such parser.)
+ */
+export const MAX_PAYMENT_HEADER_CHARS = 16_384;
+
 export function inspectPaymentHeader(raw: string): InspectedPayment {
+  if (raw.length > MAX_PAYMENT_HEADER_CHARS) {
+    throw new GateError(
+      'malformed_payment',
+      `the payment header is ${raw.length} characters; the gate accepts at most ${MAX_PAYMENT_HEADER_CHARS}`,
+    );
+  }
   let json: unknown;
   try {
     json = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));

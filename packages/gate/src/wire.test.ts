@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GateError } from './errors.js';
-import { inspectPaymentHeader } from './wire.js';
+import { MAX_PAYMENT_HEADER_CHARS, inspectPaymentHeader } from './wire.js';
 
 const encode = (body: unknown) => Buffer.from(JSON.stringify(body)).toString('base64');
 
@@ -73,5 +73,40 @@ describe('inspectPaymentHeader', () => {
       payload: { from: '0xAgent', value: 'not-a-number' },
     });
     expect(() => inspectPaymentHeader(noTransfer)).toThrowError(GateError);
+  });
+});
+
+describe('the payment header cap', () => {
+  it('refuses an oversized header as malformed_payment before decoding it', () => {
+    // One character over: the cap is exact, and it fires before Buffer.from
+    // would allocate anything for what is, at any size, still not a payment.
+    const oversized = 'A'.repeat(MAX_PAYMENT_HEADER_CHARS + 1);
+    try {
+      inspectPaymentHeader(oversized);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(GateError);
+      expect((err as GateError).code).toBe('malformed_payment');
+      expect((err as GateError).message).toMatch(/at most 16384/);
+    }
+  });
+
+  it('is a cap on size, not on shape: a header exactly at the limit is still decoded', () => {
+    // Pad a valid envelope with an ignored field up to exactly the cap; the
+    // envelope must parse, so the refusal above is about length alone.
+    const body = {
+      x402Version: 1,
+      scheme: 'exact',
+      network: 'base',
+      payload: { from: '0xAgent', to: '0xVENDOR', value: '50000', asset: 'USDC' },
+      padding: '',
+    };
+    const base = encode(body).length;
+    // base64 grows 4 chars per 3 bytes; pad in 3-byte steps to land on the cap.
+    body.padding = 'x'.repeat(Math.floor(((MAX_PAYMENT_HEADER_CHARS - base) / 4) * 3));
+    const header = encode(body);
+    expect(header.length).toBeLessThanOrEqual(MAX_PAYMENT_HEADER_CHARS);
+    expect(header.length).toBeGreaterThan(MAX_PAYMENT_HEADER_CHARS - 8);
+    expect(inspectPaymentHeader(header)).toMatchObject({ payer: '0xAgent', value: '50000' });
   });
 });

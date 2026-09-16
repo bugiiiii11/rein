@@ -29,5 +29,12 @@
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri": ">=3.1.6",
+      "find-my-way": ">=9.7.0",
+      "ws": ">=8.21.0"
+    }
   }
 }

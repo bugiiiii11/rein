@@ -17,8 +17,12 @@ function makeFakeWorld() {
   const listeners = new Set<(ev: ServerEvent) => void>();
   const calls: string[] = [];
   let demoRunning = false;
+  let stateReads = 0;
   const world = {
-    getState: () => STATE,
+    getState: () => {
+      stateReads += 1;
+      return STATE;
+    },
     subscribe: (l: (ev: ServerEvent) => void) => {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -43,7 +47,14 @@ function makeFakeWorld() {
     },
     close: async () => {},
   };
-  return { world: world as unknown as World, listeners, calls };
+  return {
+    world: world as unknown as World,
+    listeners,
+    calls,
+    get stateReads() {
+      return stateReads;
+    },
+  };
 }
 
 let server: Server;
@@ -76,6 +87,20 @@ describe('routing', () => {
     expect(res.headers.get('content-type')).toBe('application/json');
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.json()).toEqual(STATE);
+  });
+
+  it('GET /api/health answers without reading the world', async () => {
+    // The healthcheck used to be /api/state: a full snapshot, serialized on
+    // every probe and free to anyone. Liveness must cost -- and reveal -- nothing.
+    const reads = fake.stateReads;
+    const res = await fetch(`${base}/api/health`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const body = (await res.json()) as { status: string; startedAt: string; uptimeMs: number };
+    expect(body.status).toBe('ok');
+    expect(Number.isNaN(Date.parse(body.startedAt))).toBe(false);
+    expect(body.uptimeMs).toBeGreaterThanOrEqual(0);
+    expect(fake.stateReads).toBe(reads);
   });
 
   it('non-/api/ paths fall through to the next middleware', async () => {

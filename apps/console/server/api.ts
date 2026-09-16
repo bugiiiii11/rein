@@ -69,6 +69,7 @@ function bearerOf(req: IncomingMessage): string | undefined {
  */
 export function createApiHandler(world: World, options: ApiOptions = {}) {
   const writable = options.readOnly !== true;
+  const startedAt = new Date();
 
   /**
    * Gate every state change. Returns true when the request was refused (and
@@ -104,6 +105,19 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
       sendJson(res, 200, {
         writable,
         auth: options.apiKey === undefined ? 'none' : 'bearer',
+      });
+      return true;
+    }
+
+    // GET /api/health — what the platform healthcheck polls. It touches
+    // nothing: the probe used to hit /api/state, which serialized the whole
+    // world every few seconds and made a full state dump the cheapest request
+    // on the box. Liveness of the process is all a probe is entitled to.
+    if (method === 'GET' && pathname === '/api/health') {
+      sendJson(res, 200, {
+        status: 'ok',
+        startedAt: startedAt.toISOString(),
+        uptimeMs: Date.now() - startedAt.getTime(),
       });
       return true;
     }

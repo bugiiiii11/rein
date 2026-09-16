@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -420,6 +421,17 @@ export function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & Aler
  * same channels the approval tier uses, because a human who cares that a
  * payment needs signing is the human who cares that an agent stopped.
  */
+/**
+ * The message and nothing else. The channel error hooks below log through
+ * this rather than passing the error object along, because a transport error
+ * can quote the request that failed -- and for Telegram the request URL IS the
+ * bot token. TelegramChannel redacts its own failures; this keeps the rule
+ * even for a channel that does not.
+ */
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function livenessFromEnv(
   env: NodeJS.ProcessEnv,
   options: { store?: LivenessStorePort } = {},
@@ -427,8 +439,10 @@ export function livenessFromEnv(
   return new LivenessMonitor({
     ...(options.store ? { store: options.store } : {}),
     channels: channelsFromEnv(env),
+    // Message only, never the error object: a channel's transport failure can
+    // quote the request it made, and for Telegram the request IS the token.
     onAlertError: (channel, error) =>
-      console.error(`[rein] liveness channel "${channel}" failed:`, error),
+      console.error(`[rein] liveness channel "${channel}" failed: ${messageOf(error)}`),
     onSightingError: (agentId, error) =>
       console.error(`[rein] liveness sighting for ${agentId} was not recorded:`, error),
   });
@@ -446,7 +460,7 @@ export function approvalsFromEnv(
     channels,
     ttlMs: Number.isFinite(ttl) && ttl > 0 ? ttl : DEFAULT_ESCALATION_TTL_MS,
     onDeliveryError: (channel, error) =>
-      console.error(`[rein] approval channel "${channel}" failed:`, error),
+      console.error(`[rein] approval channel "${channel}" failed: ${messageOf(error)}`),
   });
 }
 
@@ -525,7 +539,8 @@ if (isMainModule()) {
     .listen({ port, host })
     .then(() =>
       console.log(
-        `[rein] policy-engine listening on http://${host}:${port} (auth: ${auth ? 'api-key' : 'none'})`,
+        `[rein] policy-engine listening on http://${host}:${(app.server.address() as AddressInfo).port} ` +
+          `(auth: ${auth ? 'api-key' : 'none'})`,
       ),
     )
     .catch((err) => {

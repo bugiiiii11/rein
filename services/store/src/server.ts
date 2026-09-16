@@ -18,6 +18,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import {
   ApprovalService,
@@ -149,7 +150,7 @@ if (isMainModule()) {
     // REIN_TELEGRAM_CHAT_ID (both or neither -- half is a startup error).
     const approvals = approvalsFromEnv(process.env, { store: store.approvalStore });
     const liveness = livenessFromEnv(process.env, { store: store.livenessStore });
-    await startPersistentEngine({
+    const engine = await startPersistentEngine({
       store,
       port,
       host,
@@ -157,13 +158,16 @@ if (isMainModule()) {
       liveness,
       ...(auth ? { auth } : {}),
     });
+    // The BOUND port, not the requested one: with PORT=0 the OS picks, and the
+    // boot line is how a supervisor or a test discovers where the engine went.
+    const bound = (engine.app.server.address() as AddressInfo).port;
     const resumed = store.fresh
       ? 'fresh store'
       : `resumed ${store.resumedDecisions} decisions, ` +
         `${store.agents.list().length} agents, ${store.policies.list().length} policies, ` +
         `${store.resumedApiKeys} api keys`;
     console.log(
-      `[rein] persistent policy-engine listening on http://${host}:${port} ` +
+      `[rein] persistent policy-engine listening on http://${host}:${bound} ` +
         `(auth: ${auth ? 'api-key' : 'none'})`,
     );
     console.log(`[rein] data dir ${dir} — ${resumed}; signing key ${store.keySource}`);

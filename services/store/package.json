@@ -58,9 +58,13 @@
     "@reinconsole/graph": "workspace:^",
     "@reinconsole/policy-engine": "workspace:^",
     "@reinconsole/signer": "workspace:^",
-    "fastify": "^5.2.0"
+    "fastify": "^5.12.1"
   },
   "devDependencies": {
+    "@reinconsole/mcp": "workspace:^",
+    "@reinconsole/mock-rails": "workspace:^",
+    "@reinconsole/sdk": "workspace:^",
+    "@reinconsole/x402-rails": "workspace:^",
     "@types/node": "^22.10.0",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",

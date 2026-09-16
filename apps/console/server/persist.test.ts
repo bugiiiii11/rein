@@ -22,7 +22,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createWorld } from './world';
+import { createWorld, type World } from './world';
 import type { AgentView, ConsoleState } from './wire';
 
 let dir: string;
@@ -38,14 +38,61 @@ const SESSION_AGENT = 'session-agent-1';
 const agent = (s: ConsoleState, name: string): AgentView | undefined =>
   s.agents.find((a) => a.name === name);
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * PGlite surfaces its failures as emscripten `ErrnoError`s: `name`
+ * "ErrnoError", a numeric `errno`, and a message that says only "FS error".
+ * This suite's flake under CPU load (S53-S54) was exactly that on a boot right
+ * after the previous world's `close()`, errno 51 -- ENOSPC in emscripten's
+ * table, i.e. the OS refused a write, not a race in our code. A single retry
+ * after a pause is the honest response to a transient; the errno is named in
+ * the log so a repeat is diagnosable rather than mysterious.
+ */
+function isErrnoError(err: unknown): err is Error & { errno?: number } {
+  return err instanceof Error && err.name === 'ErrnoError';
+}
+
+async function bootWorld(dataDir: string): Promise<World> {
+  try {
+    return await createWorld({ dataDir });
+  } catch (err) {
+    if (!isErrnoError(err)) throw err;
+    console.warn(
+      `[persist.test] PGlite ErrnoError (errno ${err.errno ?? '?'}) booting ${dataDir}; retrying once`,
+    );
+    await sleep(500);
+    return createWorld({ dataDir });
+  }
+}
+
+/**
+ * Delete the data dir once nothing holds it. PGlite's emscripten FS can flush
+ * a moment after close() resolves -- deleting under a straggler surfaces as an
+ * unhandled ENOENT in the store suite -- so a short pause stays, and then the
+ * removal itself is retried rather than being a single fixed-delay guess.
+ */
+async function removeWhenGone(dataDir: string, attempts = 20): Promise<void> {
+  await sleep(250);
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+      return;
+    } catch {
+      if (attempt === attempts) return; // best-effort: a stray temp dir is harmless
+      await sleep(100);
+    }
+  }
+}
+
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'rein-console-'));
 
-  const a = await createWorld({ dataDir: dir });
+  const a = await bootWorld(dir);
   first = a.getState();
   await a.close();
 
-  const b = await createWorld({ dataDir: dir });
+  const b = await bootWorld(dir);
   resumed = b.getState();
   // A resumed session-tier agent is only genuinely alive if its ROTATED key can
   // still get a decision out of the engine — assert the rotation end-to-end,
@@ -54,20 +101,13 @@ beforeAll(async () => {
   afterPing = b.getState();
   await b.close();
 
-  const c = await createWorld({ dataDir: dir });
+  const c = await bootWorld(dir);
   third = c.getState();
   await c.close();
 }, 180_000);
 
 afterAll(async () => {
-  // PGlite's emscripten FS can flush a moment after close() resolves; deleting
-  // the dir under a straggler surfaces as an unhandled ENOENT (store suite).
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  try {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  } catch {
-    // best-effort: a stray temp dir is harmless
-  }
+  await removeWhenGone(dir);
 });
 
 describe('fresh boot on a store', () => {

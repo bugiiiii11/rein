@@ -9,7 +9,8 @@ to Vercel at **reinconsole.com**.
 
 ## Build shape
 
-`railway.json` pins the Dockerfile builder, a `/api/state` healthcheck, and
+`railway.json` pins the Dockerfile builder, a `/api/health` healthcheck (liveness only --
+it reads no world state, so a probe is not a free snapshot), and
 `ON_FAILURE` restarts (max 10). The image is built from the REPO ROOT, not
 `apps/console`: the console depends on 10 workspace packages, so the whole
 pnpm/Turborepo workspace has to install and build together.
