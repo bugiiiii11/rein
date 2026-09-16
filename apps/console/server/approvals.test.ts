@@ -13,7 +13,7 @@
  * two cases are different postures rather than different fixtures.
  */
 import { generateKeyPairSync, type KeyObject } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { signApproval } from '@reinconsole/policy-engine';
 import { createWorld, type World } from './world';
 
@@ -62,13 +62,31 @@ describe('resolving a parked payment through the console', () => {
       verdict: 'approve',
     });
 
-    const result = await world.submitGrant({
-      decisionId: parked.decisionId,
-      intentHash: parked.intentHash,
-      verdict: 'approve',
-      approverKeyId: approver.id,
-      signature,
-    });
+    // The release moves the breaker's counting floor to NOW, and the payments
+    // it is meant to put behind it were made by the boot scenario moments ago.
+    // That floor is a TIMESTAMP compared inclusively (`at >= cutoff`), so on a
+    // fast enough machine the scenario and this answer collapse into a single
+    // millisecond: the primed payments sit AT the floor, get counted again,
+    // and the breaker never appears to reset. That is the S50 macOS failure
+    // one layer up, and the console has the same exposure the engine had.
+    //
+    // A human signing takes time, so say the ordering out loud rather than
+    // borrow it from machine speed. Only Date is faked -- timers and promises
+    // stay real, so the await below behaves normally -- and the clock is set
+    // one millisecond past the real instant the scenario finished on, never
+    // to a fixed date, which would run the engine's windows backwards.
+    const answeredAt = Date.now() + 1;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(answeredAt);
+    const result = await world
+      .submitGrant({
+        decisionId: parked.decisionId,
+        intentHash: parked.intentHash,
+        verdict: 'approve',
+        approverKeyId: approver.id,
+        signature,
+      })
+      .finally(() => vi.useRealTimers());
     expect(result.status).toBe('approved');
 
     const after = world.getState();

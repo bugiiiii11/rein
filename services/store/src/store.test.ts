@@ -102,7 +102,16 @@ describe('openReinStore', () => {
     // Clear the breaker the way an approval does, then prove the floor is
     // durable: a restart that forgot it would re-trip and ask a human the
     // same question again.
-    const clearedAt = Date.now();
+    //
+    // The floor is a TIMESTAMP and the breaker counts `at >= cutoff`, so the
+    // payments it is meant to put behind it have to be observably older than
+    // the reset. Reading the wall clock here borrows that ordering from
+    // machine speed: two awaited evaluations can land in the same millisecond
+    // on a fast enough runner, leaving both payments AT the floor, counted
+    // again, and the resumed breaker still tripped (the S50 macOS shape).
+    // Stamping the reset one millisecond after the last allowance says the
+    // ordering out loud, which is what an approval arriving later really is.
+    const clearedAt = Math.max(...a.spend.allowancesIn(0).map((r) => r.at)) + 1;
     await a.spend.resetBreaker(agentId, 'velocity', clearedAt);
     await a.close();
 
