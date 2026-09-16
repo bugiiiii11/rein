@@ -37,7 +37,18 @@ export interface PersistentEngine {
 
 /** Compose a durable engine + HTTP server on top of a data directory. */
 export async function startPersistentEngine(options: {
-  dir: string;
+  /** Data directory to open. Mutually exclusive with `store`. */
+  dir?: string;
+  /**
+   * An ALREADY-OPEN store to serve from, instead of a directory to open.
+   *
+   * This exists so a caller can build the auth layer against `store.apiKeys`
+   * BEFORE the server starts — the standalone boot below has to, because
+   * durable keys and the bind decision both need the store, and opening it
+   * twice is not an option (one PGlite directory admits a single writer).
+   * Ownership transfers: the returned `close()` closes it.
+   */
+  store?: ReinStore;
   port: number;
   host?: string;
   /**
@@ -47,7 +58,10 @@ export async function startPersistentEngine(options: {
    */
   auth?: ApiKeyAuth;
 }): Promise<PersistentEngine> {
-  const store = await openReinStore({ dir: options.dir });
+  if ((options.dir === undefined) === (options.store === undefined)) {
+    throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
+  }
+  const store = options.store ?? (await openReinStore({ dir: options.dir! }));
   const engine = new PolicyEngine(store);
   const app = buildServer(engine, { ...(options.auth ? { auth: options.auth } : {}) });
   try {
@@ -84,26 +98,32 @@ function isMainModule(): boolean {
 if (isMainModule()) {
   const dir = process.env.REIN_DATA_DIR ?? '.rein-data';
   const port = Number(process.env.PORT ?? 8787);
-  const auth = await authFromEnv(process.env);
-  // Throws rather than binding a public interface without a key — the same
-  // refusal the in-memory engine makes, and for the same reason: anyone who
-  // can reach an open engine can rewrite policy and authorize spend.
-  const { host, warning } = resolveHost(process.env, auth !== undefined);
-  if (warning) console.warn(`[rein] ${warning}`);
-  startPersistentEngine({ dir, port, host, ...(auth ? { auth } : {}) })
-    .then(({ store }) => {
-      const resumed = store.fresh
-        ? 'fresh store'
-        : `resumed ${store.resumedDecisions} decisions, ` +
-          `${store.agents.list().length} agents, ${store.policies.list().length} policies`;
-      console.log(
-        `[rein] persistent policy-engine listening on http://${host}:${port} ` +
-          `(auth: ${auth ? 'api-key' : 'none'})`,
-      );
-      console.log(`[rein] data dir ${dir} — ${resumed}`);
-    })
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
+  // The store opens FIRST so the keys can be durable: `/v1/keys` issues them
+  // at runtime, and an in-memory key store would drop every one at the next
+  // restart while quietly resurrecting the ones an operator had revoked.
+  const store = await openReinStore({ dir });
+  try {
+    const auth = await authFromEnv(process.env, store.apiKeys);
+    // Throws rather than binding a public interface without a key — the same
+    // refusal the in-memory engine makes, and for the same reason: anyone who
+    // can reach an open engine can rewrite policy and authorize spend.
+    const { host, warning } = resolveHost(process.env, auth !== undefined);
+    if (warning) console.warn(`[rein] ${warning}`);
+    await startPersistentEngine({ store, port, host, ...(auth ? { auth } : {}) });
+    const resumed = store.fresh
+      ? 'fresh store'
+      : `resumed ${store.resumedDecisions} decisions, ` +
+        `${store.agents.list().length} agents, ${store.policies.list().length} policies, ` +
+        `${store.resumedApiKeys} api keys`;
+    console.log(
+      `[rein] persistent policy-engine listening on http://${host}:${port} ` +
+        `(auth: ${auth ? 'api-key' : 'none'})`,
+    );
+    console.log(`[rein] data dir ${dir} — ${resumed}`);
+  } catch (err) {
+    // The store is open by now, so a refused bind must not leak the handle.
+    await store.close().catch(() => undefined);
+    console.error(err);
+    process.exit(1);
+  }
 }

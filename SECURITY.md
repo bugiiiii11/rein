@@ -62,6 +62,13 @@ is welcome but they are known, documented, and not treated as vulnerabilities:
 - **The engine's signing key is stored as a plaintext PEM in the data directory** (created
   `0700`). This is the documented single-node posture; production deployments belong behind
   a KMS or HSM.
+- **API keys are stored as sha256 digests, never as secrets.** A secret is returned exactly
+  once, at issuance, and a stolen database yields nothing that authenticates. Back the key
+  store with the durable one (`api_keys`, reached as `reinStore.apiKeys`) in any deployment
+  that issues keys at runtime: with an in-memory store a **revocation does not survive a
+  restart**, so a key withdrawn after a leak authenticates again on the next boot. That is a
+  deployment mistake rather than a bug in the code, but it fails in the dangerous direction
+  and silently, so it is worth stating plainly.
 - **Wallet private keys are never persisted and no endpoint accepts one.** If you find a
   path that stores or transports one, that *is* a vulnerability — please report it.
 

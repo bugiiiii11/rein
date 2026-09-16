@@ -48,6 +48,21 @@ function digestsEqual(a: string, b: string): boolean {
 }
 
 /**
+ * Constant-time comparison of a presented secret against an expected one.
+ *
+ * Both sides are hashed first, so the comparison is over two fixed-length
+ * digests: `timingSafeEqual` throws on a length mismatch, which would
+ * otherwise turn "wrong length" into a distinguishable error and leak the
+ * secret's size. This is what a service holding ONE static shared secret
+ * needs — a key store is the {@link ApiKeyAuth} path above. It lives here so
+ * the signer's admin token and the engine's keys agree on what a constant-time
+ * secret check is; the signer had its own copy until S52.
+ */
+export function secretsEqual(presented: string, expected: string): boolean {
+  return digestsEqual(hashSecret(presented), hashSecret(expected));
+}
+
+/**
  * Persistence seam for keys, mirroring the engine's other ports. Auth is
  * authority state, so writes are persist-then-cache: `put` is awaited before a
  * key counts as issued, rotated, or revoked.

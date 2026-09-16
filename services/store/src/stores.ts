@@ -1,12 +1,15 @@
 import type { PGlite } from '@electric-sql/pglite';
 import {
   Agent,
+  ApiKeyRecord,
   ApprovalRequest,
   ApproverKey,
   LivenessExpectation,
   Policy,
   type LivenessSource,
 } from '@reinconsole/core';
+import { InMemoryApiKeyStore, type ApiKeyStorePort } from '@reinconsole/core/auth';
+import { WriteTail } from './tail.js';
 import {
   InMemoryAgentRegistry,
   InMemoryApprovalStore,
@@ -473,5 +476,91 @@ export class PgApprovalStore implements ApprovalStorePort {
       dropped += 1;
     }
     return dropped;
+  }
+}
+
+/**
+ * Durable API keys (D1(b)).
+ *
+ * Every other Pg store here persists something the system OBSERVED — a spend,
+ * a decision, a sighting. This one persists AUTHORITY, which fails in both
+ * directions when it is lost. The engine can mint keys at runtime, so an
+ * in-memory key store meant an issued key worked until the next restart and
+ * then stopped without a trace; worse, a key an operator REVOKED after a
+ * compromise came back alive on the next boot, because revocation is itself a
+ * write and the write went nowhere. Neither failure announces itself.
+ *
+ * The rows are digests, never secrets, so this table is the one part of the
+ * database whose theft yields nothing that authenticates — the guarantee
+ * {@link ApiKeyRecord} makes, kept here.
+ *
+ * `byHash` is served from the in-memory twin rather than a SQL index on
+ * purpose: it is on the hot path of every authenticated request, and the twin
+ * already holds the secret-hash -> id map INCLUDING the in-grace previous
+ * secret, which a single-column index would have to duplicate and keep honest
+ * through rotation.
+ *
+ * Writes ride a {@link WriteTail} even though the authority writes (issue,
+ * rotate, revoke) are all awaited, because ONE caller does not await:
+ * `ApiKeyAuth.authenticate` fires `touch()` — the throttled `lastUsedAt`
+ * write — and deliberately drops the promise, so usage telemetry never sits on
+ * the critical path of a request. Unawaited means still in flight at shutdown,
+ * and closing PGlite under an in-flight query does not error, it never
+ * returns: a process that authenticated a request and then stopped would hang
+ * in `close()` instead of draining. The tail is what `flush()` drains.
+ */
+export class PgApiKeyStore implements ApiKeyStorePort {
+  private readonly mem = new InMemoryApiKeyStore();
+  private readonly tail = new WriteTail();
+
+  private constructor(private readonly db: PGlite) {}
+
+  static async open(db: PGlite): Promise<PgApiKeyStore> {
+    const store = new PgApiKeyStore(db);
+    const rows = await db.query<{ doc: unknown }>('SELECT doc FROM api_keys');
+    for (const row of rows.rows) store.mem.put(ApiKeyRecord.parse(row.doc));
+    return store;
+  }
+
+  /**
+   * Persist-then-cache, as everywhere else — but here the ordering is the
+   * difference between "issued" and "seems issued": a failed write must not
+   * leave a key authenticating out of memory with no record behind it.
+   *
+   * The returned promise still resolves only once the row is on disk, so an
+   * awaited issue/rotate/revoke keeps exactly the durability it had; the tail
+   * exists for the one caller that does not await (see the class doc).
+   */
+  put(record: ApiKeyRecord): Promise<void> {
+    return this.tail.enqueue(async () => {
+      await this.db.query(
+        `INSERT INTO api_keys (id, doc) VALUES ($1, $2)
+         ON CONFLICT (id) DO UPDATE SET doc = EXCLUDED.doc`,
+        [record.id, JSON.stringify(record)],
+      );
+      this.mem.put(record);
+    });
+  }
+
+  /** Drain in-flight writes (the unawaited `lastUsedAt` touches). */
+  flush(): Promise<void> {
+    return this.tail.flush();
+  }
+
+  get(id: string): ApiKeyRecord | undefined {
+    return this.mem.get(id);
+  }
+
+  byHash(hash: string): ApiKeyRecord | undefined {
+    return this.mem.byHash(hash);
+  }
+
+  list(): ApiKeyRecord[] {
+    return this.mem.list();
+  }
+
+  /** Keys resumed from disk — what the boot line counts. */
+  get size(): number {
+    return this.mem.list().length;
   }
 }

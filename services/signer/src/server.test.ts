@@ -10,6 +10,7 @@ import {
   decodePaymentHeader,
   transferWithAuthorizationTypes,
 } from '@reinconsole/x402-rails';
+import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { buildSignerServer } from './server.js';
 import { SessionSigner } from './signer.js';
 import { MAX_SESSION_LIFETIME_SECONDS } from './sessions.js';
@@ -368,5 +369,125 @@ describe('SignerError', () => {
     const err = new SignerError('session_expired', 'session has expired');
     expect(err.name).toBe('SignerError');
     expect(err.code).toBe('session_expired');
+  });
+});
+
+/**
+ * D1(b). The static token is one secret that cannot be narrowed and cannot be
+ * rotated without a flag-day; these are the properties a key store adds. The
+ * signer is a library with no boot path, so `auth` arrives from the composing
+ * deployment — backed by PgApiKeyStore where it must outlive a restart.
+ */
+describe('signer admin auth by API key', () => {
+  const build = async (options: Parameters<typeof buildSignerServer>[1]) => {
+    const s = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    return buildSignerServer(s, options);
+  };
+  const bearer = (secret: string) => ({ authorization: `Bearer ${secret}` });
+
+  it('takes an admin-scoped key everywhere the static token went', async () => {
+    const auth = new ApiKeyAuth();
+    const { secret } = await auth.issue({ name: 'ops', scopes: ['admin'] });
+    const app = await build({ auth });
+
+    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toMatchObject({
+      adminAuth: 'api-key',
+    });
+    const minted = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions',
+      headers: bearer(secret),
+      payload: { agentId },
+    });
+    expect(minted.statusCode).toBe(200);
+    expect(
+      (await app.inject({ method: 'GET', url: '/v1/sessions', headers: bearer(secret) })).statusCode,
+    ).toBe(200);
+    await app.close();
+  });
+
+  /**
+   * The point of the whole exercise: a dashboard key that can see the grants
+   * cannot mint one against a wallet this process holds.
+   */
+  it('lets a read key list grants and refuses to let it mint one', async () => {
+    const auth = new ApiKeyAuth();
+    const { secret } = await auth.issue({ name: 'dashboard', scopes: ['read'] });
+    const app = await build({ auth });
+
+    const listed = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions',
+      headers: bearer(secret),
+    });
+    expect(listed.statusCode).toBe(200);
+
+    const minted = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions',
+      headers: bearer(secret),
+      payload: { agentId },
+    });
+    expect(minted.statusCode).toBe(403);
+    expect(minted.json()).toMatchObject({ error: 'forbidden', code: 'insufficient_scope' });
+    // A 403 gets no challenge: the caller is known and re-presenting the same
+    // key is not the answer.
+    expect(minted.headers['www-authenticate']).toBeUndefined();
+
+    // Revoke and the same key stops listing too.
+    await auth.revoke(auth.list()[0]!.id);
+    const after = await app.inject({ method: 'GET', url: '/v1/sessions', headers: bearer(secret) });
+    expect(after.statusCode).toBe(401);
+    expect(after.json()).toMatchObject({ code: 'key_revoked' });
+    await app.close();
+  });
+
+  it('keeps the static token working beside the keys, and says so', async () => {
+    const auth = new ApiKeyAuth();
+    const { secret } = await auth.issue({ name: 'ops', scopes: ['admin'] });
+    const app = await build({ auth, adminToken: ADMIN_TOKEN });
+
+    expect((await app.inject({ method: 'GET', url: '/health' })).json()).toMatchObject({
+      adminAuth: 'bearer+api-key',
+    });
+    for (const credential of [ADMIN_TOKEN, secret]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/sessions',
+        headers: bearer(credential),
+      });
+      expect(res.statusCode, credential === ADMIN_TOKEN ? 'static' : 'key').toBe(200);
+    }
+    const wrong = await app.inject({
+      method: 'GET',
+      url: '/v1/sessions',
+      headers: bearer('neither-of-the-two'),
+    });
+    expect(wrong.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('treats a key store as a credential for construction, and still refuses both-at-once', async () => {
+    const auth = new ApiKeyAuth();
+    await auth.issue({ name: 'ops', scopes: ['admin'] });
+    const s = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem });
+    expect(() => buildSignerServer(s, { auth, adminAuth: 'off' })).toThrow(/not both/);
+  });
+
+  /**
+   * An auth object holding no keys is a LOCKED signer, never an open one —
+   * the fail-closed direction, the same one the constructor enforces.
+   */
+  it('fails closed when the key store is empty rather than falling open', async () => {
+    const app = await build({ auth: new ApiKeyAuth() });
+    const minted = await app.inject({
+      method: 'POST',
+      url: '/v1/sessions',
+      headers: bearer('anything-at-all'),
+      payload: { agentId },
+    });
+    expect(minted.statusCode).toBe(401);
+    expect(minted.json()).toMatchObject({ code: 'invalid_key' });
+    await app.close();
   });
 });

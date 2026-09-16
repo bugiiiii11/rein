@@ -222,6 +222,14 @@ buildSignerServer(signer, { adminToken: process.env.REIN_SIGNER_ADMIN_TOKEN });
 
 `POST /v1/sessions` mints a grant with whatever cap it is asked for, against a wallet this process holds the key to — so an open admin surface is a wallet drain for anyone who can reach the port. Omitting both `adminToken` and the explicit `adminAuth: 'off'` opt-out is a **construction error**, thrown at build time rather than discovered in a log. `POST /v1/sign` stays open by design: the session token in the body is that route's credential, scoped and capped and revocable, which is the whole point of the tier.
 
+That credential can also be a **scoped API key** instead of one static secret — `read` to list grants, `admin` to mint, revoke, or delete one, so a dashboard key can never create a session:
+
+```ts
+buildSignerServer(signer, { auth: new ApiKeyAuth({ store: reinStore.apiKeys }) });
+```
+
+Both forms may be passed together while a deployment rolls over. Back the key store with `PgApiKeyStore` (it is `reinStore.apiKeys`) rather than the in-memory default: keys are authority, and an in-memory store means a key you issued stops working at the next restart and a key you **revoked** comes back alive.
+
 ## Gate: the vendor side of the wire
 
 Everything above governs the agent _spending_. `@reinconsole/gate` is Phase 2 — the same loop from the vendor's seat. Price your routes once, and every x402 payment into your API is quoted, cross-checked, screened, settled, and receipted before your handler runs:

@@ -47,6 +47,13 @@ import { PGlite } from '@electric-sql/pglite';
  *   challenge a human was asked to sign no longer exists to answer. The
  *   request doc carries its own TTL, so a restart resumes the original clock
  *   rather than granting an expired escalation a fresh lease.
+ * - `api_keys` is the D1(b) authority tier: one row per issued key, doc JSONB.
+ *   It must be durable because the engine can MINT keys at runtime — until it
+ *   was, a key issued through the API authenticated until the next restart and
+ *   then silently stopped, and a key REVOKED before a restart came back to
+ *   life. The doc holds sha256 digests only, never a secret (see
+ *   ApiKeyRecord): this table is the one place where losing the database is
+ *   supposed to cost an operator nothing but the ability to say who is who.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -182,6 +189,11 @@ CREATE TABLE IF NOT EXISTS approvers (
 CREATE TABLE IF NOT EXISTS approval_requests (
   decision_id TEXT PRIMARY KEY,
   doc         JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id  TEXT PRIMARY KEY,
+  doc JSONB NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS settlements (

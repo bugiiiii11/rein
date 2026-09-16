@@ -11,6 +11,7 @@ import {
   signApproval,
   verifyDecisionChain,
 } from '@reinconsole/policy-engine';
+import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { openReinStore, type ReinStore } from './index.js';
 
 function intent(agentId: string, amount: string) {
@@ -421,5 +422,109 @@ describe('openReinStore', () => {
 
     const b = await open(dir);
     expect(b.spend.contextFor(newId('agt')).vendorReputation('sketchy.example')).toBe(12);
+  });
+});
+
+/**
+ * D1(b): the authority tier. Every other store here loses OBSERVATIONS when it
+ * is not durable; this one loses (and, worse, resurrects) permission.
+ */
+describe('durable API keys', () => {
+  const bearer = (secret: string) => ({ authorization: `Bearer ${secret}` });
+
+  it('keeps an issued key working across a restart', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const { secret } = await new ApiKeyAuth({ store: first.apiKeys }).issue({
+      name: 'fleet',
+      scopes: ['evaluate'],
+    });
+    await first.close();
+
+    const resumed = await open(dir);
+    expect(resumed.resumedApiKeys).toBe(1);
+    const auth = new ApiKeyAuth({ store: resumed.apiKeys });
+    expect(auth.authenticate(bearer(secret), 'evaluate').name).toBe('fleet');
+    // The scope survived with it — a resumed key is not a blank admin.
+    expect(() => auth.authenticate(bearer(secret), 'admin')).toThrow(/scope/);
+  });
+
+  /**
+   * The failure that makes this table non-negotiable. Revocation is a WRITE:
+   * with an in-memory store the operator's response to a leaked secret was
+   * undone by the next deploy, and nothing anywhere said so.
+   */
+  it('keeps a revoked key dead across a restart', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const issuing = new ApiKeyAuth({ store: first.apiKeys });
+    const { key, secret } = await issuing.issue({ name: 'leaked', scopes: ['evaluate'] });
+    await issuing.revoke(key.id);
+    await first.close();
+
+    const resumed = await open(dir);
+    const auth = new ApiKeyAuth({ store: resumed.apiKeys });
+    expect(() => auth.authenticate(bearer(secret), 'evaluate')).toThrow(/revoked/);
+  });
+
+  /**
+   * Rotation's whole point is that a fleet rolls over one process at a time,
+   * which a restart in the middle must not cut short: the outgoing digest and
+   * its expiry are part of the record, not in-process bookkeeping.
+   */
+  it('resumes a rotation grace window rather than ending it', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const issuing = new ApiKeyAuth({ store: first.apiKeys });
+    const { key, secret: old } = await issuing.issue({ name: 'rolling', scopes: ['read'] });
+    const { secret: fresh } = await issuing.rotate(key.id, { graceMs: 60_000 });
+    await first.close();
+
+    const resumed = await open(dir);
+    // A fixed clock inside the window: the grace is dated, so asserting it
+    // must not depend on how long the reopen took.
+    const at = Date.now();
+    const auth = new ApiKeyAuth({ store: resumed.apiKeys, now: () => at });
+    expect(auth.authenticate(bearer(fresh), 'read').id).toBe(key.id);
+    expect(auth.authenticate(bearer(old), 'read').id).toBe(key.id);
+
+    // And past the window the outgoing secret is refused, as it would have
+    // been had nothing restarted.
+    const later = new ApiKeyAuth({ store: resumed.apiKeys, now: () => at + 3_600_000 });
+    expect(() => later.authenticate(bearer(old), 'read')).toThrow(/no longer accepted/);
+    expect(later.authenticate(bearer(fresh), 'read').id).toBe(key.id);
+  });
+
+  it('starts empty, and says so', async () => {
+    const store = await open(tempDir());
+    expect(store.resumedApiKeys).toBe(0);
+    expect(new ApiKeyAuth({ store: store.apiKeys }).hasKeys()).toBe(false);
+  });
+
+  /**
+   * `authenticate` writes `lastUsedAt` and DROPS the promise, so that usage
+   * telemetry never sits on a request's critical path. Unawaited means still
+   * in flight at shutdown, and PGlite closed under an in-flight query does not
+   * throw — it never returns. Before the write rode the tail, this test hung
+   * forever instead of failing, which is how the bug hid: a service that
+   * served one authenticated request could not finish shutting down.
+   */
+  it('drains the usage write that authenticate fires and forgets', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const { secret } = await new ApiKeyAuth({ store: first.apiKeys }).issue({
+      name: 'busy',
+      scopes: ['evaluate'],
+    });
+    new ApiKeyAuth({ store: first.apiKeys }).authenticate(
+      { authorization: `Bearer ${secret}` },
+      'evaluate',
+    );
+    // The hang was HERE, with no error to report it.
+    await first.close();
+
+    // And the drain is a real write, not just a wait: the sighting survived.
+    const resumed = await open(dir);
+    expect(new ApiKeyAuth({ store: resumed.apiKeys }).list()[0]?.lastUsedAt).toBeInstanceOf(Date);
   });
 });

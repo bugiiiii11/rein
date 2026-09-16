@@ -1,7 +1,19 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AgentId, Decision, DecimalString, PaymentIntent, type Session } from '@reinconsole/core';
+import {
+  AgentId,
+  Decision,
+  DecimalString,
+  PaymentIntent,
+  type ApiKeyScope,
+  type Session,
+} from '@reinconsole/core';
+import {
+  AuthError,
+  readCredential,
+  secretsEqual,
+  type ApiKeyAuth,
+} from '@reinconsole/core/auth';
 import { PaymentRequirement } from '@reinconsole/sdk';
 import { SignerError } from './errors.js';
 import { effectiveExpiry, sessionState } from './sessions.js';
@@ -53,35 +65,27 @@ export interface SignerServerOptions {
   /**
    * Bearer secret guarding the session-admin routes (create / list / revoke /
    * delete). Presented as `Authorization: Bearer <token>` or `X-Api-Key`.
+   *
+   * One static secret, all-or-nothing: it satisfies every route. It stays
+   * supported beside {@link SignerServerOptions.auth} because it is what
+   * deployments already carry in their environment, and an upgrade that
+   * locked an operator out of their own signer would be a poor trade for
+   * key rotation.
    */
   adminToken?: string;
+  /**
+   * D1(b): scoped, rotatable, revocable API keys instead of (or beside) the
+   * one static token. Reads need `read`, anything that mints or kills a grant
+   * needs `admin` — so a dashboard can list sessions with a key that could
+   * never create one. Back it with a durable store (`PgApiKeyStore`) or a
+   * revoked key returns from the dead on the next restart.
+   */
+  auth?: ApiKeyAuth;
   /**
    * The explicit, deliberate opt-out — the ONLY way to serve an unauthenticated
    * admin surface. Passing it is a statement; forgetting `adminToken` is not.
    */
   adminAuth?: 'off';
-}
-
-/** Digest comparison that does not leak a prefix match through timing. */
-function secretsEqual(presented: string, expected: string): boolean {
-  const a = createHash('sha256').update(presented).digest();
-  const b = createHash('sha256').update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-/** `Authorization: Bearer <secret>` first, `X-Api-Key` second — as the engine reads it. */
-function readCredential(req: FastifyRequest): string | undefined {
-  const auth = first(req.headers.authorization)?.trim();
-  if (auth) {
-    const match = /^Bearer\s+(.+)$/i.exec(auth);
-    if (match?.[1]) return match[1].trim();
-  }
-  const apiKey = first(req.headers['x-api-key'])?.trim();
-  return apiKey === undefined || apiKey === '' ? undefined : apiKey;
 }
 
 /** An admin request that carried no credential, or the wrong one. */
@@ -110,6 +114,12 @@ class AdminAuthError extends Error {
  * and `adminAuth: 'off'` is a construction error, thrown here rather than
  * discovered in a log.
  *
+ * Since D1(b) that credential can be a scoped API key ({@link
+ * SignerServerOptions.auth}) rather than one static secret, which is what
+ * buys rotation without a flag-day and a revocation that actually sticks.
+ * Either satisfies the guard; the static token remains all-or-nothing while a
+ * key holds `read` (list) or `admin` (mint / revoke / delete).
+ *
  * `POST /v1/sign` is deliberately NOT behind it: the session token in the body
  * IS that route's credential — scoped, capped, expiring and revocable, which
  * is the whole point of the tier. `/health` stays open for probes.
@@ -119,15 +129,17 @@ export function buildSignerServer(
   options: SignerServerOptions = {},
 ): FastifyInstance {
   const adminToken = options.adminToken?.trim();
-  if (adminToken && options.adminAuth === 'off') {
+  const auth = options.auth;
+  const guarded = adminToken !== undefined || auth !== undefined;
+  if (guarded && options.adminAuth === 'off') {
     throw new Error(
-      'buildSignerServer: pass adminToken OR adminAuth: "off", not both — which one governs is not for this function to guess',
+      'buildSignerServer: pass adminToken/auth OR adminAuth: "off", not both — which one governs is not for this function to guess',
     );
   }
-  if (!adminToken && options.adminAuth !== 'off') {
+  if (!guarded && options.adminAuth !== 'off') {
     throw new Error(
       'buildSignerServer: the session-admin routes mint spending authority against wallets this process holds.\n' +
-        '  Pass { adminToken: <secret> } to protect them, or\n' +
+        '  Pass { adminToken: <secret> } or { auth: <ApiKeyAuth> } to protect them, or\n' +
         '  pass { adminAuth: "off" } to serve them unauthenticated on purpose.',
     );
   }
@@ -148,19 +160,40 @@ export function buildSignerServer(
    * be able to reach the JSON parser, and a bodyless probe should get the 401
    * it earned rather than a content-type complaint.
    */
-  const requireAdmin = (req: FastifyRequest, _reply: unknown, done: (err?: Error) => void) => {
-    if (adminToken === undefined) return done();
-    const presented = readCredential(req);
-    if (presented === undefined) {
-      return done(
-        new AdminAuthError('missing_credentials', 'missing admin token (Authorization: Bearer ...)'),
-      );
-    }
-    if (!secretsEqual(presented, adminToken)) {
-      return done(new AdminAuthError('invalid_credentials', 'admin token is not valid'));
-    }
-    return done();
-  };
+  const requireScope =
+    (scope: ApiKeyScope) =>
+    (req: FastifyRequest, _reply: unknown, done: (err?: Error) => void) => {
+      if (!guarded) return done();
+      const presented = readCredential(req.headers);
+      if (presented === undefined) {
+        return done(
+          new AdminAuthError(
+            'missing_credentials',
+            'missing admin token (Authorization: Bearer ...)',
+          ),
+        );
+      }
+      // The static token is checked FIRST and satisfies every scope: it is the
+      // all-or-nothing credential, and a deployment still carrying it must not
+      // start failing because a scoped key store was added beside it.
+      if (adminToken !== undefined && secretsEqual(presented, adminToken)) return done();
+      if (auth === undefined) {
+        return done(new AdminAuthError('invalid_credentials', 'admin token is not valid'));
+      }
+      try {
+        auth.authenticate(req.headers, scope);
+      } catch (err) {
+        // AuthError.is, never a bare instanceof: core is bundled into each
+        // service (`noExternal`), so the class this throws is a DIFFERENT copy
+        // from the one imported here and instanceof silently misses it — which
+        // would turn a 401 into a 500.
+        return done(err as Error);
+      }
+      return done();
+    };
+
+  const requireAdmin = requireScope('admin');
+  const requireRead = requireScope('read');
 
   app.setErrorHandler((err: unknown, _req, reply) => {
     if (err instanceof AdminAuthError) {
@@ -170,6 +203,21 @@ export function buildSignerServer(
         .status(401)
         .header('www-authenticate', 'Bearer realm="rein-signer"')
         .send({ error: 'unauthorized', code: err.code, reason: err.message });
+    }
+    // An API key's refusal, rendered in the signer's envelope rather than the
+    // engine's — one service, one error shape. 401 gets the same challenge as
+    // above; 403 deliberately does not, because the caller IS known and
+    // re-presenting the same key is not the answer.
+    if (AuthError.is(err)) {
+      if (err.status === 401) {
+        return reply
+          .status(401)
+          .header('www-authenticate', 'Bearer realm="rein-signer"')
+          .send({ error: 'unauthorized', code: err.code, reason: err.message });
+      }
+      return reply
+        .status(err.status)
+        .send({ error: 'forbidden', code: err.code, reason: err.message });
     }
     if (err instanceof z.ZodError) {
       return reply.status(400).send({ error: 'validation_error', issues: err.issues });
@@ -189,10 +237,21 @@ export function buildSignerServer(
     return reply.status(500).send({ error: 'internal_error', message });
   });
 
+  // Advertised so a client can tell "this signer wants a credential" apart
+  // from "mine is wrong" without guessing from a 401 — and which KIND, since
+  // a static token and an API key are presented identically.
+  const adminAuthMode = !guarded
+    ? 'off'
+    : adminToken === undefined
+      ? 'api-key'
+      : auth === undefined
+        ? 'bearer'
+        : 'bearer+api-key';
+
   app.get('/health', () => ({
     status: 'ok',
     maxSessionLifetimeSeconds: maxLifetime,
-    adminAuth: adminToken === undefined ? 'off' : 'bearer',
+    adminAuth: adminAuthMode,
   }));
 
   // --- Sessions ---
@@ -204,7 +263,10 @@ export function buildSignerServer(
     return { session: redact(created.session, '0', maxLifetime), token: created.token };
   });
 
-  app.get('/v1/sessions', { onRequest: requireAdmin }, () =>
+  // `read`, not `admin`: listing grants is what an operator dashboard does all
+  // day, and the key it carries to do that has no business minting one. (The
+  // static adminToken still satisfies it — it satisfies everything.)
+  app.get('/v1/sessions', { onRequest: requireRead }, () =>
     signer.sessions().map((s) => redact(s, signer.sessionSpent(s.id), maxLifetime)),
   );
 

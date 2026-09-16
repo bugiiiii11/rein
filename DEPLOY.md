@@ -253,7 +253,26 @@ its variable set BEFORE it ever is.
 |---|---|---|
 | `rein-engine` | Inherits `authFromEnv` + `resolveHost`: no key, loopback only; public bind without a key is a startup error | `REIN_ENGINE_API_KEY=<secret>` (or `REIN_ENGINE_AUTH=off` to accept an open engine deliberately) |
 | `rein-graph` | Inherits `graphAuthFromEnv` + `resolveGraphHost`: no key, loopback only; public bind without a key is a startup error. A key gates the WRITE routes (`POST /v1/events`, `/v1/reports`, `/v1/links`) with the `report` scope -- reads stay open, because a score nobody can read governs nothing | `REIN_GRAPH_API_KEY=<secret>` (comma-separated for several), or `REIN_GRAPH_PUBLIC=1` (the literal string `1`) to expose an OPEN graph deliberately, which logs a warning naming what is open |
-| signer service | `buildSignerServer(signer, { adminToken })` -- the session-admin routes mint spending authority against custodied wallets, so omitting both `adminToken` and `adminAuth: 'off'` throws at construction | Pass an `adminToken` of at least 16 characters; callers send `Authorization: Bearer` or `X-Api-Key` |
+| signer service | `buildSignerServer(signer, { adminToken })` -- the session-admin routes mint spending authority against custodied wallets, so omitting all of `adminToken`, `auth` and `adminAuth: 'off'` throws at construction | Pass an `adminToken` of at least 16 characters, and/or `auth: new ApiKeyAuth({ store })` for scoped keys (`read` to list, `admin` to mint/revoke/delete); callers send `Authorization: Bearer` or `X-Api-Key` either way. `/health` reports which is on: `off`, `bearer`, `api-key`, `bearer+api-key` |
+
+API keys are durable wherever the PGlite store is (`api_keys`, hydrated into
+`reinStore.apiKeys`). **`rein-engine` does this for you**: it opens the store
+first and seeds `REIN_ENGINE_API_KEY` into it, so every key `POST /v1/keys`
+mints at runtime survives a restart and every key you REVOKE stays revoked. The
+env secret is re-seeded each boot without accreting a row -- it is
+configuration, not state. The boot line counts what came back (`... , N api
+keys`).
+
+Compose the same thing by hand -- `new ApiKeyAuth({ store: reinStore.apiKeys })`
+-- in any other deployment that issues keys at runtime, the signer's admin
+surface included. With the in-memory default a key issued through the API stops
+authenticating at the next restart, and -- the direction that matters -- a key
+REVOKED after a leak is alive again on the next boot, because revocation is a
+write too. Neither failure announces itself in a log.
+
+`rein-graph` deliberately keeps env-seeded keys only: it has no key-issuing
+route, so every key it holds comes from `REIN_GRAPH_API_KEY` and is rebuilt
+identically on each boot. There is no runtime state to lose.
 
 The data directory is created `0700` now (POSIX only): `engine_keys.private_pem` lives in it,
 and the default umask would have left it world-readable. Directories that already exist are

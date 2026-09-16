@@ -21,7 +21,7 @@ import {
 } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
 import type { ReconcileOptions } from './reconciliation.js';
-import { ApiKeyAuth, AuthError } from '@reinconsole/core/auth';
+import { ApiKeyAuth, AuthError, hashSecret, type ApiKeyStorePort } from '@reinconsole/core/auth';
 import {
   ApprovalError,
   ApprovalService,
@@ -363,16 +363,29 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
  *
  * `REIN_ENGINE_API_KEY` seeds one or more admin secrets (comma-separated) —
  * enough to bootstrap, after which `/v1/keys` issues narrower ones.
+ *
+ * Pass `store` (a durable one, `reinStore.apiKeys`) and those narrower keys
+ * outlive the process: without it every key `/v1/keys` ever issued dies at the
+ * next restart, and — the direction that matters — every key an operator
+ * REVOKED comes back alive, because revocation is a write too. The env secrets
+ * are re-seeded either way; they are configuration, not state.
  */
-export async function authFromEnv(env: NodeJS.ProcessEnv): Promise<ApiKeyAuth | undefined> {
+export async function authFromEnv(
+  env: NodeJS.ProcessEnv,
+  store?: ApiKeyStorePort,
+): Promise<ApiKeyAuth | undefined> {
   const raw = env['REIN_ENGINE_API_KEY']?.trim();
   if (!raw) return undefined;
-  const auth = new ApiKeyAuth();
+  const auth = new ApiKeyAuth({ ...(store ? { store } : {}) });
   const secrets = raw
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
   for (const [i, secret] of secrets.entries()) {
+    // Idempotent against a durable store: the same env secret seeded on every
+    // boot must not append a new row (and a second record sharing one secret
+    // hash would shadow the first in the hash index anyway).
+    if (store?.byHash(hashSecret(secret))) continue;
     await auth.issue({ name: `env-key-${i + 1}`, scopes: ['admin'], secret });
   }
   return auth.hasKeys() ? auth : undefined;

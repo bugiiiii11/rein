@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, describe, expect, it } from 'vitest';
-import { ApiKeyAuth } from '@reinconsole/policy-engine';
+import { ApiKeyAuth, authFromEnv } from '@reinconsole/policy-engine';
 import { openDb } from './db.js';
 import { resolveGraphHost, startPersistentGraphServer, type PersistentGraph } from './graph-server.js';
 import { startPersistentEngine, type PersistentEngine } from './server.js';
+import { openReinStore, type ReinStore } from './index.js';
 
 /**
  * D1: the durable services are the ones worth reaching. The in-memory engine
@@ -116,5 +117,85 @@ describe('the data directory', () => {
     await db.close();
     if (process.platform === 'win32') return; // POSIX modes are not enforced there
     expect(statSync(dir).mode & 0o777).toBe(0o700);
+  });
+});
+
+/**
+ * D1(b): the engine MINTS keys at runtime (`POST /v1/keys`), so its key store
+ * is state, not configuration. With the in-memory default every key issued
+ * through the API stopped working at the next restart, and a key an operator
+ * REVOKED after a leak authenticated again — both silently, neither in a log.
+ */
+describe('the persistent engine service, across a restart', () => {
+  const issueKeyVia = async (port: number, adminSecret: string, scopes: string[]) => {
+    const res = await fetch(`http://127.0.0.1:${port}/v1/keys`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${adminSecret}` },
+      body: JSON.stringify({ name: 'minted-at-runtime', scopes }),
+    });
+    expect(res.status).toBe(201);
+    return (await res.json()) as { key: { id: string }; secret: string };
+  };
+
+  const startOn = async (store: ReinStore) => {
+    const auth = new ApiKeyAuth({ store: store.apiKeys });
+    const engine = await startPersistentEngine({ store, port: 0, auth });
+    running.push(engine);
+    return { engine, auth, port: (engine.app.server.address() as AddressInfo).port };
+  };
+
+  it('keeps a key minted through the API, and keeps a revoked one dead', async () => {
+    const dir = tempDir();
+
+    const first = await openReinStore({ dir });
+    const boot = await startOn(first);
+    const { secret: adminSecret } = await boot.auth.issue({ name: 'env', scopes: ['admin'] });
+    const keep = await issueKeyVia(boot.port, adminSecret, ['read']);
+    const leaked = await issueKeyVia(boot.port, adminSecret, ['read']);
+    const revoked = await fetch(`http://127.0.0.1:${boot.port}/v1/keys/${leaked.key.id}/revoke`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminSecret}` },
+    });
+    expect(revoked.status).toBe(200);
+    await boot.engine.close();
+
+    const resumed = await openReinStore({ dir });
+    expect(resumed.resumedApiKeys).toBe(3); // env + the two minted
+    const again = await startOn(resumed);
+
+    const survives = await fetch(`http://127.0.0.1:${again.port}/v1/agents`, {
+      headers: { authorization: `Bearer ${keep.secret}` },
+    });
+    expect(survives.status).toBe(200);
+
+    // The one that matters: a revocation is a write, and it stuck.
+    const dead = await fetch(`http://127.0.0.1:${again.port}/v1/agents`, {
+      headers: { authorization: `Bearer ${leaked.secret}` },
+    });
+    expect(dead.status).toBe(401);
+    expect(await dead.json()).toMatchObject({ error: 'key_revoked' });
+  });
+
+  /**
+   * The env secret is configuration and is re-seeded every boot, so seeding
+   * has to be idempotent: a new record per boot would accrete a row each time
+   * AND shadow the previous one in the secret-hash index.
+   */
+  it('re-seeds the env secret without accreting a row per boot', async () => {
+    const dir = tempDir();
+    const env = { REIN_ENGINE_API_KEY: 'env-secret-abcdefghij' } as NodeJS.ProcessEnv;
+
+    const a = await openReinStore({ dir });
+    expect(await authFromEnv(env, a.apiKeys)).toBeDefined();
+    expect(a.apiKeys.list()).toHaveLength(1);
+    await a.close();
+
+    const b = await openReinStore({ dir });
+    const auth = await authFromEnv(env, b.apiKeys);
+    expect(b.apiKeys.list()).toHaveLength(1);
+    expect(auth!.authenticate({ authorization: 'Bearer env-secret-abcdefghij' }, 'admin').name).toBe(
+      'env-key-1',
+    );
+    await b.close();
   });
 });

@@ -5,6 +5,7 @@ import { openDb } from './db.js';
 import { loadOrCreateKeyPair } from './keys.js';
 import {
   PgAgentRegistry,
+  PgApiKeyStore,
   PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
@@ -17,6 +18,7 @@ import { PgGateStore } from './gate-stores.js';
 
 export {
   PgAgentRegistry,
+  PgApiKeyStore,
   PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
@@ -63,6 +65,14 @@ export interface ReinStore {
    * channels and the TTL are policy choices a store must not make.
    */
   approvalStore: PgApprovalStore;
+  /**
+   * Durable API keys (D1(b)) — pass to `new ApiKeyAuth({ store: s.apiKeys })`.
+   * Named like `livenessStore` and `approvalStore` for the same reason: what a
+   * server takes under `auth` is an `ApiKeyAuth`, and this is only its
+   * persistent half. Composing it is what makes an issued key survive a
+   * restart and a revoked one stay dead.
+   */
+  apiKeys: PgApiKeyStore;
   log: DecisionLog;
   /** Reputation evidence ledger — pass to `new ReputationGraph({ ledger })`. */
   ledger: PgEvidenceLedger;
@@ -85,6 +95,8 @@ export interface ReinStore {
   resumedSessions: number;
   /** Number of gate receipts resumed from disk (0 on first boot). */
   resumedReceipts: number;
+  /** Number of API keys resumed from disk (0 on first boot). */
+  resumedApiKeys: number;
   /**
    * TTL-prune the unbounded burn tables: signer voucher burns (dead once the
    * signer's 300s staleness window has long passed) and gate replay slots
@@ -125,6 +137,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const settlements = await PgSettlementStore.open(db);
     const liveness = await PgLivenessStore.open(db);
     const approvals = await PgApprovalStore.open(db);
+    const apiKeys = await PgApiKeyStore.open(db);
     const ledger = await PgEvidenceLedger.open(db);
     const intents = await PgIntentStore.open(db);
     const sessions = await PgSessionStore.open(db);
@@ -175,6 +188,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       settlements,
       livenessStore: liveness,
       approvalStore: approvals,
+      apiKeys,
       log,
       ledger,
       intents,
@@ -186,17 +200,26 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       resumedSubjects: ledger.size,
       resumedSessions: sessions.size,
       resumedReceipts: gate.receipts().length,
+      resumedApiKeys: apiKeys.size,
       prune,
-      // Drain pending write-behind state (reputation evidence, gate telemetry)
-      // before closing the handle — a clean shutdown must flush to be durable.
-      // The db is closed even when a flush fails — the handle must not leak —
-      // and the first flush failure is rethrown so "clean" shutdown can't lie.
-      // (Session writes are all awaited at the call site; nothing to drain.)
+      // Drain pending write-behind state (reputation evidence, gate telemetry,
+      // API-key usage touches) before closing the handle — a clean shutdown
+      // must flush to be durable. The db is closed even when a flush fails —
+      // the handle must not leak — and the first flush failure is rethrown so
+      // "clean" shutdown can't lie.
+      //
+      // `apiKeys` is here for a sharper reason than durability: ApiKeyAuth
+      // fires its `lastUsedAt` write and drops the promise, and closing PGlite
+      // with that query in flight HANGS rather than failing, so a service that
+      // authenticated a request and then shut down never finished shutting
+      // down. (Session writes are all awaited at the call site; nothing to
+      // drain there.)
       close: async () => {
         const flushes = await Promise.allSettled([
           ledger.flush(),
           intents.flush(),
           gate.flush(),
+          apiKeys.flush(),
         ]);
         await db.close();
         const failed = flushes.find((r) => r.status === 'rejected');
