@@ -28,6 +28,7 @@ import {
   livenessFromEnv,
   LivenessMonitor,
   PolicyEngine,
+  parseTrustProxy,
   rateLimitFromEnv,
   resolveHost,
   type ApiKeyAuth,
@@ -78,13 +79,15 @@ export async function startPersistentEngine(options: {
   approvals?: ApprovalService;
   liveness?: LivenessMonitor;
   /**
-   * Rate limiting for the HTTP surface, and whether a proxy's
-   * `X-Forwarded-For` may name the client. Both are forwarded verbatim to
+   * Rate limiting for the HTTP surface, and WHICH peers in front of it may
+   * name the client through `X-Forwarded-For`. Both are forwarded verbatim to
    * `buildServer`; omitted, this engine has no limiter — see
-   * `ServerOptions.rateLimit`.
+   * `ServerOptions.rateLimit`, and `ServerOptions.trustProxy` for why the
+   * second one identifies a peer rather than counting hops, and why `true`
+   * leaves the per-IP limiter forgeable.
    */
   rateLimit?: RateLimitOptions;
-  trustProxy?: boolean;
+  trustProxy?: boolean | string;
   /**
    * Sweep the TTL'd burn tables every this many ms (0 = never). The store
    * prunes once at open, which covers a service that restarts often and leaves
@@ -192,7 +195,7 @@ if (isMainModule()) {
       liveness,
       ...(auth ? { auth } : {}),
       ...(rateLimit ? { rateLimit } : {}),
-      trustProxy: process.env['REIN_TRUST_PROXY']?.trim() === '1',
+      trustProxy: parseTrustProxy(process.env['REIN_TRUST_PROXY']),
       pruneIntervalMs: pruneIntervalFromEnv(process.env),
     });
     // Without this the process is SIGKILLed on every redeploy and the

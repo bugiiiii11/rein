@@ -97,14 +97,32 @@ export interface ServerOptions {
    */
   rateLimit?: RateLimitOptions;
   /**
-   * Trust `X-Forwarded-For` when deciding a request's client IP. Required
+   * WHICH peers may name a request's client through `X-Forwarded-For`. Required
    * behind a reverse proxy (Railway is one), where every socket address is the
    * proxy's and an untrusting engine would rate-limit all tenants as one
-   * client. Dangerous in front of one: a header nobody strips is a header
-   * anybody can forge, which turns the per-IP limiter into a no-op. Off by
-   * default; `REIN_TRUST_PROXY=1` on the bins.
+   * client.
+   *
+   * **Identify the peer; do not count hops. That distinction is the whole
+   * security of the per-IP limiter.** `true` means "believe the left-most
+   * entry", and the left-most entry is whatever the CLIENT sent: a proxy
+   * APPENDS the address it observed, it does not erase what arrived. So `true`
+   * behind Railway is still forgeable — a caller who rotates the header mints
+   * itself a fresh bucket per request, and the per-IP limiter is precisely the
+   * one bounding what an UNAUTHENTICATED caller can make this process do.
+   *
+   * A trust SPEC (proxy-addr syntax: `loopback`, `linklocal`, `uniquelocal`, or
+   * IP/CIDR entries) instead walks inward from the socket and stops at the
+   * first address that is not a trusted peer, which is the one the nearest
+   * trusted proxy actually observed. No header can move it, at any depth, and a
+   * client connecting DIRECTLY is never believed at all. Build it with
+   * {@link parseTrustProxy}; `REIN_TRUST_PROXY=1` resolves to the private
+   * ranges, which is where a managed platform's proxy lives.
+   *
+   * Name too much and you are back to forgeable. Name too little and the
+   * resolved address is the proxy's own, so every caller shares one bucket —
+   * noisy and obvious, where too much is silent. Off by default.
    */
-  trustProxy?: boolean;
+  trustProxy?: boolean | string;
 }
 
 /**
@@ -276,7 +294,7 @@ export function buildServer(
     logger: false,
     bodyLimit: BODY_LIMIT_BYTES,
     requestTimeout: REQUEST_TIMEOUT_MS,
-    trustProxy: options.trustProxy === true,
+    trustProxy: options.trustProxy ?? false,
     // On `close()`, destroy sockets rather than waiting for keep-alive
     // connections to go away on their own. A shutdown is not the moment to be
     // patient with a client: the process is leaving, and every second spent
@@ -903,6 +921,67 @@ export function resolveHost(
   };
 }
 
+/**
+ * The peer addresses whose `X-Forwarded-For` this engine believes, for a proxy
+ * that reaches it over the provider's internal network — which is every managed
+ * platform, Railway included. `uniquelocal` is proxy-addr's name for the
+ * private ranges (10/8, 172.16/12, 192.168/16, fc00::/7).
+ */
+const PRIVATE_PEERS = 'loopback,linklocal,uniquelocal';
+
+/** A single trust entry: a proxy-addr preset, or an IP / CIDR. */
+const TRUST_ENTRY = /^(?:loopback|linklocal|uniquelocal|[0-9a-f.:]+(?:\/[0-9]+)?)$/;
+
+/**
+ * `REIN_TRUST_PROXY` as a trust SPEC — see {@link ServerOptions.trustProxy}.
+ *
+ * `1` is the deployed value and keeps working, now meaning `private`: trust a
+ * proxy that reached us from inside the network. It was read as a boolean until
+ * 2026-09-17, which trusted the left-most `X-Forwarded-For` entry — the one the
+ * CLIENT writes — so self-hosters keep their string and stop being forgeable.
+ *
+ * A HOP COUNT is refused, and the refusal is the interesting part: fastify 5
+ * compiles a numeric `trustProxy` to "trust nothing" on purpose, because
+ * counting hops cannot tell you WHO the immediate peer is, so a direct client
+ * could supply enough hops to look proxied. Accepting `2` here would therefore
+ * be silently equivalent to off, and off behind a proxy means every caller in
+ * the world shares one rate-limit bucket. Measured, not read: `trustProxy: 1`
+ * and `trustProxy: 2` both left `req.ip` as the socket address.
+ *
+ * An unrecognised value THROWS rather than falling back to off, for the reason
+ * {@link rateLimitFromEnv} refuses to guess: an operator who set this meant to
+ * configure a proxy, and starting anyway would leave them believing the per-IP
+ * limiter buckets by client when it buckets every caller as one.
+ */
+export function parseTrustProxy(raw: string | undefined): boolean | string {
+  const value = raw?.trim().toLowerCase();
+  if (!value || value === '0' || value === 'off' || value === 'false' || value === 'no') {
+    return false;
+  }
+  if (value === '1' || value === 'private') return PRIVATE_PEERS;
+  // Deliberately reachable, and deliberately not the meaning of `1`: a chain
+  // whose peers cannot be named needs an escape hatch, and spelling it `all`
+  // makes a forgeable choice legible in a dashboard instead of hiding it in a
+  // digit. The per-IP limiter is a no-op under it.
+  if (value === 'all') return true;
+  if (/^[0-9]+$/.test(value)) {
+    throw new Error(
+      `REIN_TRUST_PROXY=${raw} looks like a hop count, and fastify refuses those.\n` +
+        '  A count cannot identify the peer, so it is compiled to "trust nothing" —\n' +
+        '  which behind a proxy puts every caller in ONE rate-limit bucket.\n' +
+        '  Use 1 (or `private`) for a proxy on the internal network, or name its IP/CIDR.',
+    );
+  }
+  const entries = value.split(',').map((entry) => entry.trim());
+  if (entries.every((entry) => TRUST_ENTRY.test(entry))) return entries.join(',');
+  throw new Error(
+    `REIN_TRUST_PROXY=${raw} is not a trust spec.\n` +
+      '  Use 1 / private for a proxy on the internal network (Railway), an IP or\n' +
+      '  CIDR list naming it, 0 / off for no proxy, or `all` to trust a header\n' +
+      '  any client can forge.',
+  );
+}
+
 // Start the server when run directly (tsx/node), not when imported.
 function isMainModule(): boolean {
   if (!process.argv[1]) return false;
@@ -938,13 +1017,13 @@ if (isMainModule()) {
     engine.startLivenessSweeper(),
   ];
   // A bin is reachable by strangers, so it gets the limiter an embedded engine
-  // has no use for. REIN_TRUST_PROXY only where a proxy actually strips the
-  // header — see ServerOptions.trustProxy.
+  // has no use for. REIN_TRUST_PROXY is the number of proxies in front of it —
+  // see ServerOptions.trustProxy for why a count and not a flag.
   const rateLimit = rateLimitFromEnv(process.env);
   const app = buildServer(engine, {
     ...(auth ? { auth } : {}),
     ...(rateLimit ? { rateLimit } : {}),
-    trustProxy: process.env['REIN_TRUST_PROXY']?.trim() === '1',
+    trustProxy: parseTrustProxy(process.env['REIN_TRUST_PROXY']),
   });
   app
     .listen({ port, host })

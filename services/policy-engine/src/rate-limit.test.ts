@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
-import { buildServer } from './server.js';
+import { buildServer, parseTrustProxy } from './server.js';
 import { PolicyEngine } from './engine.js';
 import {
   DEFAULT_PER_IP,
@@ -239,5 +239,149 @@ describe('the engine under a rate limit', () => {
     });
     expect(res.statusCode).toBe(413);
     await app.close();
+  });
+});
+
+/**
+ * The per-IP limiter is the only thing bounding what a caller who has proved
+ * NOTHING can make this process do, so whether its bucket key is forgeable is
+ * the whole question. Until 2026-09-17 it was: `REIN_TRUST_PROXY=1` was read as
+ * a boolean, fastify then believed the LEFT-MOST `X-Forwarded-For` entry, and a
+ * proxy appends rather than erases — so the left-most entry is the client's own
+ * writing. Nothing here was covered before: no test in the repo had ever sent
+ * the header.
+ *
+ * `10.0.0.1` stands in for the platform's proxy throughout, because what makes
+ * it trusted is that it is PRIVATE, not that it is first.
+ */
+describe('the client IP behind a proxy', () => {
+  const oneToken = {
+    perKey: { capacity: 100, refillPerSec: 100 },
+    perIp: { capacity: 1, refillPerSec: 0.01 },
+  };
+  const trusting = () =>
+    buildServer(new PolicyEngine(), { rateLimit: oneToken, trustProxy: parseTrustProxy('1') });
+
+  /** Same real caller every time; only the forgeable prefix changes. */
+  const hammer = (app: ReturnType<typeof buildServer>, forged: string) =>
+    app.inject({
+      method: 'GET',
+      url: '/health',
+      remoteAddress: '10.0.0.1',
+      headers: { 'x-forwarded-for': `${forged}, 203.0.113.7` },
+    });
+
+  it('ignores a forged X-Forwarded-For prefix, so it cannot mint a fresh bucket', async () => {
+    const app = trusting();
+    expect((await hammer(app, '1.1.1.1')).statusCode).toBe(200);
+    // A different forgery, the same real client: the bucket must not reset.
+    expect((await hammer(app, '2.2.2.2')).statusCode).toBe(429);
+    await app.close();
+  });
+
+  it('is not fooled by DEPTH either — the walk stops at the first untrusted address', async () => {
+    const app = trusting();
+    const deep = (prefix: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/health',
+        remoteAddress: '10.0.0.1',
+        headers: { 'x-forwarded-for': `${prefix}, 203.0.113.7` },
+      });
+    expect((await deep('1.1.1.1, 2.2.2.2, 3.3.3.3')).statusCode).toBe(200);
+    expect((await deep('4.4.4.4, 5.5.5.5, 6.6.6.6, 7.7.7.7')).statusCode).toBe(429);
+    await app.close();
+  });
+
+  it('still tells two real clients apart — the reason to trust a proxy at all', async () => {
+    const app = trusting();
+    const from = (client: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/health',
+        remoteAddress: '10.0.0.1',
+        headers: { 'x-forwarded-for': client },
+      });
+    expect((await from('203.0.113.7')).statusCode).toBe(200);
+    expect((await from('203.0.113.7')).statusCode).toBe(429);
+    // Neighbour arriving through the same proxy, unaffected.
+    expect((await from('198.51.100.4')).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('never believes a client that connected DIRECTLY, however it decorates itself', async () => {
+    const app = trusting();
+    const direct = (forged: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/health',
+        remoteAddress: '198.51.100.9',
+        headers: { 'x-forwarded-for': forged },
+      });
+    expect((await direct('1.1.1.1')).statusCode).toBe(200);
+    expect((await direct('2.2.2.2')).statusCode).toBe(429);
+    await app.close();
+  });
+
+  it('`all` is the forgeable reading, kept only as a deliberate escape hatch', async () => {
+    const app = buildServer(new PolicyEngine(), {
+      rateLimit: oneToken,
+      trustProxy: parseTrustProxy('all'),
+    });
+    expect((await hammer(app, '1.1.1.1')).statusCode).toBe(200);
+    // The old bug, pinned: a new header value is a new bucket, forever.
+    expect((await hammer(app, '2.2.2.2')).statusCode).toBe(200);
+    expect((await hammer(app, '3.3.3.3')).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('without trustProxy every caller behind the proxy shares one bucket', async () => {
+    // Noisy and obvious, which is why it is the safe end to be wrong on.
+    const app = buildServer(new PolicyEngine(), { rateLimit: oneToken });
+    expect((await hammer(app, '1.1.1.1')).statusCode).toBe(200);
+    expect((await hammer(app, '2.2.2.2')).statusCode).toBe(429);
+    await app.close();
+  });
+});
+
+describe('parseTrustProxy', () => {
+  it('reads the deployed `1` as the private ranges a platform proxy lives in', () => {
+    expect(parseTrustProxy('1')).toBe('loopback,linklocal,uniquelocal');
+    expect(parseTrustProxy('private')).toBe(parseTrustProxy('1'));
+  });
+
+  it('is off when unset or explicitly disabled', () => {
+    expect(parseTrustProxy(undefined)).toBe(false);
+    expect(parseTrustProxy('')).toBe(false);
+    expect(parseTrustProxy('0')).toBe(false);
+    expect(parseTrustProxy('off')).toBe(false);
+    expect(parseTrustProxy('false')).toBe(false);
+  });
+
+  it('takes an explicit IP or CIDR list, for a proxy that is not on a private range', () => {
+    expect(parseTrustProxy('10.9.0.0/16')).toBe('10.9.0.0/16');
+    expect(parseTrustProxy('loopback, 192.0.2.7')).toBe('loopback,192.0.2.7');
+  });
+
+  it('keeps `all` for a chain whose peers cannot be named, and it is the forgeable one', () => {
+    expect(parseTrustProxy('all')).toBe(true);
+  });
+
+  /**
+   * The trap this whole change exists to close. Express reads a number as a hop
+   * count; fastify 5 compiles it to "trust nothing" on purpose, since a count
+   * cannot identify the peer. Accepting it would be a silent OFF behind a
+   * proxy — one bucket for the entire internet.
+   */
+  it('REFUSES a hop count rather than accepting a silent off', () => {
+    expect(() => parseTrustProxy('2')).toThrow(/hop count/);
+    expect(() => parseTrustProxy('3')).toThrow(/every caller in ONE rate-limit bucket/);
+  });
+
+  it('THROWS on a value it cannot read rather than falling back', () => {
+    // `true` used to be the only spelling that worked. It is now a typo with a
+    // readable death, not a silent demotion to off.
+    expect(() => parseTrustProxy('true')).toThrow(/not a trust spec/);
+    expect(() => parseTrustProxy('yes')).toThrow(/not a trust spec/);
   });
 });

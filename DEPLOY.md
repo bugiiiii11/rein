@@ -455,19 +455,39 @@ application that owns it.
 | `REIN_ENGINE_RATE_LIMIT_PER_KEY` / `_PER_KEY_BURST` | 10 rps / 120 | Per authenticated API key, applied AFTER auth resolves the key id |
 | `REIN_ENGINE_RATE_LIMIT_PER_IP` / `_PER_IP_BURST` | 1 rps / 30 | Per client IP, applied BEFORE auth -- `/health` included |
 | `REIN_ENGINE_RATE_LIMIT=off` | on | The deliberate opt-out, mirroring `REIN_ENGINE_AUTH=off` |
-| `REIN_TRUST_PROXY=1` | off | Read the client IP from `X-Forwarded-For` |
+| `REIN_TRUST_PROXY` | off | Which peers may name the client through `X-Forwarded-For`. `1` (or `private`) trusts a proxy reaching us from inside the network, which is every managed platform; an IP/CIDR list names one explicitly; `all` is the forgeable reading; `0`/`off` is none |
 | `REIN_PRUNE_INTERVAL_MS` | 1800000 | Sweep the TTL'd burn tables this often; `0` disables |
 
 Over the limit is `429` with `Retry-After` in seconds. A non-numeric or zero override is a
 startup ERROR, not a silent fallback: somebody typing `PER_KEY=0` means "no limit", and
 reading that as the default would leave them believing a limiter is off while it is fully on.
 
-**`REIN_TRUST_PROXY=1` is required on Railway and dangerous anywhere else.** Behind a proxy
-every socket address is the proxy's, so an untrusting engine rate-limits all tenants as one
-client. In FRONT of one, a header nobody strips is a header anybody can forge, which turns the
-per-IP limiter into a no-op. Only set it where the platform actually overwrites the header.
-(Safe as of Sprint 1's fastify bump -- fastify < 5.12.1 had an `X-Forwarded-*` spoofing
-advisory of its own.)
+**`REIN_TRUST_PROXY=1` is required on Railway, and until S63 it was forgeable there too.**
+Behind a proxy every socket address is the proxy's, so an untrusting engine rate-limits all
+tenants as one client. But the variable was read as a BOOLEAN, and a boolean makes fastify
+believe the LEFT-MOST `X-Forwarded-For` entry -- which is the one the client wrote, because a
+proxy APPENDS the address it observed rather than erasing what arrived. So the per-IP limiter,
+the only thing bounding what a caller who has proved nothing can make the engine do, could be
+reset per request by rotating a header. The doc that stood here said "only set it where the
+platform overwrites the header", which reads like a safe configuration exists; on Railway it
+does not overwrite, and there was none.
+
+It is now a trust SPEC naming WHICH PEERS may speak for a client, not a flag and not a hop
+count. `1` resolves to the private ranges a platform's proxy lives in, so resolution walks
+inward from the socket and stops at the first address that is not a trusted peer -- the one
+the nearest trusted proxy actually saw. No header moves it at any depth, and a client
+connecting directly is never believed at all. Four tests pin exactly that, and all four fail
+when the boolean reading is put back.
+
+**Do not "fix" this by setting a number of hops.** Express reads `2` as two hops; fastify 5
+compiles any number to *trust nothing* on purpose, since a hop count cannot identify the peer
+and a direct client could supply enough hops to look proxied. Measured, not read: `trustProxy:
+1` and `trustProxy: 2` both leave `req.ip` as the socket address. Behind a proxy that is a
+silent OFF -- one rate-limit bucket for the entire internet -- so `parseTrustProxy` refuses a
+count with an error naming that consequence rather than accepting it.
+
+(Also safe as of Sprint 1's fastify bump -- fastify < 5.12.1 had an `X-Forwarded-*` spoofing
+advisory of its own, a different bug from this one.)
 
 Bodies are capped at 64 KiB (`413`) and a request must arrive complete within 30s.
 
@@ -589,7 +609,7 @@ Environment:
 | `REIN_ENGINE_SIGNING_KEY` | a FRESH `openssl genpkey -algorithm ed25519` PEM |
 | `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
 | `REIN_ESCALATION_TTL_MS` | `3600000` |
-| `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it |
+| `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it, and forgeable if you write anything else. Not a hop count: see "Rate limiting" above |
 | `RAILWAY_RUN_UID` | `0` -- start as root so the boot script can chown the volume, then drop. See the bullet above; without it the drop no-ops |
 | `HOST` | unset. A keyed engine binds `0.0.0.0` on its own; setting it is how you bind a public interface by accident |
 
@@ -610,7 +630,36 @@ check can see:
 A WARNING line there instead means the engine is up and still root -- diagnose
 it, do not panic-deploy. `whoami` in the Railway shell is NOT evidence: that
 shell is its own root process whatever the server runs as. Ask about the server
-(`ps -o user,pid,args -p 1`) or look at the files (`ls -lan /data/engine`).
+or look at the files (`ls -lan /data/engine`, which must read `1000 1000`).
+
+**`ps` is not installed in `node:22-slim`,** so the obvious question about pid 1
+answers `executable file not found` and reads like a broken container. Use
+procfs instead -- and read all four Uid fields, because the saved uid is what
+says root is unrecoverable rather than merely set aside:
+
+```
+cat /proc/1/status | grep -E '^(Name|Uid|Gid):'
+# Name: node
+# Uid:  1000  1000  1000  1000
+```
+
+### Rehearsed locally before the service existed (S63)
+
+The whole env block below was booted in the real image on a root-owned volume
+before any of it was typed into Railway -- the S37/S57 rule applied to a
+configuration rather than a Dockerfile. What it proved, in order: the drop line
+with 2 paths chowned on a fresh `/data/engine`; a bind on `0.0.0.0` with
+`auth: api-key` from `HOST` being unset; `fresh store; signing key external`,
+which is the external-key path working from a PEM flattened to literal `\n`
+(`parseSigningKey` accepts both forms, so Railway's multiline field and a
+flattened one are equivalent); `/health` 200 while `/v1/agents` is 401 unkeyed
+and 200 keyed; pid 1 as `node` with all four Uid fields 1000; `/data/engine`
+turned `0:0` -> `1000:1000`; a SIGTERM draining to exit 0; a second container on
+the same volume resuming its api keys with an IDENTICAL publicKey fingerprint;
+and a boot with `REIN_ENGINE_SIGNING_KEY` removed REFUSING to start
+(`this data directory's engine signing key is held externally`, exit 1) rather
+than minting a second chain. That last one is the failure mode to recognize at
+3am: it is a deleted variable, not a corrupt volume.
 
 ```
 curl https://engine.reinconsole.com/health
@@ -721,6 +770,32 @@ GNU `jq` on Linux writes LF, and the same key therefore fingerprints as
 session's worth of doubt once -- the mismatch was read as evidence that the
 volume was disposable, when the key had never changed at all. Stripping CR makes
 the value comparable across machines.
+
+The hosted engine's equivalent is its own unauthenticated `/health`, which
+carries the same `publicKey`:
+
+```
+curl -s https://engine.reinconsole.com/health | jq -r .publicKey | tr -d '\r' | sha256sum | cut -c1-16
+```
+
+**`jq -r` appends a newline to a PEM that already ends in one, so this value is
+NOT the sha256 of the key file (S63).** The recipe is self-consistent -- every
+deploy is measured the same way, so the across-a-redeploy comparison it exists
+for is sound -- but comparing it against a fingerprint taken from
+`engine-signing-key.pem` produces a mismatch out of two files that hold the same
+key. That is the S60 scar in a second costume: there the phantom difference was
+CRLF, here it is one trailing byte, and both times the honest reading of a
+mismatch ("the volume is disposable") is the expensive one. To derive the
+expected value from the private key BEFORE the first boot -- the check that says
+the engine came up on the key you generated rather than one it minted -- add the
+newline back:
+
+```
+{ node -e "const{createPublicKey}=require('crypto'),fs=require('fs');\
+process.stdout.write(createPublicKey(fs.readFileSync('engine-signing-key.pem'))\
+.export({type:'spki',format:'pem'}).toString())"; echo; } \
+  | tr -d '\r' | sha256sum | cut -c1-16
+```
 
 Note also what the fingerprint can and cannot tell you, because the STRUCTURE is
 the stronger guarantee. `loadOrCreateKeyPair` in `services/store/src/keys.ts`

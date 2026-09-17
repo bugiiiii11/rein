@@ -68,6 +68,7 @@ export {
   approvalsFromEnv,
   livenessFromEnv,
   resolveHost,
+  parseTrustProxy,
   type ServerOptions,
 } from './server.js';
 export {
