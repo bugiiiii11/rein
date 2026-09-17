@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "tsx server/standalone.ts",
-    "start": "tsx server/standalone.ts",
+    "start": "tsx server/boot.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"

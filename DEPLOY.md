@@ -2,7 +2,8 @@
 
 The console (`apps/console`) is the only deployed service. It runs on Railway from
 the repo-root `Dockerfile`, serving the built Vite UI plus the console API and SSE
-stream from one Node process (`apps/console/server/standalone.ts`).
+stream from one Node process (`apps/console/server/standalone.ts`, entered through
+`boot.ts`, which drops root first -- see "The fix that ships (S61)" below).
 
 Live at **app.reinconsole.com**. The landing page (`apps/landing`) deploys separately
 to Vercel at **reinconsole.com**.
@@ -183,62 +184,60 @@ attempt cost a live outage. Two things were wrong:
   PGDATA as uid 1000. Anyone grepping the logs for EACCES found nothing and concluded the
   diagnosis was wrong. EACCES is what a volume WITHOUT `/data/console` gives.
 
-Current state: `RAILWAY_RUN_UID=0` is set on the console service as a tourniquet, so the
-container runs as root despite `USER node`, the volume works, and the site is up. The
-non-root goal is NOT achieved and needs a real solution -- the candidate is a one-off
-`chown -R 1000:1000 /data` from a root shell (which `RAILWAY_RUN_UID=0` provides without
-touching `startCommand`), after which the variable can be removed; unverified as of S59.
+**CORRECTION 2 (S61, 2026-09-17): the hand-chown candidate below is dead too, and point
+3 with it.** A one-off `chown -R 1000:1000 /data` from the Railway shell was tried twice.
+It reports success -- `ls -lan` really does show `1000 1000` -- and the deploy still
+crash-loops, because the OLD root container keeps serving through the whole ~2 minute
+build and every file it creates afterwards lands `root:root` again. The chown is stale
+before the new container starts. **That race cannot be won from a shell; do not try a
+third time.** The S60 attempt cost ~10 minutes of downtime, and the error it produced is
+not EACCES and not the S59 string either: `RuntimeError: Aborted()` from PGlite's WASM at
+`Object.callMain` -- Postgres aborting at the C layer, which reads like a corrupt build.
 
-One incidental finding worth keeping: the S36 volume had been pinning a STALE seed. The
-boot seed runs once per data directory, so the live console had been replaying the
-S36-era demo world (11 decisions / 8-3-0 / $0.07) and every seed change from S37 to S58
-was invisible in production. The current seed is 14 decisions / 10-3-1 / $0.09. Counters
-alone will never reveal this -- they are self-consistent either way.
+**The fix that ships (S61): chown from inside the container that will serve.** The console
+service keeps `RAILWAY_RUN_UID=0`, so it still STARTS as root -- but the start command now
+names `apps/console/server/boot.ts`, which chowns the data dir and then drops to `node`
+in process before anything opens the database. At that moment the old container is gone
+(Railway stops it before starting the new one when a volume is attached), so no other
+writer exists and the race is removed rather than raced. `USER node` stays in the
+Dockerfile as the image default, so a plain `docker run` and the engine service are
+unaffected.
 
-**3. The container runs as the unprivileged `node` user, and turning that on needs a fresh
-volume under it (S57 measured, S58 enabled).** Both cases were run against this image on
-2026-09-16 with `docker run -v <volume>:/data -e REIN_CONSOLE_DATA_DIR=/data/console`:
+Three properties are deliberate:
 
-| Volume | Result |
-|---|---|
-| Fresh, with the image's node-owned `/data` | Boots, seeds, `drwx------ node node`, SIGTERM drains, exit 0 |
-| Already exists root-owned (what Railway had) | `EACCES: permission denied, mkdir '/data/console'`, exit 1 |
+- **It never crash-loops.** Every failure path -- no `node` in `/etc/passwd`, a chown that
+  throws, a `setuid` that throws -- logs a WARNING and keeps serving as root, which is
+  exactly the pre-S61 production state. Two outages bought that rule.
+- **One process, no child.** Privileges are dropped with `setgroups`/`setgid`/`setuid` in
+  the running process, not by spawning a server as another user, so the SIGTERM that
+  drains the store still arrives directly (the whole reason the start command stopped
+  going through pnpm). An ENTRYPOINT that chowns and `su-exec`s -- the usual fix -- cannot
+  work here anyway: Railway execs `startCommand` as argv and it overrides `ENTRYPOINT`.
+- **The import of `standalone.ts` is dynamic.** A static import would hoist above the drop
+  and open PGlite as root, silently, because it would still work. `privileges.test.ts`
+  pins that, along with the start command naming `boot.ts`.
 
-app.reinconsole.com's volume was created in S36 by a root container, and Docker does not
-re-initialize an existing volume from the image. **Founder call 2026-09-17: recreate the
-volume.** The console is a read-only demo exhibit — it reseeds deterministically and the
-deploy log says `fresh store (seeded)` — it is the only option that actually leaves the
-container unprivileged, and destroying the disk is also the only complete erasure of the
-plaintext signing key, which S57 proved survives an `UPDATE` in both the heap and the WAL.
-The alternatives considered and declined: chowning the mount to uid 1000 needs a one-off
-root run, which on Railway means temporarily editing the `startCommand` that caused the S36
-outage, and keeps that plaintext key on disk; `RAILWAY_RUN_UID=0` declines the change
-explicitly but closes nothing.
+**Verifying it took** (Railway deploy logs, no shell needed): the boot line
+`[rein] dropped root -> node (1000:1000), N path(s) chowned in /data/console`. A WARNING
+line instead means it is still root and still up -- diagnose, do not panic-deploy. From
+the Railway shell, `whoami` is NOT evidence: that shell is its own root process regardless
+of what the server runs as. Ask about the server process instead --
+`ps -o user,pid,args -p 1` -- or check the files: `ls -lan /data/console`.
 
-**Do the two steps in this order, and in one sitting.** Recreate-then-push is the wrong
-order and lands you back on the same EACCES with a brand-new volume: a fresh volume lands
-node-owned, but a still-root container booting onto it FIRST creates `/data/console` as
-`root:root 0700`, and the node image cannot enter it. The first process to touch the fresh
-volume must be the node one.
+`RAILWAY_RUN_UID=0` stays set. It is no longer a tourniquet but the mechanism: it
+guarantees the boot script starts with the privileges it needs to chown the volume.
 
-1. Push the image with `USER node`. The deploy crash-loops with the measured EACCES on the
-   old volume — expected, and it is `ON_FAILURE` with `restartPolicyMaxRetries: 10`.
-2. Delete and recreate the volume in the Railway dashboard. The restart boots as `node`
-   onto a node-owned volume and seeds.
-3. Confirm exit code 0 and `fresh store (seeded)`, then re-record the signing-key
-   fingerprint (see "Proving persistence without log access") — the old one is gone with
-   the volume, and the new value is the baseline from here on.
+One incidental finding from S59 worth keeping: the S36 volume had been pinning a STALE
+seed. The boot seed runs once per data directory, so the live console had been replaying
+the S36-era demo world (11 decisions / 8-3-0 / $0.07) and every seed change from S37 to
+S58 was invisible in production. The current seed is 14 decisions / 10-3-1 / $0.09.
+Counters alone will never reveal this -- they are self-consistent either way.
 
-The window between 1 and 2 is real downtime on a public page, which is why they belong
-together rather than across sessions.
-
-The usual fix — an ENTRYPOINT that chowns and then drops privileges — does NOT apply here:
-Railway execs `startCommand` as argv and it overrides `ENTRYPOINT` (see point 1 above).
-
-A new service with its own FRESH volume has none of this history, so `rein-engine` is
-non-root from its first deploy in Sprint 4 with no dashboard step at all. Whichever way this
-goes, check `docker inspect --format '{{.State.ExitCode}}'` rather than merely that the
-container booted.
+A new service with its own volume gets the same treatment rather than a clean slate: S60
+established that a fresh Railway volume is root-owned too, so `rein-engine` will need its
+own equivalent of `boot.ts` before it can run non-root. Whichever way this goes, check
+`docker inspect --format '{{.State.ExitCode}}'` rather than merely that the container
+booted.
 
 ## Shutdown
 
@@ -268,6 +267,10 @@ The start command therefore invokes node directly. Measured in the real image
 
 Either non-zero exit is what a platform reports as "crashed"; neither writes a drain
 line. Both forms serve traffic identically, which is why this hid for so long.
+
+S61 moved the deployed entry to `boot.ts`, which drops root and then imports
+`standalone.ts` in the SAME process -- no child, no second layer for a signal to
+cross, so the row above still describes what is deployed.
 
 Note that the app is still not literally PID 1: **tsx re-spawns it as a child**, so
 the boot line reports something like `pid 17`. That is expected and fine — tsx does
@@ -512,7 +515,7 @@ config-file path setting. `railway.json` continues to belong to the console.
 
 | | console | engine |
 |---|---|---|
-| start | `node apps/console/node_modules/tsx/.../standalone.ts` | `node services/store/bin/rein-engine.mjs` |
+| start | `node apps/console/node_modules/tsx/.../boot.ts` | `node services/store/bin/rein-engine.mjs` |
 | health | `/api/health` | `/health` |
 | data dir | `REIN_CONSOLE_DATA_DIR=/data/console` | `REIN_DATA_DIR=/data/engine` |
 | posture | read-only exhibit | the real engine |
@@ -542,11 +545,15 @@ In Railway, a NEW service on this repo:
   has ever touched still gives `EACCES ... mkdir '/data/engine'` to uid 1000.
   The console's volume history is not what makes this happen, so nothing about
   it "does not apply here" -- the engine gets the same failure on day one.
-  There is no verified non-root recipe for a Railway volume yet; the console is
-  where it is being worked out (handoff row 1), so settle it there FIRST and
-  create this service with whatever that establishes. The interim is the
-  console's: set `RAILWAY_RUN_UID=0` on the service, which runs the container
-  as root and is also the rollback for anything else attempted.
+  The recipe the console settled on in S61 is what this service should copy:
+  set `RAILWAY_RUN_UID=0` so the container starts as root, and give the engine
+  its own boot entry that chowns `/data/engine` and drops to `node` before the
+  store opens -- the console's `apps/console/server/privileges.ts` is the
+  module to lift, and `services/store/bin/rein-engine.mjs` is where the call
+  goes (both `railway.engine.json` and the Dockerfile CMD would have to move
+  with it). **That work is NOT done yet.** Until it is, `RAILWAY_RUN_UID=0`
+  alone is the interim: root, volume works, and it is also the rollback for
+  anything else attempted.
 - Custom domain `engine.reinconsole.com`, CNAME at the DNS host.
 - Enable Railway volume backups. The console's volume is disposable; this one
   holds the decision chain.

@@ -6,7 +6,7 @@
     "watchPatterns": ["**", "!**/*.md", "!.github/**", "!.claude/**", "!scripts/**"]
   },
   "deploy": {
-    "startCommand": "node apps/console/node_modules/tsx/dist/cli.mjs apps/console/server/standalone.ts",
+    "startCommand": "node apps/console/node_modules/tsx/dist/cli.mjs apps/console/server/boot.ts",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 300,
     "numReplicas": 1,
