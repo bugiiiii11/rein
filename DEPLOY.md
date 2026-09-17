@@ -18,6 +18,53 @@ pnpm/Turborepo workspace has to install and build together.
 **The Railway service's Root Directory must be the repo root.** Pointing it at
 `apps/console` leaves the workspace deps unresolvable.
 
+## Which pushes deploy (watch patterns, S60)
+
+`railway.json` now owns the deploy trigger, in `build.watchPatterns`. Before S60 it
+lived only in the dashboard as Watch Paths, set to `apps/console/**`, and that was
+wrong in a way nothing reported: the image is built from the repo ROOT, so a push
+touching only `services/**` produced no deploy at all and left production running the
+previous build. Sprints 2-4 were mostly `services/**` and reached prod only because
+each one also happened to touch a console file. S59 noticed only because a
+`.github/`-and-docs push failed to deploy when a deploy was expected.
+
+The list is deliberately subtractive:
+
+```json
+"watchPatterns": ["**", "!**/*.md", "!.github/**", "!.claude/**", "!scripts/**"]
+```
+
+An allowlist fails the DANGEROUS way -- anything nobody remembered to list stops
+deploying, silently, which is exactly what happened. A base of `**` minus known-inert
+paths fails the safe way: a path nobody considered still deploys, and the worst case
+is a rebuild nobody needed. It also survives Railway not honouring `!` at all, since
+`**` matches everything on its own.
+
+Left out, and why none of them can change the running process: markdown is prose (the
+one app that SERVES `.md` is `apps/landing`, which deploys on Vercel, not here),
+`.github/` is CI, `.claude/` is agent config, and `scripts/` holds the CI package
+smoke, which the root `build` script never runs.
+
+`deploy-config.test.ts` pins all of this, and derives the workspace roots from
+`pnpm-workspace.yaml` -- so adding a fourth workspace glob and forgetting the watch
+list fails the suite instead of failing production.
+
+**Founder steps, once.** Two things about how this lands:
+
+1. Railway's own rule is that "configuration defined in code will always override
+   values from the dashboard", and that "the settings in the dashboard will not be
+   updated with the settings defined in code". So the console service's Settings ->
+   Build panel will KEEP displaying the old `apps/console/**` after this ships. That
+   is documented behaviour, not a failure. Clearing the dashboard field anyway is
+   worth doing so the next person to read it is not misled, but it is cosmetic.
+2. The commit that introduces this cannot deploy itself. Until a deploy actually
+   reads the new `railway.json`, the old dashboard filter is still deciding, and a
+   commit touching `railway.json`, `DEPLOY.md` and `services/` does not match
+   `apps/console/**`. **Trigger one MANUAL redeploy after pushing it** -- Deployments
+   -> the latest commit -> Redeploy. Everything after that is automatic.
+
+Confirm it took: push any `services/`-only change and watch a deploy start.
+
 ## Persistence (the volume)
 
 Without `REIN_CONSOLE_DATA_DIR` the console runs fully in memory: every redeploy
@@ -486,9 +533,20 @@ In Railway, a NEW service on this repo:
 - Root Directory = repo root (NOT `services/store`) -- the workspace must
   install and build together, same reason as the console.
 - Config file path = `railway.engine.json`.
-- Volume mounted at `/data`. It is a fresh volume, so it lands node-owned and
-  the engine is non-root from its first deploy with no dashboard dance -- the
-  console's volume history (point 3 above) does not apply here.
+- Volume mounted at `/data`. **This bullet used to claim a fresh volume lands
+  node-owned, so the engine would be non-root from its first deploy with no
+  dashboard dance. That claim is FALSE and S59 proved it (2026-09-17.)** It
+  rested on an S57 measurement taken against `docker run -v`, a Docker NAMED
+  volume, which really does inherit the image's ownership of the mount point.
+  Railway uses BIND MOUNTS: a brand-new Railway volume that no root container
+  has ever touched still gives `EACCES ... mkdir '/data/engine'` to uid 1000.
+  The console's volume history is not what makes this happen, so nothing about
+  it "does not apply here" -- the engine gets the same failure on day one.
+  There is no verified non-root recipe for a Railway volume yet; the console is
+  where it is being worked out (handoff row 1), so settle it there FIRST and
+  create this service with whatever that establishes. The interim is the
+  console's: set `RAILWAY_RUN_UID=0` on the service, which runs the container
+  as root and is also the rollback for anything else attempted.
 - Custom domain `engine.reinconsole.com`, CNAME at the DNS host.
 - Enable Railway volume backups. The console's volume is disposable; this one
   holds the decision chain.

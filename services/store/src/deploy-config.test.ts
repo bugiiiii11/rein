@@ -93,4 +93,134 @@ describe('deploy configuration', () => {
       expect(parsed.deploy.numReplicas).toBe(1);
     });
   });
+  /**
+   * S59 found production silently running old code. A push touching only
+   * `.github/` and `DEPLOY.md` did not deploy, while the push before it did:
+   * the Railway dashboard had Watch Paths set to `apps/console` plus a
+   * recursive wildcard. But the image is built from the repo ROOT and bundles
+   * ten workspace packages, so that filter meant any push touching only
+   * `services/` left production on the previous build with no error anywhere.
+   * Sprints 2-4 were mostly `services/` and reached prod only because each
+   * also happened to touch a console file.
+   *
+   * The fix is not a better allowlist. An allowlist fails the DANGEROUS way:
+   * a pattern that is subtly wrong, or a directory added a year from now that
+   * nobody thinks to add to the list, gives stale production and no signal.
+   * So the list starts at `**` and only subtracts, which fails the safe way --
+   * a path nobody considered still deploys. It also survives Railway not
+   * honouring `!` at all, since the base `**` matches everything on its own
+   * and the worst case is then a rebuild nobody needed.
+   *
+   * Watch paths are gitignore-style patterns (Railway's monorepo guide), so
+   * `deploys` below is a minimal gitignore matcher: last pattern to match wins.
+   */
+  describe('watch patterns (which pushes reach production)', () => {
+    const patternsOf = (name: string): string[] =>
+      (JSON.parse(read(name)) as { build: { watchPatterns?: string[] } }).build.watchPatterns ?? [];
+
+    /**
+     * gitignore-style glob to an anchored RegExp. A `**` segment is held as
+     * NUL first so the two cases can be told apart afterwards: as a leading
+     * segment it spans zero or more directories, anywhere else it is the rest
+     * of the path.
+     */
+    function toRegExp(pattern: string): RegExp {
+      const body = pattern
+        .split('/')
+        .map((seg) =>
+          seg === '**'
+            ? '\u0000'
+            : seg.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*'),
+        )
+        .join('/')
+        .replace(/\u0000\//g, '(?:[^/]+/)*')
+        .replace(/\u0000/g, '.*');
+      return new RegExp(`^${body}$`);
+    }
+
+    /** Would a push whose only changed file is `path` trigger a deploy? */
+    function deploys(patterns: string[], path: string): boolean {
+      let hit = false;
+      for (const p of patterns) {
+        const negated = p.startsWith('!');
+        if (toRegExp(negated ? p.slice(1) : p).test(path)) hit = !negated;
+      }
+      return hit;
+    }
+
+    it('starts from a match-everything base and only ever subtracts', () => {
+      for (const name of ['railway.json', 'railway.engine.json']) {
+        const patterns = patternsOf(name);
+        expect(patterns.length, `${name} declares no watchPatterns`).toBeGreaterThan(0);
+        expect(patterns[0], `${name} must fail safe`).toBe('**');
+        expect(patterns.slice(1).every((p) => p.startsWith('!'))).toBe(true);
+      }
+    });
+
+    /** Both services build the SAME image from the same Dockerfile. */
+    it('keeps both services on the same list', () => {
+      expect(patternsOf('railway.engine.json')).toEqual(patternsOf('railway.json'));
+    });
+
+    /**
+     * The anti-drift guard. Every workspace glob in pnpm-workspace.yaml is
+     * code that goes into the image, so excluding one -- or adding a workspace
+     * root later and quietly leaving it uncovered -- is the S59 bug again.
+     */
+    it('deploys a change to any workspace package', () => {
+      const globs = [...read('pnpm-workspace.yaml').matchAll(/^\s*-\s*'([^']+)'/gm)]
+        .map((m) => m[1])
+        .filter((g): g is string => g !== undefined);
+      expect(globs.length).toBeGreaterThan(0);
+      const patterns = patternsOf('railway.json');
+      for (const glob of globs) {
+        const [root] = glob.split('/');
+        expect(deploys(patterns, `${root}/anything/src/index.ts`), `${glob} is not watched`).toBe(
+          true,
+        );
+      }
+    });
+
+    it('deploys a change to anything the build itself reads', () => {
+      const patterns = patternsOf('railway.json');
+      for (const file of [
+        'Dockerfile',
+        '.dockerignore',
+        'package.json',
+        'pnpm-lock.yaml',
+        'pnpm-workspace.yaml',
+        'turbo.json',
+        'tsconfig.base.json',
+        '.npmrc',
+        'railway.json',
+        'railway.engine.json',
+      ]) {
+        expect(deploys(patterns, file), `${file} is not watched`).toBe(true);
+      }
+    });
+
+    /**
+     * The only things deliberately left out, and why none of them can change
+     * the running process: docs are prose (the one app that SERVES markdown is
+     * apps/landing, which deploys on Vercel, not here), `.github/` is CI,
+     * `.claude/` is agent config, and `scripts/` holds the CI package smoke --
+     * which the root `build` script never touches.
+     */
+    it('skips only docs, CI, agent config and CI-only scripts', () => {
+      const patterns = patternsOf('railway.json');
+      for (const file of [
+        'DEPLOY.md',
+        'README.md',
+        'apps/console/README.md',
+        '.github/workflows/ci.yml',
+        '.claude/settings.json',
+        'scripts/package-smoke.mjs',
+      ]) {
+        expect(deploys(patterns, file), `${file} should not trigger a deploy`).toBe(false);
+      }
+      const build = (JSON.parse(read('package.json')) as { scripts: Record<string, string> })
+        .scripts.build;
+      expect(build).not.toContain('scripts/');
+    });
+  });
 });
