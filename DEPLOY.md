@@ -647,9 +647,17 @@ they disagree, something is wrong with the store, not the projection.
 ### Proving persistence without log access
 
 The counters CANNOT prove it. The boot seed is deterministic, so a world that
-reseeded from scratch reports exactly the same 11 decisions / 8-3-0 / $0.07 / 9
+reseeded from scratch reports exactly the same 14 decisions / 10-3-1 / $0.09 / 10
 subjects as one that resumed. Two deploys in a row showing identical numbers is
-not evidence of anything.
+not evidence of anything. (Those are the CURRENT seed's numbers, measured
+2026-09-17. This paragraph used to quote 11 / 8-3-0 / $0.07 / 9, which was the
+S36 seed that production had been silently replaying off a stale volume until
+S59 deleted it -- so the numbers a reader compared against were themselves the
+artefact being looked for.)
+
+The boot line does distinguish the two: `resumed 14 decisions, ...` versus
+`fresh store (seeded)`. What it does NOT prove is that the signing key came back
+with the world, which is what the fingerprint below is for.
 
 The engine's ed25519 signing key is the honest signal: it is generated once and
 persisted (`engine_keys`), so it is STABLE across restarts when the volume works
@@ -657,10 +665,29 @@ and REGENERATED every boot when it does not.
 
 ```
 curl -s https://app.reinconsole.com/api/state \
-  | jq -r .publicKey | sha256sum | cut -c1-16
+  | jq -r .publicKey | tr -d '\r' | sha256sum | cut -c1-16
 ```
 
-Record it, redeploy, run it again. Same fingerprint means the store really
-resumed. A different one means the service is writing to disposable disk no
-matter what the counters say.
+`5f7279d44ba533bc` as of 2026-09-17. Record it, redeploy, run it again. Same
+fingerprint means the store really resumed; a different one means the service is
+writing to disposable disk no matter what the counters say.
+
+**The `tr -d` is load-bearing, and it was missing until 2026-09-17.** The recipe
+hashes a PEM, so it hashes LINE ENDINGS: git-bash's `jq` on Windows writes CRLF,
+GNU `jq` on Linux writes LF, and the same key therefore fingerprints as
+`61a02be55f0e1f22` on one box and `5f7279d44ba533bc` on the other. That cost a
+session's worth of doubt once -- the mismatch was read as evidence that the
+volume was disposable, when the key had never changed at all. Stripping CR makes
+the value comparable across machines.
+
+Note also what the fingerprint can and cannot tell you, because the STRUCTURE is
+the stronger guarantee. `loadOrCreateKeyPair` in `services/store/src/keys.ts`
+generates a key only when `engine_keys` has NO row -- and a data dir with no key
+row has no decisions to resume either. A row with a private key is returned as
+is; a row whose private half was erased refuses to boot without the external key
+rather than minting a new one. So "resumed N decisions" and "regenerated the
+key" are mutually exclusive by construction: a boot line saying `resumed`
+already proves the chain is still verifiable under the published key. The
+fingerprint is a second, independent witness -- useful, but it is not the thing
+holding the guarantee up.
 
