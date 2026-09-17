@@ -115,6 +115,39 @@ Note also that **every push to `main` auto-deploys**, and with a volume attached
 Railway stops the old container before starting the new one — so a bad start command
 is real downtime, not a failed deploy that quietly rolls back.
 
+**CORRECTION (S59, 2026-09-17): everything in point 3 below is superseded. Do NOT
+follow it.** Recreating the volume does not make the container run as `node`, and the
+attempt cost a live outage. Two things were wrong:
+
+- **The S57 measurement does not transfer to Railway.** It was run with
+  `docker run -v <volume>:/data`, a Docker NAMED volume, which Docker initializes from
+  the image's directory ownership -- which is why a fresh one came up node-owned. Railway
+  does not use named volumes. Its deploy log says
+  `Mounting volume on: /var/lib/containers/railwayapp/bind-mounts/<uuid>/vol_<id>`, and a
+  BIND MOUNT is not seeded from the image. Measured on 2026-09-17: a brand-new Railway
+  volume, mount path `/data`, never touched by a root container, still fails as `node`
+  with `EACCES ... mkdir '/data/console'`. **Every Railway volume is root-owned at
+  creation.** A fresh volume fixes nothing.
+- **The predicted error line was wrong for the live volume.** `openDb` calls
+  `mkdir(dir, { recursive: true })`, which does NOT throw when the directory already
+  exists and does not chmod it. On the S36 volume `/data/console` already existed
+  root-owned, so the mkdir silently no-opped and the failure surfaced one layer down as
+  `Error: PGlite failed to initialize properly` -- PGlite opening a root-owned 0700
+  PGDATA as uid 1000. Anyone grepping the logs for EACCES found nothing and concluded the
+  diagnosis was wrong. EACCES is what a volume WITHOUT `/data/console` gives.
+
+Current state: `RAILWAY_RUN_UID=0` is set on the console service as a tourniquet, so the
+container runs as root despite `USER node`, the volume works, and the site is up. The
+non-root goal is NOT achieved and needs a real solution -- the candidate is a one-off
+`chown -R 1000:1000 /data` from a root shell (which `RAILWAY_RUN_UID=0` provides without
+touching `startCommand`), after which the variable can be removed; unverified as of S59.
+
+One incidental finding worth keeping: the S36 volume had been pinning a STALE seed. The
+boot seed runs once per data directory, so the live console had been replaying the
+S36-era demo world (11 decisions / 8-3-0 / $0.07) and every seed change from S37 to S58
+was invisible in production. The current seed is 14 decisions / 10-3-1 / $0.09. Counters
+alone will never reveal this -- they are self-consistent either way.
+
 **3. The container runs as the unprivileged `node` user, and turning that on needs a fresh
 volume under it (S57 measured, S58 enabled).** Both cases were run against this image on
 2026-09-16 with `docker run -v <volume>:/data -e REIN_CONSOLE_DATA_DIR=/data/console`:
