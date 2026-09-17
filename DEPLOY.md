@@ -224,8 +224,14 @@ Three properties are deliberate:
   going through pnpm). An ENTRYPOINT that chowns and `su-exec`s -- the usual fix -- cannot
   work here anyway: Railway execs `startCommand` as argv and it overrides `ENTRYPOINT`.
 - **The import of `standalone.ts` is dynamic.** A static import would hoist above the drop
-  and open PGlite as root, silently, because it would still work. `privileges.test.ts`
-  pins that, along with the start command naming `boot.ts`.
+  and open PGlite as root, silently, because it would still work. `boot.test.ts` pins that
+  ordering, along with the start command naming `boot.ts`.
+
+The drop itself lives in `packages/boot` (`@reinconsole/boot`, private and unpublished)
+because the hosted engine's bin needs the identical sequence -- see "Second service"
+below. One copy, one test file: these invariants cost two outages and must not exist in
+two places. That package's README explains the one wrinkle, which is that
+`@reinconsole/store` publishes its `bin/` and so cannot import a private package by name.
 
 **Verifying it took** (Railway deploy logs, no shell needed): the boot line
 `[rein] dropped root -> node (1000:1000), N path(s) chowned in /data/console`. A WARNING
@@ -555,15 +561,21 @@ In Railway, a NEW service on this repo:
   has ever touched still gives `EACCES ... mkdir '/data/engine'` to uid 1000.
   The console's volume history is not what makes this happen, so nothing about
   it "does not apply here" -- the engine gets the same failure on day one.
-  The recipe the console settled on in S61 is what this service should copy:
-  set `RAILWAY_RUN_UID=0` so the container starts as root, and give the engine
-  its own boot entry that chowns `/data/engine` and drops to `node` before the
-  store opens -- the console's `apps/console/server/privileges.ts` is the
-  module to lift, and `services/store/bin/rein-engine.mjs` is where the call
-  goes (both `railway.engine.json` and the Dockerfile CMD would have to move
-  with it). **That work is NOT done yet.** Until it is, `RAILWAY_RUN_UID=0`
-  alone is the interim: root, volume works, and it is also the rollback for
-  anything else attempted.
+- **The code side of that is DONE as of S62, before this service exists.**
+  `services/store/bin/rein-engine.mjs` now chowns `REIN_DATA_DIR` and drops to
+  `node` in process before it imports `dist/server.js`, exactly as the console's
+  `boot.ts` does -- the two share `@reinconsole/boot`, so there is one copy of
+  the sequence and one set of tests. No Dockerfile or `railway.engine.json`
+  change was needed: the start command already names the bin. **So the only
+  thing left for you here is the variable below.**
+- **Set `RAILWAY_RUN_UID=0` on this service.** It reads like the opposite of
+  what you want and it is not: it makes the container START as root, which is
+  the privilege the boot script spends on the chown before dropping. Without
+  it the container starts as `node`, the drop silently no-ops (it logs
+  `not-root` and does nothing), and the first boot hits the root-owned volume
+  with no way out. Fail-soft means the same rollback the console has: if
+  anything in the drop goes wrong the engine keeps serving AS ROOT rather than
+  crash-looping, so a bad day here is a warning line, not an outage.
 - Custom domain `engine.reinconsole.com`, CNAME at the DNS host.
 - Enable Railway volume backups. The console's volume is disposable; this one
   holds the decision chain.
@@ -578,6 +590,7 @@ Environment:
 | `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
 | `REIN_ESCALATION_TTL_MS` | `3600000` |
 | `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it |
+| `RAILWAY_RUN_UID` | `0` -- start as root so the boot script can chown the volume, then drop. See the bullet above; without it the drop no-ops |
 | `HOST` | unset. A keyed engine binds `0.0.0.0` on its own; setting it is how you bind a public interface by accident |
 
 Generate the signing key BEFORE the first boot. A fresh service has no chain
@@ -586,6 +599,18 @@ signed, "once external, always external" applies: the variable is required
 from then on and a boot without it fails rather than starting a second chain.
 
 ### Exit checks
+
+First look in the deploy log for the drop, which is the one thing no HTTP
+check can see:
+
+```
+[rein] dropped root -> node (1000:1000), N path(s) chowned in /data/engine
+```
+
+A WARNING line there instead means the engine is up and still root -- diagnose
+it, do not panic-deploy. `whoami` in the Railway shell is NOT evidence: that
+shell is its own root process whatever the server runs as. Ask about the server
+(`ps -o user,pid,args -p 1`) or look at the files (`ls -lan /data/engine`).
 
 ```
 curl https://engine.reinconsole.com/health

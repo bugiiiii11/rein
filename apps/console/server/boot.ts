@@ -17,8 +17,11 @@
  * When the container already starts unprivileged (any `docker run` of this
  * image, local `pnpm start`, Windows) dropPrivileges is a no-op and this file
  * costs one extra module load.
+ *
+ * The drop lives in @reinconsole/boot because the hosted engine's bin needs the
+ * identical sequence; that package's README explains why it stays unpublished.
  */
-import { dropPrivileges } from './privileges';
+import { dropPrivileges } from '@reinconsole/boot';
 
 dropPrivileges({ dataDir: process.env.REIN_CONSOLE_DATA_DIR, log: (m) => console.warn(m) });
 

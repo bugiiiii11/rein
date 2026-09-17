@@ -61,6 +61,7 @@
     "fastify": "^5.12.1"
   },
   "devDependencies": {
+    "@reinconsole/boot": "workspace:^",
     "@reinconsole/mcp": "workspace:^",
     "@reinconsole/mock-rails": "workspace:^",
     "@reinconsole/sdk": "workspace:^",

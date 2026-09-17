@@ -469,6 +469,7 @@ const states = await client.liveness(); // → [{ status: 'missing', silentMs, .
 
 ```
 packages/
+  boot/          @reinconsole/boot           — container boot: chown the data volume, drop root, before the DB opens     [internal]
   core/          @reinconsole/core           — canonical zod schemas (single source of truth)                            [published]
   sdk/           @reinconsole/sdk            — agent-side guard; wraps the x402 client                                   [published]
   gate/          @reinconsole/gate           — vendor-side x402 monetization middleware                                  [published]

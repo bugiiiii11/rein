@@ -37,6 +37,9 @@ importers:
 
   apps/console:
     dependencies:
+      '@reinconsole/boot':
+        specifier: workspace:*
+        version: link:../../packages/boot
       '@reinconsole/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -152,6 +155,21 @@ importers:
         version: 5.9.3
 
   apps/landing: {}
+
+  packages/boot:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.20
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(postcss@8.5.15)(tsx@4.22.4)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.20)(happy-dom@20.11.12)
 
   packages/core:
     dependencies:
@@ -444,6 +462,9 @@ importers:
         specifier: ^5.12.1
         version: 5.12.5
     devDependencies:
+      '@reinconsole/boot':
+        specifier: workspace:^
+        version: link:../../packages/boot
       '@reinconsole/mcp':
         specifier: workspace:^
         version: link:../mcp

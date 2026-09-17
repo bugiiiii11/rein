@@ -44,12 +44,15 @@ COPY --chown=node:node . .
 # So this line is now the image's DEFAULT, not the deployment's mechanism. The console
 # service runs with RAILWAY_RUN_UID=0, starts as root, and drops to node itself in
 # apps/console/server/boot.ts -- after chowning the volume, inside the container that will
-# serve it, at the one moment no other writer exists. See privileges.ts for the full why,
+# serve it, at the one moment no other writer exists. See packages/boot/src/privileges.ts
+# (shared with the engine bin, which does the same thing) for the full why,
 # including why an ENTRYPOINT that chowns and drops cannot work here: Railway execs
 # `startCommand` as argv and it overrides ENTRYPOINT.
 #
-# Keeping USER node means a plain `docker run` of this image is still unprivileged and
-# the engine service (same image, no RAILWAY_RUN_UID) is unaffected.
+# Keeping USER node means a plain `docker run` of this image is still unprivileged.
+# The engine service builds from this same image and takes the same route as of S62:
+# RAILWAY_RUN_UID=0, and services/store/bin/rein-engine.mjs chowns /data/engine and drops
+# before it imports dist/server.js. Both entries share packages/boot.
 USER node
 
 # pnpm 10 skips dependency build scripts by default; esbuild (used by vite + tsup) needs its

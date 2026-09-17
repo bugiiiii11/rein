@@ -93,6 +93,80 @@ describe('deploy configuration', () => {
       expect(parsed.deploy.numReplicas).toBe(1);
     });
   });
+
+  /**
+   * The engine's privilege drop, which is the console's S61 fix ported here
+   * before this service exists -- deliberately, because a Railway volume is a
+   * bind mount that lands ROOT-owned even when brand new, so day one of the
+   * engine is otherwise S59/S60 again. The drop itself lives in
+   * @reinconsole/boot and is tested there; what can only be checked HERE is
+   * that this bin calls it correctly and that the packaging around it holds.
+   */
+  describe('the engine bin drops root', () => {
+    const bin = read('services/store/bin/rein-engine.mjs');
+
+    /**
+     * setuid is a door that locks behind you: a database handle already opened
+     * as root is the one thing the drop cannot repair. A static import of
+     * dist/server.js would hoist above the call and do exactly that -- and it
+     * would still WORK, which is what makes it silent.
+     */
+    it('drops before it imports the server, and imports it dynamically', () => {
+      expect(/^import .*['"]\.\.\/dist\/server\.js['"]/m.test(bin)).toBe(false);
+      const drop = bin.indexOf('dropPrivileges(');
+      const boot = bin.indexOf('await import(url.href)');
+      // Both found FIRST. indexOf gives -1 for a missing call, and -1 is less
+      // than every index, so an ordering assertion on its own would go green
+      // on a bin that had deleted the drop entirely.
+      expect(drop, 'the bin no longer drops privileges').toBeGreaterThan(-1);
+      expect(boot, 'the bin no longer boots the server').toBeGreaterThan(-1);
+      expect(drop).toBeLessThan(boot);
+    });
+
+    /**
+     * The chown target and the directory PGlite opens a moment later come from
+     * two files. Out of sync, the drop chowns a tree nobody uses and the store
+     * opens root-owned -- a success line in the log over the exact failure it
+     * claims to prevent.
+     */
+    it('defaults to the same data dir the server opens', () => {
+      const defaultOf = (src: string): string | undefined =>
+        /REIN_DATA_DIR \?\? '([^']+)'/.exec(src)?.[1];
+      const fromBin = defaultOf(bin);
+      expect(fromBin).toBeDefined();
+      expect(defaultOf(read('services/store/src/server.ts'))).toBe(fromBin);
+    });
+
+    /**
+     * @reinconsole/boot is private and this package publishes bin/, so a bare
+     * specifier here would be an unresolvable import for every npm consumer the
+     * moment they ran `rein-engine`. src/privileges.ts re-exports it and tsup
+     * bundles it in; the bin must reach dist/ by relative path.
+     */
+    it('reaches the drop through dist, never by package name', () => {
+      expect(bin).toContain('../dist/privileges.js');
+      // Import specifiers only -- the comment above that line names the package
+      // on purpose, and prose cannot fail to resolve.
+      expect(/(?:from|import\s*\()\s*['"]@reinconsole\/boot['"]/.test(bin)).toBe(false);
+    });
+
+    it('bundles the private package instead of depending on it', () => {
+      expect(read('services/store/tsup.config.ts')).toMatch(
+        /noExternal:\s*\[[^\]]*'@reinconsole\/boot'/,
+      );
+      const pkg = JSON.parse(read('services/store/package.json')) as {
+        dependencies: Record<string, string>;
+        devDependencies: Record<string, string>;
+      };
+      // In `dependencies` it would be rewritten to a registry version on
+      // publish, and `npm i @reinconsole/store` would fail on a 404.
+      expect(pkg.dependencies['@reinconsole/boot']).toBeUndefined();
+      expect(pkg.devDependencies['@reinconsole/boot']).toBeDefined();
+      const boot = JSON.parse(read('packages/boot/package.json')) as { private: boolean };
+      expect(boot.private).toBe(true);
+    });
+  });
+
   /**
    * S59 found production silently running old code. A push touching only
    * `.github/` and `DEPLOY.md` did not deploy, while the push before it did:

@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@reinconsole/boot": "workspace:*",
     "@reinconsole/core": "workspace:*",
     "@reinconsole/erc8004": "workspace:*",
     "@reinconsole/gate": "workspace:*",

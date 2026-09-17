@@ -2,11 +2,19 @@
  * Drop from root to an unprivileged user at BOOT, after taking ownership of the
  * data volume.
  *
+ * Shared by every Rein service that owns a Railway volume: the console
+ * (`apps/console/server/boot.ts`, `/data/console`) and the hosted engine
+ * (`services/store/bin/rein-engine.mjs`, `/data/engine`). The engine reaches it
+ * through `@reinconsole/store`'s bundled re-export rather than by name, because
+ * this package is unpublished and that bin is not -- see this package's README.
+ *
  * Why this exists at all. The console's Railway volume was created in S36 by a
  * root container, and an existing volume is never re-initialized from the image,
  * so a `USER node` container hits `EACCES ... mkdir '/data/console'` and
- * crash-loops. Two attempts to fix that by hand failed (S59, S60) and the second
- * cost ~10 minutes of downtime:
+ * crash-loops. A FRESH Railway volume is no better: Railway uses bind mounts and
+ * seeds them from nothing, so the engine gets the same failure on its first ever
+ * deploy (S59/S60) -- there is no "new service, no history" escape. Two attempts
+ * to fix it by hand failed and the second cost ~10 minutes of downtime:
  *
  *   - `chown -R 1000:1000 /data` in the Railway shell DOES succeed, and
  *     `ls -lan` confirms it -- but the OLD root container keeps serving through
@@ -30,6 +38,12 @@
  * privileges IN PROCESS rather than spawning a child -- one process, so the
  * SIGTERM that drains the world still arrives at the server directly, which is
  * the whole reason the start command stopped going through pnpm.
+ *
+ * Both callers must drop BEFORE the dynamic import of their server. After
+ * `setuid` the process cannot regain root, so a database handle already opened
+ * as root is the one thing this cannot repair -- and a static import would hoist
+ * above the call and do exactly that, silently, because it still works. A test
+ * in each service pins that ordering.
  *
  * Fails SOFT on purpose: every failure here leaves the process running as root,
  * which is exactly today's production state, rather than crash-looping a public
