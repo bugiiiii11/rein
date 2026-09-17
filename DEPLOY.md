@@ -54,10 +54,20 @@ list fails the suite instead of failing production.
 
 1. Railway's own rule is that "configuration defined in code will always override
    values from the dashboard", and that "the settings in the dashboard will not be
-   updated with the settings defined in code". So the console service's Settings ->
-   Build panel will KEEP displaying the old `apps/console/**` after this ships. That
-   is documented behaviour, not a failure. Clearing the dashboard field anyway is
-   worth doing so the next person to read it is not misled, but it is cosmetic.
+   updated with the settings defined in code" -- from which S60 predicted the
+   Settings -> Build panel would KEEP displaying the old `apps/console/**` forever.
+   **Observed 2026-09-17 (S61): it does not.** Once a deploy has read the new
+   `railway.json`, the panel shows the file's list under a "The value is set in
+   /railway.json" banner and the old dashboard value is gone. There is nothing to
+   clear by hand. The quoted rule is about PRECEDENCE, not about what is rendered.
+
+   What that banner is genuinely useful for is spotting the opposite case: a field
+   WITHOUT it is a dashboard-only override that no file governs and no test can
+   see. The console had one -- Custom Build Command `pnpm --filter @rein/console
+   build`, naming a package that does not exist (it is `@reinconsole/console`).
+   Inert, because custom build commands apply to Nixpacks/Railpack builds and this
+   service builds from a Dockerfile -- but it is the S36 error message (`No projects
+   matched the filters in "/app"`) sitting one builder change away from production.
 2. The commit that introduces this cannot deploy itself. Until a deploy actually
    reads the new `railway.json`, the old dashboard filter is still deciding, and a
    commit touching `railway.json`, `DEPLOY.md` and `services/` does not match
