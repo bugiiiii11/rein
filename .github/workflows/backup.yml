@@ -1,0 +1,83 @@
+name: Backup
+
+# The decision chain, pulled off Railway's volume into a repo we own.
+#
+# That volume is the ONLY copy of the audit trail, and from Sprint 8 it is the
+# MAINNET audit trail. Railway's Backups Pro was the alternative; the founder
+# chose this (S65) so the second copy lives somewhere Rein controls rather than
+# somewhere Railway controls -- a provider outage and a provider account
+# problem are the same loss otherwise.
+#
+# It runs with the READ-scoped key. A backup job that could also spend is a
+# worse backup job, and `REIN_KEY_READ` is exactly the key that cannot.
+on:
+  schedule:
+    # Nightly, off the hour and clear of the 06:17 live run -- that one spends
+    # money and writes decisions, so backing up after it is the useful order.
+    - cron: '43 7 * * *'
+  workflow_dispatch:
+
+# One writer at a time: two runs pushing to the backup repo race on the same
+# branch, and the loser's export is simply lost. Not cancel-in-progress -- a
+# half-finished push is worse than a late one.
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: export decision chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Only the workspace the script imports -- the backup does not need the
+      # engine, the console or the rails built to read an HTTP route.
+      - name: Build core
+        run: pnpm --filter @reinconsole/core build
+
+      # A separate PRIVATE repo, not this one: the chain names vendors, amounts
+      # and agent ids, and this repo is public.
+      - name: Check out the backup repo
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ secrets.REIN_BACKUP_REPO }}
+          token: ${{ secrets.REIN_BACKUP_TOKEN }}
+          path: .backup-repo
+
+      - name: Export and verify
+        env:
+          REIN_ENGINE_URL: ${{ secrets.REIN_E2E_ENGINE_URL }}
+          REIN_KEY_READ: ${{ secrets.REIN_KEY_READ }}
+        run: node scripts/export-decisions.mjs --out .backup-repo/decisions
+
+      # Nothing to commit is the NORMAL outcome on a quiet day -- the export is
+      # byte-identical when no decision was made -- so it must not fail the run.
+      - name: Commit and push
+        working-directory: .backup-repo
+        run: |
+          git config user.name 'rein-backup'
+          git config user.email 'rein-backup@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No new decisions since the last export.'
+            exit 0
+          fi
+          git commit -m "decisions: export $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
+
+      # The manifest is the thing to read when something looks wrong: it says
+      # how many decisions were verified and whether the export was rooted.
+      - name: Manifest
+        run: cat .backup-repo/decisions/latest.json

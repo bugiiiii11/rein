@@ -13,6 +13,9 @@ importers:
 
   .:
     devDependencies:
+      '@reinconsole/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.20

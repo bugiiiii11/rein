@@ -53,3 +53,9 @@ pnpm-debug.log*
 /RESEARCH-2026-08.md
 /ROADMAP.md
 /PLAN-PRODUCTION.md
+
+# Local decision-chain exports (scripts/export-decisions.mjs). This repo is
+# PUBLIC; the chain names vendors, amounts and agent ids. Backups belong in the
+# private backup repo the Backup workflow pushes to, never here.
+backups/
+.backup-repo/
