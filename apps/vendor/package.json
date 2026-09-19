@@ -1,0 +1,32 @@
+{
+  "name": "@reinconsole/vendor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rein's reference x402 vendor: two gates in one process (testnet now, mainnet from Sprint 8).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --no-splitting --target node22 --out-dir dist",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@reinconsole/boot": "workspace:*",
+    "@reinconsole/core": "workspace:*",
+    "@reinconsole/gate": "workspace:*",
+    "@reinconsole/graph": "workspace:*",
+    "@reinconsole/store": "workspace:*",
+    "@reinconsole/x402-rails": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

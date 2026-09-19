@@ -7,7 +7,8 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createWorld } from './world';
+import { createWorld, type World } from './world';
+import { createRemoteWorld, type RemoteWorld } from './remote-world';
 import { createApiHandler, resolveConsolePosture } from './api';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
@@ -22,16 +23,81 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
 };
 
-// Set REIN_CONSOLE_DATA_DIR to run the console on @reinconsole/store: engine state
-// and reputation evidence survive restarts (the boot seed runs once per dir).
-const world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
+/**
+ * Which world this console renders (Sprint 5.1).
+ *
+ * Two shapes, chosen by configuration rather than by build:
+ *
+ * - REMOTE (`REIN_CONSOLE_ENGINE_URL` + `REIN_CONSOLE_ENGINE_KEY`): a read-key
+ *   client of a hosted engine. This is what app.reinconsole.com runs. The
+ *   console holds no signing key, no policy engine and no authority; it polls
+ *   and renders. See `remote-world.ts`.
+ * - LOCAL (default): the whole demo deployment in this process, optionally on
+ *   a durable store via `REIN_CONSOLE_DATA_DIR`. This is the laptop shape.
+ *
+ * The URL alone is not enough to select remote. A deployment that sets the
+ * URL and forgets the key would otherwise fall back to the seeded demo world
+ * and serve it as if it were production — the exact confusion S59 found on
+ * the live console, where an S36 demo world was being rendered as real. So a
+ * half-configured remote is a REFUSED BOOT, not a silent local one.
+ */
+const engineUrl = process.env.REIN_CONSOLE_ENGINE_URL?.trim();
+const engineKey = process.env.REIN_CONSOLE_ENGINE_KEY?.trim();
+if (engineUrl && !engineKey) {
+  console.error(
+    '[rein] REIN_CONSOLE_ENGINE_URL is set but REIN_CONSOLE_ENGINE_KEY is not. ' +
+      'Refusing to fall back to the local demo world — set the read key, or unset the URL.',
+  );
+  process.exit(1);
+}
+
+let remote: RemoteWorld | undefined;
+let world: World;
+if (engineUrl && engineKey) {
+  remote = await createRemoteWorld({
+    engineUrl,
+    apiKey: engineKey,
+    ...(process.env.REIN_CONSOLE_POLL_MS
+      ? { pollMs: Number(process.env.REIN_CONSOLE_POLL_MS) }
+      : {}),
+  });
+  world = remote;
+  const link = remote.status();
+  console.log(
+    `[rein] console is a read-key client of ${link.engine} (${link.state}` +
+      `${link.publicKeyFingerprint ? `, key ${link.publicKeyFingerprint}` : ''})`,
+  );
+} else {
+  // Set REIN_CONSOLE_DATA_DIR to run the console on @reinconsole/store: engine
+  // state and reputation evidence survive restarts (seed runs once per dir).
+  world = await createWorld({ dataDir: process.env.REIN_CONSOLE_DATA_DIR });
+}
 
 // A1: the console's mutating routes (freeze, unfreeze, ping, demo) are state
 // changes on a live policy engine. Unconfigured public deployments serve the
 // dashboard read-only rather than offering those to anyone who finds the URL.
 const posture = resolveConsolePosture(process.env);
 if (posture.warning) console.warn(`[rein] WARNING: ${posture.warning}`);
-const handle = createApiHandler(world, posture);
+/**
+ * The profile label is the CONSOLE's, not the engine's, and the field name
+ * says so. A policy engine is network-agnostic — it judges intents that carry
+ * their own chain — so it has no profile to advertise and asking it for one
+ * would get an invented answer. What this reports is the network the operator
+ * declared this deployment to be watching, which is the thing worth checking
+ * against reality before Sprint 8 puts real money behind it.
+ */
+const consoleProfile = process.env.REIN_NETWORK_PROFILE?.trim();
+const handle = createApiHandler(world, {
+  ...posture,
+  ...(remote
+    ? {
+        status: () => ({
+          ...remote.status(),
+          ...(consoleProfile ? { consoleProfile } : {}),
+        }),
+      }
+    : {}),
+});
 
 async function serveFile(path: string): Promise<{ body: Buffer; type: string } | null> {
   try {

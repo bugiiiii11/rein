@@ -17,6 +17,7 @@ export {
   type GateOutcome,
   type GateStats,
   type GateLineStats,
+  bazaarExtension,
 } from './gate.js';
 export {
   matchRoute,

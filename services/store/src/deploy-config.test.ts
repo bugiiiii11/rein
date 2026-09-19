@@ -92,7 +92,7 @@ describe('deploy configuration', () => {
       // Railway runs a start command as argv, not through a shell, so a
       // leading `exec` is looked up as a BINARY and the container never
       // starts -- an outage, versus a lost flush.
-      for (const name of ['railway.json', 'railway.engine.json']) {
+      for (const name of ['railway.json', 'railway.engine.json', 'railway.vendor.json']) {
         expect(railway(name).deploy.startCommand.startsWith('exec ')).toBe(false);
       }
     });
@@ -102,6 +102,58 @@ describe('deploy configuration', () => {
         deploy: { numReplicas: number };
       };
       expect(parsed.deploy.numReplicas).toBe(1);
+    });
+  });
+
+  /**
+   * The reference vendor (S67), same dashboard-checklist status as the engine:
+   * Config as Code cannot be opted into by a service created now, so nothing
+   * here is ENFORCED by Railway. What the test can still catch is the file
+   * drifting from the repo, which is how a checklist becomes a lie.
+   */
+  describe('the vendor service (railway.vendor.json -- dashboard checklist)', () => {
+    const config = JSON.parse(read('railway.vendor.json')) as {
+      deploy: { startCommand: string; healthcheckPath: string; numReplicas: number };
+    };
+
+    it('starts a built entry that exists in the repo', () => {
+      const parts = config.deploy.startCommand.split(/\s+/);
+      expect(parts[0]).toBe('node');
+      // dist/ is a build artifact, so the SOURCE is what can be asserted here.
+      expect(parts[1]).toBe('apps/vendor/dist/index.js');
+      expect(existsSync(join(repoRoot, 'apps/vendor/src/index.ts'))).toBe(true);
+    });
+
+    /**
+     * The S36 outage: an unhonoured start command is inferred as pnpm, and
+     * pnpm does not forward SIGTERM, so the drain never runs. `node` directly
+     * is the whole point -- see DEPLOY.md, "Why it must not start via pnpm".
+     */
+    it('never starts via pnpm and never prefixes with exec', () => {
+      expect(config.deploy.startCommand).not.toContain('pnpm');
+      expect(config.deploy.startCommand.startsWith('exec ')).toBe(false);
+    });
+
+    it('health-checks the free, public path the vendor actually serves', () => {
+      expect(config.deploy.healthcheckPath).toBe('/health');
+      const server = read('apps/vendor/src/server.ts');
+      expect(server).toContain("url.pathname === '/health'");
+      // A paywalled healthcheck would answer 402 and fail every deploy.
+      expect(server).toContain("url.pathname === '/stats'");
+    });
+
+    it('keeps one replica, because the gate store is single-node', () => {
+      expect(config.deploy.numReplicas).toBe(1);
+    });
+
+    /**
+     * The mainnet lane must stay something an operator arms deliberately.
+     * A default that constructed it would make this service a live mainnet
+     * seller the moment it deploys.
+     */
+    it('does not arm the mainnet lane from the deploy config', () => {
+      expect(read('railway.vendor.json')).not.toContain('REIN_VENDOR_MAINNET');
+      expect(read('apps/vendor/src/config.ts')).toContain("REIN_VENDOR_MAINNET?.trim() === '1'");
     });
   });
 
@@ -206,6 +258,50 @@ describe('deploy configuration', () => {
    * evidence behind it, so it is what the engine's dashboard field is copied
    * from, and a divergence here means the copy was never made.
    */
+  /**
+   * One image serves every service, so a start command can name an entry the
+   * image never built. The engine survives this by accident (the console
+   * depends on the store, so turbo builds it), which is exactly why it needs
+   * asserting: the next service added will not be so lucky, and the failure
+   * shows up only on that service, at boot, after a green build.
+   */
+  describe('the image builds every service it starts', () => {
+    const dockerfile = read('Dockerfile');
+    const buildFilters = [...dockerfile.matchAll(/--filter=(\S+)/g)].map((m) => m[1]);
+
+    it('builds the workspace each start command runs out of dist/', () => {
+      for (const name of ['railway.json', 'railway.engine.json', 'railway.vendor.json']) {
+        const { startCommand } = (
+          JSON.parse(read(name)) as { deploy: { startCommand: string } }
+        ).deploy;
+        const entry = startCommand.split(/\s+/).find((p) => p.includes('/'));
+        expect(entry, `${name} has no entry path`).toBeTruthy();
+        // Only dist/ entries depend on the build; tsx runs TypeScript sources.
+        if (!entry?.includes('/dist/')) continue;
+        const workspace = entry.split('/').slice(0, 2).join('/');
+        const pkg = JSON.parse(read(`${workspace}/package.json`)) as { name: string };
+        const covered =
+          buildFilters.includes(pkg.name) ||
+          // Reached transitively: a filtered package depends on this one.
+          buildFilters.some((f) => {
+            const dir = f.replace('@reinconsole/', '');
+            for (const root of ['apps', 'services', 'packages']) {
+              try {
+                const deps = JSON.parse(read(`${root}/${dir}/package.json`)) as {
+                  dependencies?: Record<string, string>;
+                };
+                if (deps.dependencies?.[pkg.name]) return true;
+              } catch {
+                /* not this root */
+              }
+            }
+            return false;
+          });
+        expect(covered, `${pkg.name} starts from dist/ but the image never builds it`).toBe(true);
+      }
+    });
+  });
+
   describe('watch patterns (which pushes reach production)', () => {
     const patternsOf = (name: string): string[] =>
       (JSON.parse(read(name)) as { build: { watchPatterns?: string[] } }).build.watchPatterns ?? [];
@@ -249,9 +345,10 @@ describe('deploy configuration', () => {
       }
     });
 
-    /** Both services build the SAME image from the same Dockerfile. */
-    it('keeps both services on the same list', () => {
+    /** Every service builds the SAME image from the same Dockerfile. */
+    it('keeps every service on the same list', () => {
       expect(patternsOf('railway.engine.json')).toEqual(patternsOf('railway.json'));
+      expect(patternsOf('railway.vendor.json')).toEqual(patternsOf('railway.json'));
     });
 
     /**

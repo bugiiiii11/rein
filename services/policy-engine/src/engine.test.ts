@@ -84,6 +84,39 @@ describe('PolicyEngine', () => {
     );
   });
 
+  /**
+   * S66 found the listing reporting `active` for an agent evaluation was
+   * already denying: the kill switch lives in its own table and `freeze`
+   * never rewrites the agent row. Over HTTP that field is all a remote reader
+   * gets — the console cannot consult a table it has no access to — so a
+   * stale value there tells an operator the kill switch is off while it is on.
+   */
+  it('reports a frozen agent as frozen in the listing, not just in evaluation', async () => {
+    const engine = new PolicyEngine();
+    await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+    const agent = await engine.registerAgent({
+      id: newId('agt'),
+      orgId: newId('org'),
+      name: 'kill-switched',
+      labels: [],
+      wallets: [],
+      status: 'active',
+      createdAt: new Date(),
+    });
+
+    expect(engine.visibleAgents().find((a) => a.id === agent.id)?.status).toBe('active');
+
+    await engine.freeze(agent.id);
+    expect(engine.visibleAgents().find((a) => a.id === agent.id)?.status).toBe('frozen');
+    // The same fact, read the other way — the two must not disagree.
+    expect((await engine.evaluateIntent(baseIntent(agent.id, '0.01'))).decision.outcome).toBe(
+      'deny',
+    );
+
+    await engine.unfreeze(agent.id);
+    expect(engine.visibleAgents().find((a) => a.id === agent.id)?.status).toBe('active');
+  });
+
   it('targets policies by agent label through the registry', async () => {
     const engine = new PolicyEngine();
     await engine.addPolicy({

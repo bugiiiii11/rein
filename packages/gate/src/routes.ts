@@ -22,6 +22,27 @@ export interface GateRoute {
   maxTimeoutSeconds?: number;
   /** EIP-712 domain hints etc., merged over the gate-level extra. */
   extra?: Record<string, unknown>;
+  /**
+   * Machine-readable discovery metadata for this route (Sprint 5.4).
+   *
+   * Present, it rides the v2 402 as `extensions.bazaar` -- what the route
+   * takes and what it returns, so an agent that has never seen this vendor
+   * can decide whether to buy WITHOUT a human reading the docs. That is the
+   * whole premise of a marketplace of paid APIs: the 402 is the listing.
+   *
+   * It advertises only. Nothing here is validated against the handler, and
+   * the gate enforces none of it -- a schema that claimed one shape while the
+   * route served another would be a lie the gate had signed off on, so the
+   * gate deliberately signs off on nothing. Carried on the v2 wire ONLY
+   * (`advertiseV2`): the v1 body has no extension slot, and inventing one
+   * would break every published v1 client's parser.
+   */
+  discovery?: {
+    /** JSON Schema (or any agreed descriptor) for the request. */
+    input?: unknown;
+    /** The same for the response body a paid call returns. */
+    output?: unknown;
+  };
 }
 
 /** Gate-level payment defaults every route inherits. */

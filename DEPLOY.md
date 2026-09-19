@@ -528,14 +528,88 @@ no overlapping deploys (the old process must exit before the new one opens the d
 to scale, SHARD tenants across engines with a data dir each rather than adding replicas to one.
 Retention and what is never pruned: `services/store/README.md`.
 
-### The public console is an exhibit, not a tenant dashboard
+### The public console: an exhibit until S67, a read-key client after it
 
-app.reinconsole.com is a single-world demonstration with its own embedded mock-railed engine,
-and it must NEVER be pointed at the hosted engine with authority over real agents. There is no
-console read key and there is not going to be one: a browser cannot hold a credential the way
-A1b requires, and a dashboard that could read one tenant's chain from a public origin is a
-cross-tenant leak waiting for a misconfiguration. Tenant observability is the engine API with
-an org-scoped `read` key, driven by whatever the tenant already uses.
+Through S66 app.reinconsole.com was a single-world demonstration with its own embedded
+mock-railed engine, and this section said it must NEVER be pointed at the hosted engine.
+Sprint 5.1 reverses the CONCLUSION and keeps the REASON, so read both before changing either.
+
+The reason was never "the console must not see real agents" -- it was that a BROWSER cannot
+hold a credential the way A1b requires, so a dashboard that fetched a tenant's chain from a
+public origin would be a cross-tenant leak waiting for a misconfiguration. That is still true
+and nothing here weakens it. What changed is where the key lives: `remote-world.ts` polls the
+engine from the console's SERVER process with an org-scoped `read` key, and the browser still
+talks only to `/api/*` on its own origin. No CORS exists on the engine and none is wanted --
+if the page could reach the engine directly, the key would have to reach the page.
+
+Two things keep it from becoming authority. The read key cannot mutate anything (the engine
+answers 403 on `/v1/evaluate`), and the remote world refuses every mutation BY CONSTRUCTION
+before a request is even made, so the posture does not rest on `REIN_CONSOLE_READONLY=1`
+staying set. The gate, signer and graph panels render empty: a policy engine has no receipts,
+no session keys and no reputation evidence, and showing zeros is the honest answer.
+
+Configure it on the console service:
+
+- `REIN_CONSOLE_ENGINE_URL` = `https://engine.reinconsole.com`
+- `REIN_CONSOLE_ENGINE_KEY` = the org-scoped **`read`** key (never the operator key)
+- keep `REIN_CONSOLE_READONLY=1`
+- optional: `REIN_CONSOLE_POLL_MS` (default 5000), `REIN_NETWORK_PROFILE` (a LABEL the
+  console reports on `/api/status`; the policy engine is network-agnostic and publishes none)
+
+**Setting the URL without the key is a REFUSED BOOT, deliberately.** A half-configured remote
+would otherwise fall back to the seeded local demo world and serve it as production -- which
+is exactly what S59 found happening, an S36 demo world being read as real.
+
+Once it is a remote client, DELETE the console's old volume: the world it held is no longer
+rendered, and a stale demo database that nothing reads is the S59 trap left lying around.
+
+`GET /api/status` is how you check the link without log access: `{ engine, state,
+publicKeyFingerprint, lastDecisionAt, lastPollAt }`. `state: "unreachable"` with the last good
+data still rendered is the intended behaviour -- one failed poll is not evidence that the
+engine's agents went away, and the dashboard says it is stale rather than blanking.
+
+Tenant observability for anyone else is unchanged: the engine API with an org-scoped `read`
+key, driven by whatever the tenant already uses.
+
+## Third service: the reference vendor (S67)
+
+`rein-vendor` at `vendor.reinconsole.com` is something for a governed agent to SPEND ON --
+the other half of what the console renders. Same repo, same image, same create-a-service
+procedure as the engine above, with these differences:
+
+- Custom Start Command = `node apps/vendor/dist/index.js`
+- Healthcheck Path = `/health`
+- Volume mounted at `/data`, with `REIN_VENDOR_DATA_DIR=/data/vendor` (never the mount path
+  itself -- see above) and `RAILWAY_RUN_UID=0` so the in-container privilege drop can run
+- `REIN_VENDOR_PAY_TO` = the testnet treasury address
+- `REIN_VENDOR_ORIGIN` = `https://vendor.reinconsole.com`, so quoted resources match what
+  agents actually requested rather than the internal host header
+
+**Do NOT set `REIN_VENDOR_MAINNET=1` before Sprint 8.** Without it the mainnet lane is not
+constructed at all and `/v1/*` 404s, so this process cannot take a real payment even if one
+is sent. Arming it additionally requires `REIN_VENDOR_MAINNET_PAY_TO` (a SEPARATE treasury)
+and `REIN_CDP_API_KEY_ID`/`REIN_CDP_API_KEY_SECRET`; the config refuses to boot without them,
+because an unauthenticated CDP call comes back 401 at settlement time, on the one network
+where the money is real.
+
+What it sells: `GET /testnet/v1/ping` at $0.001 -- the cheapest real payer smoke target there
+is, and what an invitee's first settled payment will be -- and `GET
+/testnet/v1/scores/vendor/:host` at $0.005. `GET /stats` and `GET /health` are free and
+public: the console's gate panel reads `/stats`, and a dashboard that had to pay to render
+itself would be absurd.
+
+Exit check, once it is up:
+
+```
+curl -s https://vendor.reinconsole.com/health
+curl -s -o /dev/null -w '%{http_code}
+' https://vendor.reinconsole.com/testnet/v1/ping   # 402
+curl -s -o /dev/null -w '%{http_code}
+' https://vendor.reinconsole.com/v1/ping           # 404
+curl -s https://vendor.reinconsole.com/stats
+```
+
+The `404` on `/v1/ping` is the load-bearing one: it proves the mainnet lane is off.
 
 ## Second service: the hosted engine (S58)
 

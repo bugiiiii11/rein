@@ -215,9 +215,25 @@ export class PolicyEngine {
     return readablePolicies(this.policies.list(), scope);
   }
 
-  /** The agents a caller may see. An unscoped operator sees all of them. */
+  /**
+   * The agents a caller may see. An unscoped operator sees all of them.
+   *
+   * `status` is RESOLVED here rather than read off the stored document. The
+   * kill switch lives in its own table (`freeze`/`unfreeze` never rewrite the
+   * agent row), so the stored `status` is whatever registration wrote and stays
+   * `active` for an agent evaluation is already denying. Over HTTP that field
+   * is the only thing a remote reader has — the console cannot consult a table
+   * it has no access to — so a listing that reported the stale value would tell
+   * an operator the kill switch is off while it is on.
+   */
   visibleAgents(scope?: TenantScope): Agent[] {
-    return this.agents.list().filter((agent) => ownsAgent(scope, agent));
+    return this.agents
+      .list()
+      .filter((agent) => ownsAgent(scope, agent))
+      .map((agent) => ({
+        ...agent,
+        status: this.agents.isFrozen(agent.id) ? ('frozen' as const) : ('active' as const),
+      }));
   }
 
   /**

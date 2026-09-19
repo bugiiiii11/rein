@@ -252,7 +252,7 @@ export class Gate {
         kind: 'quote',
         status: 402,
         body: { x402Version: 1, accepts: [requirement], error: 'X-PAYMENT header is required' },
-        ...this.v2Quote(requirement, 'PAYMENT-SIGNATURE header is required'),
+        ...this.v2Quote(requirement, 'PAYMENT-SIGNATURE header is required', route),
       };
     }
 
@@ -288,7 +288,7 @@ export class Gate {
       return { kind: 'paid', receipt, settlementHeader: settlement.header };
     } catch (err) {
       if (!(err instanceof GateError)) throw err;
-      return this.refuse(err, url.pathname, requirement, payer, wire);
+      return this.refuse(err, url.pathname, requirement, payer, wire, route);
     }
   }
 
@@ -522,6 +522,7 @@ export class Gate {
     requirement: PaymentRequirement,
     payer: string | undefined,
     wire: 1 | 2 | undefined,
+    route?: GateRoute,
   ): GateOutcome {
     this.fire(() => this.store.recordRefusal());
     this.emit({
@@ -578,7 +579,7 @@ export class Gate {
       code: err.code,
       reason: err.message,
       body: { x402Version: 1, accepts: [requirement], error: err.message },
-      ...this.v2Quote(requirement, err.message),
+      ...this.v2Quote(requirement, err.message, route),
       ...(wire === 2
         ? { paymentResponseHeader: v2FailureHeader(err, requirement, payer) }
         : {}),
@@ -589,16 +590,52 @@ export class Gate {
   private v2Quote(
     requirement: PaymentRequirement,
     error: string,
+    route?: GateRoute,
   ): { paymentRequiredHeader: string } | Record<string, never> {
     if (!this.advertiseV2) return {};
     return {
-      paymentRequiredHeader: encodeBase64Json(buildPaymentRequiredV2(requirement, error)),
+      paymentRequiredHeader: encodeBase64Json(
+        buildPaymentRequiredV2(requirement, error, bazaarExtension(route)),
+      ),
     };
   }
 }
 
 export function createGate(options: GateOptions): Gate {
   return new Gate(options);
+}
+
+/**
+ * The `extensions.bazaar` block a v2 402 carries when the route declares
+ * discovery metadata (Sprint 5.4).
+ *
+ * Two fields, and the split is the point. `info` is what a human or an agent
+ * reads to decide whether this is the thing they want; `schema` is what a
+ * client codes against. Folding them together would make every listing
+ * either unreadable or unusable.
+ *
+ * Returns an EMPTY object when the route declares nothing, so a vendor that
+ * has not opted in advertises no extension at all rather than an empty
+ * `bazaar` key that a listing crawler would have to special-case.
+ */
+export function bazaarExtension(route: GateRoute | undefined): Record<string, unknown> {
+  if (!route?.discovery) return {};
+  const { input, output } = route.discovery;
+  if (input === undefined && output === undefined) return {};
+  return {
+    bazaar: {
+      info: {
+        ...(route.description !== undefined ? { description: route.description } : {}),
+        ...(route.mimeType !== undefined ? { mimeType: route.mimeType } : {}),
+        method: route.method?.toUpperCase() ?? 'ANY',
+        path: route.path,
+      },
+      schema: {
+        ...(input !== undefined ? { input } : {}),
+        ...(output !== undefined ? { output } : {}),
+      },
+    },
+  };
 }
 
 /** The replay-slot key: hash of the exact header bytes as presented. */

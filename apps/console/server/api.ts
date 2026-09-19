@@ -38,6 +38,17 @@ export interface ApiOptions {
    * 64 is far above what a handful of humans with a dashboard open produce.
    */
   maxSseClients?: number;
+  /**
+   * What `GET /api/status` answers (Sprint 5.2). Present only when the console
+   * is a client of a hosted engine; a console running its own world has no
+   * link to report on, and the route 404s rather than inventing one.
+   *
+   * Deliberately server-to-server: the browser never calls the engine. There
+   * is no CORS on the engine and none is wanted — a public page that could
+   * reach the engine directly would be one misconfigured key away from being
+   * the authority path this topology exists to remove.
+   */
+  status?: () => unknown;
 }
 
 /** `REIN_CONSOLE_MAX_SSE` default — see `ApiOptions.maxSseClients`. */
@@ -135,6 +146,24 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
         startedAt: startedAt.toISOString(),
         uptimeMs: Date.now() - startedAt.getTime(),
       });
+      return true;
+    }
+
+    // GET /api/status — the link to the hosted engine (5.2): which engine,
+    // whether the last poll reached it, the signing-key fingerprint an
+    // operator can compare against the key they installed, and how fresh the
+    // newest decision is. Unauthenticated like the rest of the read surface:
+    // none of it is a credential, and a dashboard that cannot say whether it
+    // is showing live data is worse than one that admits it is stale.
+    if (method === 'GET' && pathname === '/api/status') {
+      if (options.status === undefined) {
+        sendJson(res, 404, {
+          error: 'no_remote_engine',
+          message: 'this console runs its own world; there is no engine link to report',
+        });
+        return true;
+      }
+      sendJson(res, 200, options.status());
       return true;
     }
 

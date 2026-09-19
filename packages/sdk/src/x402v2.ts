@@ -98,9 +98,21 @@ export function requirementFromV2(
 }
 
 /** The full v2 PaymentRequired for one quoted requirement. */
+/**
+ * Build the v2 PaymentRequired a vendor advertises.
+ *
+ * `extensions` is the spec's open slot for things that are not payment terms
+ * -- discovery metadata, for instance. It stays a plain record here rather
+ * than a union of known keys: the gate owns what goes in (see
+ * `GateRoute.discovery`), and a codec that validated the payload would have
+ * to be revised for every extension anyone ever writes. An empty object is
+ * still emitted when there is nothing to say, because the field is not
+ * optional on the wire.
+ */
 export function buildPaymentRequiredV2(
   requirement: PaymentRequirement,
   error: string,
+  extensions: Record<string, unknown> = {},
 ): PaymentRequiredV2 {
   return {
     x402Version: 2,
@@ -115,7 +127,7 @@ export function buildPaymentRequiredV2(
         }
       : {}),
     accepts: [v2Requirements(requirement)],
-    extensions: {},
+    extensions,
   };
 }
 

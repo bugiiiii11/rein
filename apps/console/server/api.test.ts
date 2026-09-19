@@ -103,6 +103,17 @@ describe('routing', () => {
     expect(fake.stateReads).toBe(reads);
   });
 
+  /**
+   * `/api/status` exists only on a console that is a client of a hosted
+   * engine. A console running its own world has no link to report on, and a
+   * fabricated "ok" there would be the one thing this route exists to stop.
+   */
+  it('GET /api/status 404s on a console that runs its own world', async () => {
+    const res = await fetch(`${base}/api/status`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: 'no_remote_engine' });
+  });
+
   it('non-/api/ paths fall through to the next middleware', async () => {
     for (const path of ['/', '/index.html', '/apix', '/api']) {
       const res = await fetch(`${base}${path}`);
@@ -233,5 +244,51 @@ describe('SSE stream', () => {
     } finally {
       await new Promise<void>((resolve) => server2.close(() => resolve()));
     }
+  });
+});
+
+describe('GET /api/status on a remote-engine console', () => {
+  let statusServer: Server;
+  let statusBase: string;
+  let reported: Record<string, unknown> = { engine: 'https://engine.example', state: 'ok' };
+
+  beforeAll(async () => {
+    const handle = createApiHandler(makeFakeWorld().world, { status: () => reported });
+    statusServer = createServer((req, res) => {
+      if (handle(req, res)) return;
+      res.writeHead(418);
+      res.end('fell through');
+    });
+    await new Promise<void>((r) => statusServer.listen(0, '127.0.0.1', r));
+    statusBase = `http://127.0.0.1:${(statusServer.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve, reject) =>
+      statusServer.close((err) => (err ? reject(err) : resolve())),
+    );
+  });
+
+  it('reports which engine, and whether the last poll reached it', async () => {
+    const res = await fetch(`${statusBase}/api/status`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await res.json()).toMatchObject({ engine: 'https://engine.example', state: 'ok' });
+  });
+
+  it('admits staleness rather than hiding it', async () => {
+    reported = {
+      engine: 'https://engine.example',
+      state: 'unreachable',
+      error: 'GET /health -> 502',
+      lastDecisionAt: '2026-09-19T00:00:00.000Z',
+    };
+    const body = (await (await fetch(`${statusBase}/api/status`)).json()) as { state: string };
+    expect(body.state).toBe('unreachable');
+  });
+
+  it('needs no credential — none of it is a secret', async () => {
+    const res = await fetch(`${statusBase}/api/status`, { headers: {} });
+    expect(res.status).toBe(200);
   });
 });

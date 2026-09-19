@@ -59,7 +59,15 @@ USER node
 # native binary built or the build crashes — the same gotcha as local dev, so rebuild it here.
 RUN pnpm install --frozen-lockfile \
  && pnpm rebuild esbuild \
- && pnpm exec turbo run build --filter=@reinconsole/console
+ && pnpm exec turbo run build --filter=@reinconsole/console --filter=@reinconsole/vendor
+
+# One image, three services (console, engine, vendor), so every service's start
+# command must find its entry HERE. The engine needs no filter of its own --
+# @reinconsole/console depends on @reinconsole/store, so turbo builds it anyway
+# -- but the vendor is nothing's dependency, and without its own filter
+# apps/vendor/dist/index.js simply would not exist. The failure would surface
+# only on the vendor service, at boot, after a green build. deploy-config.test.ts
+# pins this against every railway*.json start command.
 
 # Must stay AFTER the install above: set earlier, pnpm skips devDependencies and tsx —
 # which the start command runs — is not in the image.
