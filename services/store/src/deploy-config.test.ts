@@ -54,7 +54,18 @@ describe('deploy configuration', () => {
     });
   });
 
-  describe('the engine service (railway.engine.json)', () => {
+  /**
+   * `railway.engine.json` is a CHECKLIST, not configuration Railway reads
+   * (S65). Config as Code is deprecated and a NEW service cannot opt into it,
+   * so the engine service is configured in the Railway dashboard by hand and
+   * this file is the declared intent that dashboard must match.
+   *
+   * Everything below therefore catches REPO-side drift only -- a moved bin, a
+   * changed health path -- and is blind to the dashboard. When one of these
+   * fails, editing the file is HALF the fix; the other half is retyping the
+   * value in Railway, and no test can tell you that you forgot.
+   */
+  describe('the engine service (railway.engine.json -- dashboard checklist)', () => {
     const config = railway('railway.engine.json');
 
     /**
@@ -187,6 +198,13 @@ describe('deploy configuration', () => {
    *
    * Watch paths are gitignore-style patterns (Railway's monorepo guide), so
    * `deploys` below is a minimal gitignore matcher: last pattern to match wins.
+   *
+   * For the ENGINE this list is dashboard-typed rather than read from the file
+   * (S65), and Infrastructure as Code will not take it either -- the
+   * `.railway/railway.ts` DSL has no `watchPatterns` property at all. Keep the
+   * two lists identical here regardless: the console's is the one with deploy
+   * evidence behind it, so it is what the engine's dashboard field is copied
+   * from, and a divergence here means the copy was never made.
    */
   describe('watch patterns (which pushes reach production)', () => {
     const patternsOf = (name: string): string[] =>

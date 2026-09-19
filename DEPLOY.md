@@ -546,8 +546,23 @@ image. The console's Docker build already produces everything it needs --
 `services/store/dist/server.js` is in the image whether or not the console ever
 imports it. Two services, one image, different start commands.
 
-Config lives in `railway.engine.json`, selected per service with Railway's
-config-file path setting. `railway.json` continues to belong to the console.
+**Railway does NOT read `railway.engine.json`, and cannot be made to (S65).**
+Config as Code is deprecated -- *"New services cannot opt into Config as Code"* --
+and existing files keep working for LEGACY services only, until **2026-12-01**.
+The console is such a legacy service, so `railway.json` still governs it. An
+engine service created now is not, so every value below is typed into the
+DASHBOARD by hand and `railway.engine.json` is the CHECKLIST it must match:
+declared intent with no enforcement behind it. `deploy-config.test.ts` still
+pins that file to the artifacts it names, which catches REPO-side drift -- a
+moved bin, a changed health path -- but it cannot see the dashboard. Change a
+start command in code and you must retype it in Railway; nothing will tell you.
+
+Infrastructure as Code (`.railway/railway.ts`) is not an escape from this
+today. Its DSL has no `watchPatterns`, and `railway config migrate` silently
+drops `restartPolicy` and `builder`, so watch paths end up dashboard-managed
+either way. It is also whole-project -- omitting a resource DELETES it -- so
+adopting it means declaring the live console AND its volume in one apply. That
+migration is its own session, before the 2026-12-01 cutoff.
 
 | | console | engine |
 |---|---|---|
@@ -571,7 +586,22 @@ In Railway, a NEW service on this repo:
 
 - Root Directory = repo root (NOT `services/store`) -- the workspace must
   install and build together, same reason as the console.
-- Config file path = `railway.engine.json`.
+- **Config file path: expect the field to be gone, and do not go looking for
+  a way to re-enable it.** New services cannot opt into Config as Code (above).
+  Set these in the dashboard instead, copied from `railway.engine.json`:
+  - Custom Start Command = `node services/store/bin/rein-engine.mjs`
+  - Healthcheck Path = `/health`; Healthcheck Timeout = `300`
+  - Restart Policy = On Failure, max retries `10`; Replicas = `1`
+  - Watch Paths = `**`, `!**/*.md`, `!.github/**`, `!.claude/**`, `!scripts/**`
+    -- the S59/S60 subtractive list. An EMPTY Watch Paths field is safe (every
+    push rebuilds); a field scoped to one directory is the S59 bug, where a
+    push silently never reaches production and nothing says so.
+  - Leave Custom Build Command EMPTY -- the builder resolves the root
+    `Dockerfile` on its own, and a stray value here is the S61 console trap.
+  **Set the start command BEFORE the first deploy: the Dockerfile `CMD` is the
+  CONSOLE.** A missing start command means Railway infers a pnpm command and
+  the container never starts (S36, ~15 min of 502s); and were it ever to fall
+  back to `CMD`, you would get a second console writing to the engine volume.
 - Volume mounted at `/data`. **This bullet used to claim a fresh volume lands
   node-owned, so the engine would be non-root from its first deploy with no
   dashboard dance. That claim is FALSE and S59 proved it (2026-09-17.)** It
