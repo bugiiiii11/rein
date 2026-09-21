@@ -392,10 +392,11 @@ describe('deploy configuration', () => {
      * The only things deliberately left out, and why none of them can change
      * the running process: docs are prose (the one app that SERVES markdown is
      * apps/landing, which deploys on Vercel, not here), `.github/` is CI,
-     * `.claude/` is agent config, and `scripts/` holds the CI package smoke --
-     * which the root `build` script never touches.
+     * `.claude/` is agent config, and `scripts/` holds operator tooling (the CI
+     * package smoke, the backup export, the approval signer) -- none of which
+     * the root `build` script touches or the image runs.
      */
-    it('skips only docs, CI, agent config and CI-only scripts', () => {
+    it('skips only docs, CI, agent config and operator scripts', () => {
       const patterns = patternsOf('railway.json');
       for (const file of [
         'DEPLOY.md',
@@ -404,6 +405,8 @@ describe('deploy configuration', () => {
         '.github/workflows/ci.yml',
         '.claude/settings.json',
         'scripts/package-smoke.mjs',
+        'scripts/export-decisions.mjs',
+        'scripts/approve.mjs',
       ]) {
         expect(deploys(patterns, file), `${file} should not trigger a deploy`).toBe(false);
       }

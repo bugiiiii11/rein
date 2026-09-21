@@ -87,7 +87,11 @@ export type ApprovalView = z.infer<typeof ApprovalView>;
 const ResolveResponse = z.object({ request: ApprovalRequest, decision: Decision });
 export type ResolveResponse = z.infer<typeof ResolveResponse>;
 
-/** One allowance with no settlement behind it (B1). Mirrors the engine's shape. */
+/**
+ * One allowance the settlement facts disagree with (B1): nothing settled
+ * behind it, or — `overspent` — a settlement for more than it allowed, with
+ * the amount that moved in `settledAmount`. Mirrors the engine's shape.
+ */
 export const AllowanceGap = z.object({
   intentId: z.string(),
   decisionId: z.string().optional(),
@@ -95,10 +99,11 @@ export const AllowanceGap = z.object({
   host: z.string(),
   resource: z.string(),
   amount: z.string(),
+  settledAmount: z.string().optional(),
   taskId: z.string().optional(),
   allowedAt: z.number(),
   ageMs: z.number(),
-  state: z.enum(['in-flight', 'unsettled']),
+  state: z.enum(['in-flight', 'unsettled', 'overspent']),
 });
 export type AllowanceGap = z.infer<typeof AllowanceGap>;
 
@@ -121,6 +126,10 @@ export const ReconciliationReport = z.object({
   inFlightValue: z.string(),
   unsettled: z.number(),
   unsettledValue: z.string(),
+  // Optional on the wire so a 0.2.0 engine still validates; absent means the
+  // engine predates the check, not that nothing was overspent.
+  overspent: z.number().optional(),
+  overspentValue: z.string().optional(),
   unattributed: z.number(),
   settlementsSeen: z.number(),
   gaps: z.array(AllowanceGap),

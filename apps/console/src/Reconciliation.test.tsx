@@ -24,6 +24,8 @@ const view = (over: Partial<ReconciliationView> = {}): ReconciliationView => ({
   inFlightValue: '0',
   unsettled: 0,
   unsettledValue: '0',
+  overspent: 0,
+  overspentValue: '0',
   unattributed: 0,
   settlementsSeen: 0,
   gaps: [],
@@ -111,6 +113,34 @@ describe('Reconciliation panel', () => {
     expect(rows[1]?.textContent).toContain('shadow');
     expect(rows[1]?.textContent).toContain('research-agent-1');
     expect(el.querySelector('.panel.alarm')).not.toBeNull();
+    expect(el.textContent).toContain('2 to answer for');
+  });
+
+  it('lists an overspent settlement first, showing what moved and the ceiling it crossed', async () => {
+    const el = await render(
+      view({
+        allowed: 3,
+        settled: 3,
+        settlementsSeen: 3,
+        unsettled: 1,
+        unsettledValue: '0.01',
+        overspent: 1,
+        overspentValue: '0.04',
+        gaps: [
+          // The engine already orders these; the panel must not re-sort an
+          // overspend below a gap it happens to be older than.
+          gap({ intentId: 'int_over', state: 'overspent', amount: '0.01', settledAmount: '0.05' }),
+          gap({ intentId: 'int_gap' }),
+        ],
+      }),
+    );
+    const rows = [...el.querySelectorAll('.recon-row')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('overspent');
+    expect(rows[0]?.textContent).toContain('$0.05');
+    expect(rows[0]?.textContent).toContain('allowed $0.01');
+    expect(rows[1]?.textContent).toContain('unsettled');
+    expect(el.querySelector('.recon-strip')?.textContent).toContain('$0.04 over');
     expect(el.textContent).toContain('2 to answer for');
   });
 

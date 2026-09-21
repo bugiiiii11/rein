@@ -31,6 +31,10 @@ npx -p @reinconsole/policy-engine rein-policy-engine   # http://127.0.0.1:8787
 Unkeyed it binds loopback only; a public bind without an API key is a startup error by design. For
 anything non-local, issue a scoped key and pass `apiKey` / `REIN_ENGINE_API_KEY`.
 
+Or use the hosted engine at `https://engine.reinconsole.com` (invited beta). An invitee's key is
+scoped to one org and narrowed to one agent: it can submit that agent's payments and nothing else.
+`vendor.reinconsole.com/testnet/v1/ping` is a real $0.001 paywall to try it against.
+
 ## MCP integration
 
 ```json
@@ -41,7 +45,8 @@ anything non-local, issue a scoped key and pass `apiKey` / `REIN_ENGINE_API_KEY`
       "args": ["-y", "@reinconsole/mcp"],
       "env": {
         "REIN_ENGINE_URL": "http://127.0.0.1:8787",
-        "REIN_AGENT_ID": "agt_01J..."
+        "REIN_AGENT_ID": "agt_01J...",
+        "REIN_NETWORK_PROFILE": "testnet"
       }
     }
   }
@@ -51,6 +56,14 @@ anything non-local, issue a scoped key and pass `apiKey` / `REIN_ENGINE_API_KEY`
 Omit `REIN_PAYER_PRIVATE_KEY` and the server runs in **advisory mode**: policy is checked and
 reported, nothing is paid. That is the right default when demonstrating or testing — a wallet key
 should be handed over deliberately, never acquired by installing a server.
+
+`REIN_NETWORK_PROFILE` is `testnet` or `mainnet` (default `testnet`); an unknown value refuses to
+boot rather than falling back. The server prints one line to stderr when it is up, and a harness
+that shows nothing else will show this:
+
+```
+[rein-mcp] 0.2.0 ready on stdio for agt_01J... via https://engine.reinconsole.com (advisory -- no payer configured)
+```
 
 Tools: `rein_fetch` (the only one that can move money), `rein_status`, `rein_receipts`,
 `rein_escalations`, `rein_heartbeat`.
@@ -153,6 +166,13 @@ succeeded.
 raw key (local custody) or an injected account — `createX402Payer({ account })` accepts anything
 with `address` + `signTypedData`, so a viem `toAccount` bridges CDP, Privy, or Turnkey and the key
 stays with the provider.
+
+**A testnet-profile key never pays mainnet, and no policy can make that promise.** The engine maps
+Base and Base Sepolia onto one chain, so `vendorHostIn`, `amountGt` and the rest see no difference
+between a $0.001 testnet quote and a $0.001 mainnet one. The boundary lives in the guard and the
+payer: `REIN_NETWORK_PROFILE` for MCP, `networks: ['base-sepolia']` for `createGuard`, and the
+`profile` passed to `createX402Payer`. Set it explicitly in anything that could touch real money,
+never widen it to both networks in one process, and give a mainnet payer its own key and treasury.
 
 ## Testing an integration offline
 

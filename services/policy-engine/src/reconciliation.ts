@@ -1,8 +1,9 @@
-import { sumDecimal, type Window } from '@reinconsole/core';
+import { compareDecimal, subDecimal, sumDecimal, type Window } from '@reinconsole/core';
 import { parseWindowMs, type SettlementStorePort, type SpendStorePort } from './stores.js';
 
 /**
- * Reconciliation: "allowed but never settled" (Phase B1).
+ * Reconciliation: "allowed but never settled" (Phase B1), and its mirror,
+ * "settled for more than was allowed" (Sprint 6).
  *
  * The engine authorizes payments; it does not make them. Between the ALLOW and
  * the money there is a gap where a payment can quietly fail — a facilitator
@@ -10,6 +11,15 @@ import { parseWindowMs, type SettlementStorePort, type SpendStorePort } from './
  * mid-flight. Nothing in the stack notices on its own: the decision chain says
  * "allowed", the rolling budget has already been charged, and the payment
  * simply never happened. This module is the join that notices.
+ *
+ * The same join, read the other way, catches the payment that DID happen but
+ * moved more than the decision authorized. A settlement report may carry the
+ * amount as settled; an allowance carries the amount as allowed; when the
+ * first exceeds the second, money crossed the authority boundary — the exact
+ * event the whole product exists to prevent, and until now the two numbers sat
+ * side by side in the store and were never compared. Under-settlement is not
+ * flagged: a payment for less than the ceiling is inside its authority, and a
+ * reporter that rounds down is not a breach.
  *
  * Two rules hold the design honest:
  *
@@ -29,7 +39,10 @@ export const DEFAULT_RECONCILE_WINDOW: Window = '24h';
 /** Default cap on the rows a report carries (the COUNTS stay exact). */
 export const DEFAULT_RECONCILE_LIMIT = 100;
 
-/** One allowance with no settlement behind it. */
+/**
+ * One allowance the settlement facts disagree with: no settlement behind it,
+ * or a settlement for more than it granted.
+ */
 export interface AllowanceGap {
   intentId: string;
   /** The decision that authorized it — the audit link. */
@@ -37,8 +50,13 @@ export interface AllowanceGap {
   agentId: string;
   host: string;
   resource: string;
-  /** The amount ALLOWED. Nothing is known to have moved. */
+  /** The amount ALLOWED. For an `overspent` row, the ceiling that was crossed. */
   amount: string;
+  /**
+   * The amount that actually moved, as the settlement reporter saw it. Present
+   * only on `overspent` rows — for the others nothing is known to have moved.
+   */
+  settledAmount?: string;
   taskId?: string;
   allowedAt: number;
   ageMs: number;
@@ -47,8 +65,10 @@ export interface AllowanceGap {
    * `unsettled` once it is reached: the engine said yes and no one has seen
    * the money. The boundary itself counts as unsettled, so `graceMs: 0` means
    * exactly that — no grace at all.
+   * `overspent`: the money was seen, and there was more of it than the
+   * decision allowed. Grace has no bearing — the settlement already happened.
    */
-  state: 'in-flight' | 'unsettled';
+  state: 'in-flight' | 'unsettled' | 'overspent';
 }
 
 export interface ReconciliationReport {
@@ -68,6 +88,14 @@ export interface ReconciliationReport {
   unsettled: number;
   unsettledValue: string;
   /**
+   * Settled allowances whose reported amount EXCEEDS the amount allowed. These
+   * are counted in `settled` too — the money moved — and listed first in
+   * `gaps`. `overspentValue` is the sum of the EXCESS, not of the payments:
+   * it is the money that crossed the authority boundary.
+   */
+  overspent: number;
+  overspentValue: string;
+  /**
    * Allowances carrying no intent id, written before B1 existed. They cannot
    * be joined, so they are counted apart rather than reported as gaps: an
    * upgrade must not manufacture alarms out of history it cannot check.
@@ -79,7 +107,7 @@ export interface ReconciliationReport {
    * a console must say so instead of raising an alarm.
    */
   settlementsSeen: number;
-  /** Worst first: unsettled before in-flight, oldest before newest. */
+  /** Worst first: overspent, then unsettled, then in-flight; oldest before newest. */
   gaps: AllowanceGap[];
   /** True when `gaps` was capped by `limit`; the counts are still exact. */
   truncated: boolean;
@@ -133,6 +161,8 @@ export function reconcile(
   const settledAmounts: string[] = [];
   const inFlight: AllowanceGap[] = [];
   const unsettled: AllowanceGap[] = [];
+  const overspent: AllowanceGap[] = [];
+  const excess: string[] = [];
   const seenIntents = new Set<string>();
   let unattributed = 0;
 
@@ -146,12 +176,8 @@ export function reconcile(
     if (seenIntents.has(rec.intentId)) continue;
     seenIntents.add(rec.intentId);
 
-    if (settlements.get(rec.intentId)) {
-      settledAmounts.push(rec.amount);
-      continue;
-    }
     const ageMs = now - rec.at;
-    const gap: AllowanceGap = {
+    const base = {
       intentId: rec.intentId,
       ...(rec.decisionId !== undefined ? { decisionId: rec.decisionId } : {}),
       agentId: rec.agentId,
@@ -161,34 +187,57 @@ export function reconcile(
       ...(rec.taskId !== undefined ? { taskId: rec.taskId } : {}),
       allowedAt: rec.at,
       ageMs,
-      // Inclusive: grace that has fully elapsed is spent. Strict `>` would
-      // hand every allowance one millisecond of grace it was never granted,
-      // so `graceMs: 0` -- "no grace, count everything" -- could not be said.
-      state: ageMs >= graceMs ? 'unsettled' : 'in-flight',
     };
+
+    const settlement = settlements.get(rec.intentId);
+    if (settlement) {
+      // Summed at the amount ALLOWED, whatever moved: `settledValue` answers
+      // "how much authorized spend is confirmed", and the excess is reported
+      // on its own rather than folded in where it would be invisible.
+      settledAmounts.push(rec.amount);
+      // Only a reporter that SAW an amount can contradict the allowance. A
+      // settlement with no amount (the guard reports none, deliberately) is
+      // confirmation, not measurement, and a strict `>` is the whole rule:
+      // equal is exactly right, less is inside the ceiling.
+      if (settlement.amount !== undefined && compareDecimal(settlement.amount, rec.amount) > 0) {
+        overspent.push({ ...base, settledAmount: settlement.amount, state: 'overspent' });
+        excess.push(subDecimal(settlement.amount, rec.amount));
+      }
+      continue;
+    }
+    // Inclusive: grace that has fully elapsed is spent. Strict `>` would
+    // hand every allowance one millisecond of grace it was never granted,
+    // so `graceMs: 0` -- "no grace, count everything" -- could not be said.
+    const gap: AllowanceGap = { ...base, state: ageMs >= graceMs ? 'unsettled' : 'in-flight' };
     (gap.state === 'unsettled' ? unsettled : inFlight).push(gap);
   }
 
   // Oldest first inside each group: the longest-standing gap is the one worth
   // a human's attention, and it is the one a truncated list must not drop.
+  // Overspent rows lead the list: a gap is money that may not have moved, and
+  // an overspend is money that did, past the line the decision drew.
   const byAge = (a: AllowanceGap, b: AllowanceGap) => a.allowedAt - b.allowedAt;
+  overspent.sort(byAge);
   unsettled.sort(byAge);
   inFlight.sort(byAge);
-  const gaps = [...unsettled, ...inFlight];
+  const gaps = [...overspent, ...unsettled, ...inFlight];
+  const open = [...unsettled, ...inFlight];
 
   return {
     from,
     to: now,
     window,
     graceMs,
-    allowed: settledAmounts.length + gaps.length,
-    allowedValue: sumDecimal([...settledAmounts, ...gaps.map((g) => g.amount)]),
+    allowed: settledAmounts.length + open.length,
+    allowedValue: sumDecimal([...settledAmounts, ...open.map((g) => g.amount)]),
     settled: settledAmounts.length,
     settledValue: sumDecimal(settledAmounts),
     inFlight: inFlight.length,
     inFlightValue: sumDecimal(inFlight.map((g) => g.amount)),
     unsettled: unsettled.length,
     unsettledValue: sumDecimal(unsettled.map((g) => g.amount)),
+    overspent: overspent.length,
+    overspentValue: sumDecimal(excess),
     unattributed,
     settlementsSeen: settlements.count(),
     gaps: gaps.slice(0, limit),

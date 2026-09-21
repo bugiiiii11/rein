@@ -11,7 +11,51 @@ There are two integration paths. Pick one:
   runs in Claude Code, or any MCP-capable harness.
 - **SDK** — wrap the agent's own `fetch` in code. Start here if the agent is a program you control.
 
-Both need a policy engine running, which is step 1 for either.
+Both need a policy engine. Run one yourself (step 1), or use the hosted one (Path 0).
+
+---
+
+## Path 0 — the hosted engine (invited)
+
+If you were invited to the beta you already have an org, an agent and a key, and steps 1 and 2 are
+done for you. The engine is `https://engine.reinconsole.com`; the key is scoped to your org and
+narrowed to your one agent, so it can submit that agent's payments and nothing else.
+
+```json
+{
+  "mcpServers": {
+    "rein": {
+      "command": "npx",
+      "args": ["-y", "@reinconsole/mcp"],
+      "env": {
+        "REIN_ENGINE_URL": "https://engine.reinconsole.com",
+        "REIN_ENGINE_API_KEY": "rk_... (from your invitation)",
+        "REIN_AGENT_ID": "agt_01J... (from your invitation)",
+        "REIN_NETWORK_PROFILE": "testnet"
+      }
+    }
+  }
+}
+```
+
+The SDK path is the same four values passed to `createGuard` (`engineUrl`, `apiKey`, `agentId`,
+`networks: ['base-sepolia']`).
+
+Then, in order:
+
+1. **Advisory.** With no wallet key, call `rein_fetch` on
+   `https://vendor.reinconsole.com/testnet/v1/ping`. The vendor quotes $0.001; the engine decides;
+   the tool returns `ALLOWED_BUT_UNPAID`. The decision is already on
+   [app.reinconsole.com](https://app.reinconsole.com), and nothing moved.
+2. **Funded.** Get free testnet USDC for a wallet at <https://faucet.circle.com> (pick Base Sepolia;
+   no ETH needed, the facilitator pays gas). Add `REIN_PAYER_PRIVATE_KEY`. The same call now
+   settles, and `rein_receipts` shows it settled.
+3. **Refused.** Your starter policy caps a single payment; ask for
+   `https://vendor.reinconsole.com/testnet/v1/scores/vendor/api.example.com` ($0.005) until the
+   rolling budget refuses one, and read the `DENIED` reason back from the tool error.
+
+`REIN_NETWORK_PROFILE=testnet` is not decoration: the engine cannot tell Base from Base Sepolia,
+so this is what keeps a testnet key from ever paying a mainnet 402. Leave it set.
 
 ---
 
@@ -25,11 +69,12 @@ npx -p @reinconsole/policy-engine rein-policy-engine
 ```
 
 ```
-[rein] policy-engine listening on http://0.0.0.0:8787
+[rein] WARNING: no REIN_ENGINE_API_KEY set — binding 127.0.0.1 only. Set one before exposing this engine.
+[rein] policy-engine listening on http://127.0.0.1:8787 (auth: none)
 ```
 
-Unkeyed, it binds loopback only. That is deliberate: a public bind without an API key is a startup
-error, not a warning.
+Unkeyed, it binds loopback only, and says so. That is deliberate: a public bind without an API key
+is a startup error, not a warning.
 
 ## 2. Register an agent and write a policy
 
@@ -158,7 +203,12 @@ argument to `rein_fetch`) and a `taskBudget` rule can cap one unit of work. An i
 predicate if you need it.
 
 **Report settlements, or reconciliation reads every allowance as a gap.** The SDK guard does this
-for you by default.
+for you by default. A reporter that carries the settled amount also lets the engine catch the other
+failure: a settlement for MORE than the decision allowed is an `overspent` row, listed first.
+
+**A testnet-profile key never pays mainnet.** The engine maps Base and Base Sepolia onto one chain,
+so a policy cannot separate them; `REIN_NETWORK_PROFILE` (default `testnet`) does, in the guard
+and again in the payer. A mainnet 402 is refused before a signature exists.
 
 ## Policy vocabulary
 

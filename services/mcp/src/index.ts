@@ -12,6 +12,7 @@
  * no minting a key.
  */
 
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createGuard, type Guard } from '@reinconsole/sdk';
@@ -37,7 +38,16 @@ export type { ReinTool, ReinToolContext, ToolResult } from './tools.js';
 
 /** The server name harnesses show next to each tool. */
 export const SERVER_NAME = 'rein';
-export const SERVER_VERSION = '0.1.1';
+/**
+ * The version advertised in the MCP handshake and the boot banner, read from
+ * package.json rather than typed here: a hardcoded copy sat at `0.1.1` through
+ * two releases of a `0.2.0` package, so every harness was told a version that
+ * had never been published. `../package.json` resolves from both `src/` and
+ * `dist/`, which is why the path is one level up rather than computed.
+ */
+export const SERVER_VERSION: string = (
+  createRequire(import.meta.url)('../package.json') as { version: string }
+).version;
 
 /**
  * Build the guard and the tool context this server runs on. Exposed separately

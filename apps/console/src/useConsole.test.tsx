@@ -209,6 +209,8 @@ const RECONCILIATION: ReconciliationView = {
   inFlightValue: '0',
   unsettled: 0,
   unsettledValue: '0',
+  overspent: 0,
+  overspentValue: '0',
   unattributed: 0,
   settlementsSeen: 0,
   gaps: [],

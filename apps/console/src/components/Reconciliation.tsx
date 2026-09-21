@@ -39,6 +39,9 @@ function Row({ kind, amount, who, where, tail }: {
  * Reconciliation: the two ways the allowance ledger and the money can
  * disagree, in one panel because they are one join read in two directions.
  *
+ *   - "overspent" — the engine said yes to one amount and the settlement
+ *     reporter saw a larger one move. Listed first: it is the one row here
+ *     that is money past the authority boundary, not money in doubt.
  *   - "unsettled" (B1) — the engine said yes and nothing moved. The budget was
  *     charged all the same, which is why this is not cosmetic.
  *   - "shadow" — money moved with no decision behind it, the bypass signal
@@ -67,8 +70,11 @@ export function Reconciliation({
 }) {
   const shadows = feed.filter((f) => f.kind === 'shadow');
   const reporting = (reconciliation?.settlementsSeen ?? 0) > 0;
+  // The honesty valve gates both kinds: an overspent row can only exist once a
+  // reporter has spoken, so behind `reporting` it costs nothing, and keeping
+  // the two under one guard means the panel has one rule, not two.
   const gaps: AllowanceGapView[] = reporting
-    ? (reconciliation?.gaps ?? []).filter((g) => g.state === 'unsettled')
+    ? (reconciliation?.gaps ?? []).filter((g) => g.state !== 'in-flight')
     : [];
   const alerts = gaps.length + shadows.length;
 
@@ -86,18 +92,19 @@ export function Reconciliation({
     return undefined;
   }, [alerts]);
 
-  // Unsettled allowances first: an operator is looking for the thing that
-  // needs answering, and the shadow list is already history by the time it
-  // shows up here.
+  // Engine rows first, in the engine's own order (overspent, then unsettled):
+  // an operator is looking for the thing that needs answering, and the shadow
+  // list is already history by the time it shows up here. An overspent row
+  // shows the amount that MOVED, and the tail names the ceiling it crossed.
   const rows = [
     ...gaps.map((g) => (
       <Row
         key={g.intentId}
-        kind="unsettled"
-        amount={g.amount}
+        kind={g.state}
+        amount={g.state === 'overspent' ? g.settledAmount : g.amount}
         who={g.agentName}
         where={g.host}
-        tail={age(g.ageMs)}
+        tail={g.state === 'overspent' ? `allowed ${usd(g.amount)}` : age(g.ageMs)}
       />
     )),
     ...[...shadows].reverse().map((s) => (
@@ -138,9 +145,14 @@ export function Reconciliation({
           <span>
             <b>{reconciliation?.inFlight ?? 0}</b> in flight
           </span>
-          <span className={gaps.length > 0 ? 'is-bad' : ''}>
+          <span className={(reconciliation?.unsettled ?? 0) > 0 && reporting ? 'is-bad' : ''}>
             <b>{usd(reconciliation?.unsettledValue)}</b> unsettled
           </span>
+          {(reconciliation?.overspent ?? 0) > 0 && (
+            <span className="is-bad">
+              <b>{usd(reconciliation?.overspentValue)}</b> over
+            </span>
+          )}
         </div>
 
         {!reporting && (reconciliation?.allowed ?? 0) > 0 ? (

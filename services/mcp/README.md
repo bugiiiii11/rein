@@ -26,9 +26,18 @@ Rein is non-custodial. It governs an agent's authority to spend, not the funds.
 That is advisory mode: paywalls are evaluated against policy and reported, and nothing is ever
 paid. Add `REIN_PAYER_PRIVATE_KEY` to settle allowed payments.
 
-You need a policy engine to point at. `npx @reinconsole/policy-engine` runs one locally; see
+You need a policy engine to point at. `npx -p @reinconsole/policy-engine rein-policy-engine` runs
+one locally on `127.0.0.1:8787`; see
 [@reinconsole/policy-engine](https://www.npmjs.com/package/@reinconsole/policy-engine) for
-registering an agent and writing a policy.
+registering an agent and writing a policy. The hosted engine at `https://engine.reinconsole.com`
+is keyed and by invitation; set `REIN_ENGINE_API_KEY` to the key you were issued.
+
+When the server is up it prints exactly one line to stderr. A harness shows nothing else, so if
+this line is missing the server is not running, and whatever preceded it is why:
+
+```
+[rein-mcp] 0.2.0 ready on stdio for agt_01J... via http://127.0.0.1:8787 (advisory -- no payer configured)
+```
 
 ## Environment
 
@@ -38,11 +47,18 @@ registering an agent and writing a policy.
 | `REIN_AGENT_ID`               | yes                    | The one agent this server speaks for. Never a tool argument.                  |
 | `REIN_ENGINE_API_KEY`         | if the engine has auth | Bearer secret for the engine.                                                 |
 | `REIN_PAYER_PRIVATE_KEY`      | no                     | Agent wallet key. Omit for advisory mode: policy is checked, nothing is paid. |
+| `REIN_NETWORK_PROFILE`        | no                     | `testnet` (default) or `mainnet`. Which network's 402s this server will pay; the other is refused before a signature exists. An unknown value refuses to boot. |
 | `REIN_MCP_TASK_ID`            | no                     | Default task attribution, so per-task budgets can cap this agent's work.      |
 | `REIN_MCP_ESCALATION_WAIT_MS` | no                     | Hold a tool call open this long waiting for a signed approval. Default `0`.   |
 | `REIN_MCP_MAX_BODY_BYTES`     | no                     | Cap on the response body returned to the model. Default 65536.                |
 
 Everything is fixed at startup. Nothing here is reachable from a tool call.
+
+`REIN_NETWORK_PROFILE` exists because the engine cannot draw this line: it maps Base and Base
+Sepolia onto the same chain, so a policy that allows one allows both, and the vendor's 402 would
+otherwise choose which network the agent's key spends on. The default is testnet, which means a
+`0.1.x` install that paid mainnet 402s will refuse them until the profile is set to `mainnet` on
+purpose.
 
 On a HOSTED engine, `REIN_ENGINE_API_KEY` should be an `evaluate` key issued with the org
 and narrowed to this one agent:

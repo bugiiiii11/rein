@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { newId } from '@reinconsole/core';
-import { createReinMcpServer, SERVER_NAME } from './index.js';
+import { readFileSync } from 'node:fs';
+import { createReinMcpServer, SERVER_NAME, SERVER_VERSION } from './index.js';
 
 /**
  * The tool handlers are exercised in `tools.test.ts`. This file covers the
@@ -75,6 +76,19 @@ describe('the MCP protocol surface', () => {
     });
     expect(result.isError).toBe(true);
 
+    await close();
+  });
+});
+
+describe('the advertised version', () => {
+  it('is the package version, not a copy that can go stale', async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version: string;
+    };
+    expect(SERVER_VERSION).toBe(pkg.version);
+    // And it is what a harness actually sees across the wire.
+    const { client, close } = await connect();
+    expect(client.getServerVersion()?.version).toBe(pkg.version);
     await close();
   });
 });

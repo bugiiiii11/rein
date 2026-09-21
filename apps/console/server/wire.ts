@@ -13,6 +13,8 @@ export type FeedKind =
   | 'shadow'
   // the mirror of a shadow spend: an allowance whose money never moved
   | 'unsettled'
+  // the other mirror: an allowance whose money moved, and more of it than allowed
+  | 'overspent'
   // dead-man (B2): a watched agent went quiet, and the sighting that ended it
   | 'missing'
   | 'recovered'
@@ -50,6 +52,8 @@ export interface FeedItem {
   txHash?: string;
   chain?: string;
   blockNumber?: string; // bigint serialized as string
+  // overspent: `amount` is what MOVED; this is the ceiling the decision set
+  allowedAmount?: string;
   // gate (vendor side)
   method?: string;
   route?: string;
@@ -293,11 +297,12 @@ export interface BreakerView {
 }
 
 /**
- * One allowance with no settlement behind it (B1), flattened for render.
+ * One allowance the settlement facts disagree with (B1), flattened for render.
  *
  * The mirror image of a shadow spend: a shadow spend is money that moved with
- * no allowance behind it, and this is an allowance with no money behind it.
- * Both are the same join failing, in opposite directions.
+ * no allowance behind it, and this is an allowance with no money behind it —
+ * or, for an `overspent` row, with MORE money behind it than it granted.
+ * All three are the same join failing, in different directions.
  */
 export interface AllowanceGapView {
   intentId: string;
@@ -307,12 +312,17 @@ export interface AllowanceGapView {
   agentName: string;
   host: string;
   resource: string;
-  /** The amount ALLOWED. Nothing is known to have moved. */
+  /** The amount ALLOWED. For an overspent row, the ceiling that was crossed. */
   amount: string;
+  /** What actually moved, per the settlement reporter. Overspent rows only. */
+  settledAmount?: string;
   allowedAt: string; // ISO
   ageMs: number;
-  /** `in-flight` is the normal state of any fresh payment; `unsettled` is not. */
-  state: 'in-flight' | 'unsettled';
+  /**
+   * `in-flight` is the normal state of any fresh payment; `unsettled` is not;
+   * `overspent` is the settlement that exceeded its decision.
+   */
+  state: 'in-flight' | 'unsettled' | 'overspent';
 }
 
 /**
@@ -339,10 +349,13 @@ export interface ReconciliationView {
   inFlightValue: string;
   unsettled: number;
   unsettledValue: string;
+  /** Settled for more than allowed; the value is the EXCESS, not the payments. */
+  overspent: number;
+  overspentValue: string;
   /** Allowances written before B1: no intent id, so nothing to join on. */
   unattributed: number;
   settlementsSeen: number;
-  /** Worst first: unsettled before in-flight, oldest before newest. */
+  /** Worst first: overspent, then unsettled, then in-flight; oldest before newest. */
   gaps: AllowanceGapView[];
   /** When this report was computed — every `ageMs` is relative to it. */
   at: string; // ISO

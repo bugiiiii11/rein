@@ -471,7 +471,7 @@ async function main() {
   console.log(`  Reporters seen:    ${report.settlementsSeen} settlement reports`);
   for (const gap of report.gaps) {
     console.log(
-      `\n  [UNSETTLED]  ${usd(gap.amount)}  ${gap.host}${gap.resource}` +
+      `\n  [${gap.state.toUpperCase()}]  ${usd(gap.amount)}  ${gap.host}${gap.resource}` +
         `\n    intent:    ${gap.intentId}` +
         `\n    decision:  ${gap.decisionId}` +
         `\n    allowed:   ${new Date(gap.allowedAt).toISOString()}`,

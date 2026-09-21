@@ -307,3 +307,74 @@ describe('the report itself', () => {
     expect(Number(report.unsettledValue)).toBeCloseTo(1);
   });
 });
+
+describe('the join read the other way: settled for more than was allowed', () => {
+  async function settledFor(settledAmount: string | undefined, allowed = '1.00') {
+    const engine = await allowingEngine();
+    const { intent } = await engine.evaluateIntent(baseIntent(newId('agt'), allowed));
+    await engine.recordSettlement({
+      intentId: intent.id,
+      source: 'indexer',
+      confirmedAt: new Date(),
+      ...(settledAmount !== undefined ? { amount: settledAmount } : {}),
+    });
+    return { engine, intent };
+  }
+
+  it('reports a settlement above the allowance as overspent, valued at the EXCESS', async () => {
+    const { engine, intent } = await settledFor('1.25');
+    const report = engine.reconcile({ graceMs: 0 });
+
+    expect(report.overspent).toBe(1);
+    expect(report.overspentValue).toBe('0.25');
+    // Still settled -- the money moved -- and still summed at the amount
+    // ALLOWED, so the excess is visible on its own line rather than folded in.
+    expect(report.settled).toBe(1);
+    expect(report.settledValue).toBe('1');
+    expect(report.unsettled).toBe(0);
+    expect(report.gaps).toHaveLength(1);
+    expect(report.gaps[0]).toMatchObject({
+      intentId: intent.id,
+      state: 'overspent',
+      amount: '1.00',
+      settledAmount: '1.25',
+    });
+  });
+
+  it('does not flag a settlement for exactly the allowed amount', async () => {
+    const { engine } = await settledFor('1.00');
+    const report = engine.reconcile({ graceMs: 0 });
+    expect(report.overspent).toBe(0);
+    expect(report.overspentValue).toBe('0');
+    expect(report.gaps).toEqual([]);
+  });
+
+  it('does not flag a settlement under the ceiling, or one that reports no amount', async () => {
+    // Less than allowed is inside the authority granted.
+    expect((await settledFor('0.90')).engine.reconcile({ graceMs: 0 }).overspent).toBe(0);
+    // The guard reports no amount on purpose: confirmation is not measurement,
+    // and a missing number must never read as a breach.
+    expect((await settledFor(undefined)).engine.reconcile({ graceMs: 0 }).overspent).toBe(0);
+  });
+
+  it('sorts overspent ahead of unsettled -- money that moved past the line outranks money in doubt', async () => {
+    const engine = await allowingEngine();
+    const agentId = newId('agt');
+    // The gap is OLDER, so age alone would put it first.
+    const gap = await engine.evaluateIntent(baseIntent(agentId, '2.00'));
+    await new Promise((r) => setTimeout(r, 5));
+    const over = await engine.evaluateIntent(baseIntent(agentId, '1.00'));
+    await engine.recordSettlement({
+      intentId: over.intent.id,
+      amount: '3.00',
+      confirmedAt: new Date(),
+    });
+
+    const report = engine.reconcile({ graceMs: 0 });
+    expect(report.gaps.map((g) => g.state)).toEqual(['overspent', 'unsettled']);
+    expect(report.gaps[0]?.intentId).toBe(over.intent.id);
+    expect(report.gaps[1]?.intentId).toBe(gap.intent.id);
+    expect(report.allowed).toBe(2);
+    expect(report.overspentValue).toBe('2');
+  });
+});

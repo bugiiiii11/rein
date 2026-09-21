@@ -69,6 +69,20 @@ export function sumDecimal(values: readonly string[]): string {
   return fromScaled(total, scale);
 }
 
+/**
+ * `a - b` for decimal strings, exact. Requires `a >= b`: the one caller is
+ * "how much more settled than was allowed", and a negative money string is a
+ * shape nothing else in the system accepts, so asking for one is a bug here
+ * rather than a value to hand on.
+ */
+export function subDecimal(a: string, b: string): string {
+  if (compareDecimal(a, b) < 0) {
+    throw new RangeError(`subDecimal: ${a} is less than ${b}`);
+  }
+  const scale = Math.max(fractionLength(a), fractionLength(b));
+  return fromScaled(toScaled(a, scale) - toScaled(b, scale), scale);
+}
+
 /** Multiply two decimal strings exactly (e.g. median * "3" for price-sanity). */
 export function mulDecimal(a: string, b: string): string {
   assertDecimal(a);

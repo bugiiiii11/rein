@@ -166,7 +166,35 @@ const gate = createGate({ /* routes, rails, ... */ store: store.gate });
 const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem, store: store.sessions });
 ```
 
-## Real rails: Base Sepolia
+## The hosted engine (invited beta)
+
+Rein runs a hosted policy engine at **`https://engine.reinconsole.com`** with the public console at [app.reinconsole.com](https://app.reinconsole.com) reading from it, and a reference vendor at **`vendor.reinconsole.com`** that sells two testnet routes through `@reinconsole/gate` (`/testnet/v1/ping` at $0.001, `/testnet/v1/scores/vendor/:host` at $0.005). Access is by invitation while the beta is small: an invitee gets an org, an agent, a starter policy and an org-scoped API key narrowed to that agent, which is the whole blast radius of the secret.
+
+```json
+{
+  "mcpServers": {
+    "rein": {
+      "command": "npx",
+      "args": ["-y", "@reinconsole/mcp"],
+      "env": {
+        "REIN_ENGINE_URL": "https://engine.reinconsole.com",
+        "REIN_ENGINE_API_KEY": "rk_...",
+        "REIN_AGENT_ID": "agt_01J...",
+        "REIN_NETWORK_PROFILE": "testnet"
+      }
+    }
+  }
+}
+```
+
+Two things to know before the first call:
+
+- **The network is a profile, not a policy.** The engine maps Base and Base Sepolia onto the same chain, so policy alone cannot keep a testnet agent off mainnet. `REIN_NETWORK_PROFILE` (default `testnet`) is enforced in the guard and again in the payer: a testnet-profile install refuses a mainnet 402 before a signature exists, and a mainnet vendor is invisible to it rather than merely denied.
+- **Advisory first, then funded.** Without `REIN_PAYER_PRIVATE_KEY` every paywall answers `ALLOWED_BUT_UNPAID`: the decision is on the chain and on the console, and nothing moved. Fund a wallet with free testnet USDC from [faucet.circle.com](https://faucet.circle.com) (Base Sepolia), add the key, and the same call settles and shows up as a receipt.
+
+## Real rails: Base and Base Sepolia
+
+Every network Rein pays on is a `NetworkProfile` (`@reinconsole/x402-rails`): chain id, USDC contract, facilitator and the EIP-712 domain, verified live against the real contract rather than asserted. Testnet settles through the hosted x402.org facilitator, which lists only `base-sepolia` and charges nothing. Mainnet (`base`) settles through Coinbase's CDP facilitator, which needs CDP API credentials and is free for the first 1,000 settlements a month, then $0.001 each; the mainnet lane of the reference vendor stays unarmed until it has a separate treasury and those credentials.
 
 The same guard loop on a real chain — a guarded $0.01 USDC payment settled on-chain by the hosted x402.org facilitator, then a rogue payment that bypasses the guard and gets caught:
 
@@ -410,7 +438,7 @@ Rein closes that loop by joining the allowance ledger against settlement facts:
 ```ts
 await client.reportSettlement({ intentId, txHash, source: 'indexer', confirmedAt: new Date() });
 const report = await client.reconciliation({ window: '24h', graceMs: 60_000 });
-// → { allowed, settled, inFlight, unsettled, unsettledValue, settlementsSeen, gaps: [...] }
+// → { allowed, settled, inFlight, unsettled, unsettledValue, overspent, overspentValue, settlementsSeen, gaps: [...] }
 ```
 
 The guard reports its own settlements automatically (fire-and-forget — a failed report
@@ -421,6 +449,9 @@ is the stronger reporter, and `reportSettlement: false` hands the job over to it
   in flight, which is the normal state of every payment for its first seconds.
 - The unsettled allowance **keeps its charge** against the budget. Refunding it would be
   a self-service reset: don't settle, and the envelope refills.
+- The same join runs the other way: a settlement reported with an **amount above the
+  amount allowed** is an `overspent` row, listed first, with `overspentValue` summing the
+  excess. Equal is right and less is inside the ceiling; only more is a breach.
 - `settlementsSeen` is the honesty valve. The engine watches no chain — it is *told* when
   payments land — so zero reports means nobody is looking, and the gaps say more about
   the wiring than about the payments. The console renders that case differently.

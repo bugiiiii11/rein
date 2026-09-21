@@ -384,8 +384,33 @@ signature made elsewhere and is gated exactly like freeze/unfreeze (so a read-on
 answers `403`).
 
 The policy engine's standalone server has the stricter rule -- no `REIN_ENGINE_API_KEY` means
-it binds loopback only, and asking for a public bind without one is a startup error. It is not
-deployed on Railway today; if it ever is, it needs the key first.
+it binds loopback only, and asking for a public bind without one is a startup error. The hosted
+engine (S65) runs keyed for exactly that reason.
+
+### Answering an escalation: `scripts/approve.mjs` (S68)
+
+The signing side of A2. Telegram shows the human the challenge; this script is where their
+private key signs it, so it runs where that key lives (a laptop, an ops box) and never on
+Railway. It fetches the parked request from the engine, prints the engine's OWN record of the
+payment (amount, vendor, resource, reason, time left), and stops -- what a human signs must be
+what they read, and the Telegram text is a copy, not the record. A second run with `--yes`
+signs with the same `signApproval` the engine verifies with and submits the grant;
+`--dry-run` signs without submitting, for checking a signature or carrying it by hand.
+
+```
+REIN_ENGINE_URL=https://engine.reinconsole.com
+REIN_KEY_APPROVE=rk_...                       # a key with the `approve` scope (the GET needs `read`)
+REIN_APPROVER_KEY_ID=apk_01J...               # the id POST /v1/approvers returned
+REIN_APPROVER_PRIVATE_KEY_FILE=~/.rein/approver.pem   # or REIN_APPROVER_PRIVATE_KEY (PEM, "\n" accepted)
+pnpm approve <decisionId> approve             # show and stop
+pnpm approve <decisionId> approve --yes       # sign and submit
+```
+
+An already-resolved or expired request is a refused run, not a silent no-op: after expiry the
+engine denies on its next sweep and a signature changes nothing, so the script says so instead
+of submitting one. Register the approver's PUBLIC half with `POST /v1/approvers` under the
+invitee's org; a key registered in one org cannot answer another org's escalation, and the
+engine returns 404 rather than 403 for a foreign request so org ids stay unenumerable.
 
 ## Standalone service bins (S48)
 

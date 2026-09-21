@@ -157,9 +157,10 @@ interface RemoteGap {
   host: string;
   resource: string;
   amount: string;
+  settledAmount?: string;
   allowedAt: number;
   ageMs: number;
-  state: 'in-flight' | 'unsettled';
+  state: 'in-flight' | 'unsettled' | 'overspent';
 }
 
 interface RemoteReconciliation {
@@ -173,6 +174,8 @@ interface RemoteReconciliation {
   inFlightValue: string;
   unsettled: number;
   unsettledValue: string;
+  overspent: number;
+  overspentValue: string;
   unattributed: number;
   settlementsSeen: number;
   gaps: RemoteGap[];
@@ -262,6 +265,8 @@ function emptyReconciliation(at: string): ReconciliationView {
     inFlightValue: '0',
     unsettled: 0,
     unsettledValue: '0',
+    overspent: 0,
+    overspentValue: '0',
     unattributed: 0,
     // Zero here is the honesty valve doing its job: a console that has not
     // reached the engine knows of no reporter, and the panel says so rather
@@ -586,6 +591,10 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
         inFlightValue: reconRes.body.inFlightValue,
         unsettled: reconRes.body.unsettled,
         unsettledValue: reconRes.body.unsettledValue,
+        // An engine older than Sprint 6 sends no overspent fields; a missing
+        // count is zero rather than a crashed poll.
+        overspent: reconRes.body.overspent ?? 0,
+        overspentValue: reconRes.body.overspentValue ?? '0',
         unattributed: reconRes.body.unattributed,
         settlementsSeen: reconRes.body.settlementsSeen,
         gaps: reconRes.body.gaps.map(
@@ -597,6 +606,7 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
             host: g.host,
             resource: g.resource,
             amount: g.amount,
+            ...(g.settledAmount !== undefined ? { settledAmount: g.settledAmount } : {}),
             allowedAt: new Date(g.allowedAt).toISOString(),
             ageMs: g.ageMs,
             state: g.state,

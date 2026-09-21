@@ -16,6 +16,9 @@ importers:
       '@reinconsole/core':
         specifier: workspace:*
         version: link:packages/core
+      '@reinconsole/policy-engine':
+        specifier: workspace:*
+        version: link:services/policy-engine
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.20

@@ -6,6 +6,7 @@ function verbOf(f: FeedItem): { text: string; cls: string } {
   if (f.kind === 'settled') return { text: 'SETTLED', cls: 'settled' };
   if (f.kind === 'shadow') return { text: 'SHADOW SPEND', cls: 'shadow' };
   if (f.kind === 'unsettled') return { text: 'UNSETTLED', cls: 'shadow' };
+  if (f.kind === 'overspent') return { text: 'OVERSPENT', cls: 'shadow' };
   if (f.kind === 'missing') return { text: 'AGENT MISSING', cls: 'shadow' };
   if (f.kind === 'recovered') return { text: 'AGENT BACK', cls: 'allow' };
   if (f.kind === 'quote') return { text: 'QUOTED', cls: 'quote' };
@@ -37,6 +38,14 @@ function Sub({ f }: { f: FeedItem }) {
       <div className="feed-sub">
         allowed, never settled · <span className="who">{who}</span> · decision{' '}
         {midHash(f.decisionId, 6, 4)}
+      </div>
+    );
+  }
+  if (f.kind === 'overspent') {
+    return (
+      <div className="feed-sub">
+        settled above the {usd(f.allowedAmount)} allowed · <span className="who">{who}</span> ·
+        decision {midHash(f.decisionId, 6, 4)}
       </div>
     );
   }
@@ -109,6 +118,7 @@ function Right({ f }: { f: FeedItem }) {
   if (f.kind === 'decision') return <span className="mono">{latency(f.latencyMs)}</span>;
   if (f.kind === 'settled') return <span className="feed-badge">on-chain</span>;
   if (f.kind === 'unsettled') return <span className="feed-badge bad">reconciliation</span>;
+  if (f.kind === 'overspent') return <span className="feed-badge bad">reconciliation</span>;
   if (f.kind === 'missing') return <span className="feed-badge bad">dead man</span>;
   if (f.kind === 'recovered') return <span className="feed-badge ok">dead man</span>;
   if (f.kind === 'quote') return <span className="feed-badge dim">402</span>;

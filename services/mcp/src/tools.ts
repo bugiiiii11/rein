@@ -383,6 +383,11 @@ function receiptsTool(ctx: ReinToolContext): ReinTool {
                 settled: report.value.settled,
                 inFlight: report.value.inFlight,
                 unsettled: report.value.unsettled,
+                // Settled for MORE than the decision allowed. The one number
+                // here that is a breach rather than a doubt, so it is never
+                // folded into the others.
+                overspent: report.value.overspent ?? 0,
+                overspentValue: report.value.overspentValue ?? '0',
                 gaps: report.value.gaps,
                 // The B1 honesty valve: with nobody reporting settlements, every
                 // allowance reads as a gap. That says something about the

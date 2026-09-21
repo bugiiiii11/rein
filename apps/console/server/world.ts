@@ -869,6 +869,8 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       inFlightValue: report.inFlightValue,
       unsettled: report.unsettled,
       unsettledValue: report.unsettledValue,
+      overspent: report.overspent,
+      overspentValue: report.overspentValue,
       unattributed: report.unattributed,
       settlementsSeen: report.settlementsSeen,
       gaps: report.gaps.map(
@@ -880,6 +882,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
           host: g.host,
           resource: g.resource,
           amount: g.amount,
+          ...(g.settledAmount !== undefined ? { settledAmount: g.settledAmount } : {}),
           allowedAt: new Date(g.allowedAt).toISOString(),
           ageMs: g.ageMs,
           state: g.state,
@@ -974,15 +977,21 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       if (allowedAt < windowFrom) announcedGaps.delete(intentId);
     }
     for (const gap of view.gaps) {
-      if (gap.state !== 'unsettled' || announcedGaps.has(gap.intentId)) continue;
+      if (gap.state === 'in-flight' || announcedGaps.has(gap.intentId)) continue;
       announcedGaps.set(gap.intentId, Date.parse(gap.allowedAt));
+      // One announcement per intent, whichever state it is first seen in: an
+      // allowance that was unsettled and later settles OVER its ceiling is a
+      // second story, but the map is keyed to keep the feed from repeating
+      // itself, and the panel carries the current state regardless.
       pushFeed({
         seq: ++seq,
         at: new Date(now).toISOString(),
-        kind: 'unsettled',
+        kind: gap.state,
         agentId: gap.agentId,
         agentName: gap.agentName,
-        amount: gap.amount,
+        // For an overspend the amount is what MOVED; the ceiling rides beside it.
+        amount: gap.state === 'overspent' ? (gap.settledAmount ?? gap.amount) : gap.amount,
+        ...(gap.state === 'overspent' ? { allowedAmount: gap.amount } : {}),
         host: gap.host,
         resource: gap.resource,
         intentId: gap.intentId,
