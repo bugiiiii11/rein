@@ -31,6 +31,12 @@ jobs:
     timeout-minutes: 15
     if: github.event_name != 'pull_request'
 
+    # Job-level so the notify step's `if:` can test the token without the
+    # secret reaching every other step.
+    env:
+      REIN_TELEGRAM_BOT_TOKEN: ${{ secrets.REIN_TELEGRAM_BOT_TOKEN }}
+      REIN_TELEGRAM_CHAT_ID: ${{ secrets.REIN_TELEGRAM_CHAT_ID }}
+
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -81,3 +87,19 @@ jobs:
       # how many decisions were verified and whether the export was rooted.
       - name: Manifest
         run: cat .backup-repo/decisions/latest.json
+
+      # This workflow ran with NO alarm until 2026-09-21, which is why a broken
+      # hosted engine cost two nights of backups before anyone noticed. A
+      # nightly that fails silently is indistinguishable from one that never
+      # ran; the whole point of the job is the copy existing when Railway's is
+      # gone, and that is exactly when nobody is looking.
+      #
+      # `sh scripts/...` rather than executing it directly: a Windows checkout
+      # does not preserve the exec bit, and an alarm that only runs on some
+      # checkouts is the failure mode this file is about.
+      - name: Notify on failure
+        if: failure() && env.REIN_TELEGRAM_BOT_TOKEN != ''
+        run: >
+          sh scripts/notify-telegram.sh
+          "Rein nightly backup FAILED -- the decision chain was NOT exported.
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

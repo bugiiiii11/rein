@@ -146,9 +146,7 @@ jobs:
       # this a standing end-to-end check that the channel still works.
       - name: Notify on failure
         if: failure() && env.REIN_TELEGRAM_BOT_TOKEN != ''
-        run: |
-          curl -sS -X POST \
-            "https://api.telegram.org/bot${REIN_TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${REIN_TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=Rein live run failed:${FAILED_SUITES:- see logs} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            > /dev/null
+        run: >
+          sh scripts/notify-telegram.sh
+          "Rein live run failed:${FAILED_SUITES:- see logs}
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

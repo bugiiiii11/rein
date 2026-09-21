@@ -73,6 +73,23 @@ const get = async (pathname) => {
     headers: { authorization: `Bearer ${apiKey}` },
   });
   if (!res.ok) die(`GET ${pathname} -> ${res.status} ${res.statusText}`);
+  // A 200 is NOT enough, because the thing answering may not be the engine.
+  // Every Rein service is built from one image whose default CMD is the
+  // console, so a service whose start command goes missing comes up as the
+  // console -- which serves its SPA for any unmatched path, with status 200.
+  // That is not hypothetical: it is what `engine.reinconsole.com` served from
+  // 2026-09-19 to 2026-09-21, and this script's only symptom was a JSON parse
+  // error deep in `.json()` that said nothing about the cause. Content-type is
+  // the cheapest thing that tells an engine apart from a console wearing its
+  // hostname.
+  const contentType = res.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    die(
+      `GET ${pathname} -> ${res.status} but content-type is ` +
+        `"${contentType || 'absent'}", not JSON. ${baseUrl} is answering, but ` +
+        `it is not a Rein engine -- check that service's start command.`,
+    );
+  }
   return res;
 };
 
