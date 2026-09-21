@@ -500,7 +500,14 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
     // Bounded: at most a few pages per poll, so a burst cannot make one cycle
     // run until the next one is already due.
     for (let page = 0; page < MAX_PAGES_PER_POLL; page += 1) {
-      const res = await get<RemoteDecision[]>(`/v1/decisions?after=${cursor}`);
+      // `cursor` is -1 for "nothing read yet", but that sentinel is ours, not
+      // the engine's: `after` is validated nonnegative and the start of the
+      // chain is expressed by OMITTING it. Sending -1 is a 400, and only on a
+      // chain shorter than FEED_SEED + 1 -- which is every young engine, and
+      // no seeded test fixture.
+      const res = await get<RemoteDecision[]>(
+        cursor < 0 ? '/v1/decisions' : `/v1/decisions?after=${cursor}`,
+      );
       chainLength = Number(res.headers.get('Rein-Chain-Length') ?? String(chainLength));
       if (res.body.length === 0) break;
       collected.push(...res.body);

@@ -108,7 +108,17 @@ function fakeFetch(engine: FakeEngine): { impl: typeof fetch; calls: string[] } 
     if (url.pathname === '/v1/decisions') {
       const total = engine.decisions.length;
       const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 500;
-      const after = url.searchParams.has('after') ? Number(url.searchParams.get('after')) : -1;
+      // The real engine validates `after` as nonnegative and expresses "from
+      // the start" by its ABSENCE (services/policy-engine/src/server.ts:160).
+      // This fake used to accept -1 -- which is the CONSOLE's own sentinel --
+      // so a console that leaked the sentinel onto the wire passed every test
+      // here and 400'd in production against any chain shorter than
+      // FEED_SEED + 1. Every young engine is such a chain.
+      const rawAfter = url.searchParams.get('after');
+      if (rawAfter !== null && Number(rawAfter) < 0) {
+        return new Response('after must be nonnegative', { status: 400 });
+      }
+      const after = rawAfter === null ? -1 : Number(rawAfter);
       const start = after + 1;
       const page = engine.decisions.slice(start, start + limit);
       const headers: Record<string, string> = { 'Rein-Chain-Length': String(total) };
@@ -326,6 +336,24 @@ describe('createRemoteWorld — the decision feed', () => {
     expect(state.stats.decisions).toBe(400);
     expect(state.stats.chainLinks).toBe(400);
     expect(state.feed.at(-1)?.decisionId).toBe('dec_399');
+    await w.close();
+  });
+
+  it('asks for the whole chain by omitting `after`, never by sending -1', async () => {
+    // A chain shorter than the feed seed leaves the cursor at -1, and -1 is
+    // the console's sentinel for "nothing read yet" -- not a position the
+    // engine accepts. Sending it answers 400 and the dashboard reports the
+    // engine unreachable while the engine is perfectly healthy, which is what
+    // app.reinconsole.com did on its first deploy against a six-decision
+    // chain (S70).
+    const engine = emptyEngine();
+    engine.decisions = [decision(0), decision(1)];
+
+    const { w, calls } = await world(engine);
+    expect(calls.some((c) => c.includes('after=-1'))).toBe(false);
+    expect(calls).toContain('/v1/decisions');
+    expect(w.getState().feed).toHaveLength(2);
+    expect(w.getState().stats.decisions).toBe(2);
     await w.close();
   });
 
