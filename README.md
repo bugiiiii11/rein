@@ -31,7 +31,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 - **`@reinconsole/graph`** — reputation (Phase 3). One graph observes every bus the stack already publishes — engine decisions, indexer settlements, gate receipts and refusals, signer events — and scores every vendor and payer it has evidence on: five explainable 0–100 components plus first-class confidence, recomputed from raw evidence on demand. Scores feed back into enforcement on both sides: `syncVendors(engine.spend)` makes `vendorReputationLt` policies fire, `payerCheck(graph)` plugs into gate screening. `graph.link()` merges identities across id spaces (an agent's engine ULID and its paying wallet, a vendor's host and its payTo address — the ERC-8004 story) so one party carries one history: an agent's engine-side sins follow its wallet to every gate's door.
 - **`@reinconsole/erc8004`** — the on-chain identity source. Reads identity facts from the ratified [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) Identity Registry (an ERC-721; singleton deployments, Base Sepolia included) and turns them into link facts for the graph: a registered agent's reputation keys by its on-chain identity (`eip155:{chainId}:{registry}/{tokenId}`) with the local id and every wallet — `ownerOf`, the EIP-712-verified `agentWallet` — folded in as aliases; vendors stay host-keyed. Ships the write path too (**registers agents on the real Base Sepolia registry**) and an in-memory registry twin for offline work.
 
-**707 tests passing** (plus 8 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC — and the identity demo registers a real agent on the Base Sepolia ERC-8004 registry.
+**971 tests passing** (plus 8 live network tests gated behind `RUN_LIVE=1`). The mock end-to-end demo runs 5 scenarios in under 500ms; the gate demo runs the full two-sided loop over real local HTTP; the graph demo closes the reputation loop on both sides; the Sepolia demos settle real USDC — and the identity demo registers a real agent on the Base Sepolia ERC-8004 registry.
 
 ## Install
 
@@ -66,7 +66,7 @@ The custody tier (`@reinconsole/signer`) and persistence layer (`@reinconsole/st
 npm install -g pnpm  # if you don't have pnpm — `corepack enable` works too, but needs an admin shell on Windows
 pnpm install
 pnpm build           # ~2 min
-pnpm test            # 707 tests, fully offline, ~5 min
+pnpm test            # 971 tests, fully offline, ~5 min
 
 # Watch the whole thing work — budgets, tx caps, kill switch, shadow-spend detection:
 node apps/demo/dist/index.js
