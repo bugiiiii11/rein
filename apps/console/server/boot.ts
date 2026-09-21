@@ -21,7 +21,18 @@
  * The drop lives in @reinconsole/boot because the hosted engine's bin needs the
  * identical sequence; that package's README explains why it stays unpublished.
  */
-import { dropPrivileges } from '@reinconsole/boot';
+import { checkServiceIdentity, dropPrivileges } from '@reinconsole/boot';
+
+// BEFORE the drop and before anything opens a port: am I even the service this
+// deployment meant to start? This file is the image's default CMD, so it is
+// what a service with no start command runs -- which is how the console spent
+// three days serving engine.reinconsole.com and passing its healthcheck. See
+// identity.ts for why refusing here does not contradict this console's
+// fail-soft rule: the guard cannot fire on the console's own service.
+checkServiceIdentity({
+  service: 'the console',
+  own: ['REIN_CONSOLE_DATA_DIR', 'REIN_CONSOLE_ENGINE_URL'],
+});
 
 dropPrivileges({ dataDir: process.env.REIN_CONSOLE_DATA_DIR, log: (m) => console.warn(m) });
 

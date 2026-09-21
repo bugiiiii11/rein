@@ -169,6 +169,35 @@ outage: the deploy log was one line, `No projects matched the filters in "/app"`
 the container never started, and app.reinconsole.com returned 502 for ~15 minutes.
 Keep `startCommand` set, and keep it equal to the Dockerfile `CMD`.
 
+**3. An EMPTY start command falls back to the image `CMD` — and the `CMD` is the
+console.** This is not the same as fact 2 and it bites harder. Fact 2 is what S36
+saw on the console service, which is governed by `railway.json`; the engine service
+is dashboard-configured (Config as Code cannot be opted into for a service created
+after 2026-08-28, S65), and when its Custom Start Command field was empty Railway ran
+the image's `CMD` instead. From 2026-09-19 to 2026-09-21 `engine.reinconsole.com`
+therefore served the CONSOLE.
+
+Nothing caught it for two days, and nothing structurally could have:
+
+- The console answers any unmatched path with its SPA at **status 200**, `/health`
+  included, so Railway's healthcheck passed and the deploy was green and "Online".
+- There is no healthcheck path that fixes this. The console 404s nothing.
+- The only symptom was the nightly backup and the live run failing on a JSON parse
+  error — and `backup.yml` had no alarm at the time, so nobody was told.
+
+Since no probe can tell the two apart, the check lives in the process:
+`checkServiceIdentity` in `@reinconsole/boot`, called by `apps/console/server/boot.ts`
+and `apps/vendor/src/index.ts` before anything binds a port. It refuses to start when
+it finds a marker belonging to a different service — `REIN_ENGINE_SIGNING_KEY` (the
+engine) or `REIN_VENDOR_PAY_TO` (the vendor) — both of which are variables the owning
+service cannot run without, chosen for exactly that reason: a variable that must be
+SET cannot detect configuration going missing.
+
+**This cannot fire on app.reinconsole.com**, whose environment has neither marker, so
+the console's deliberate fail-soft posture (S61) is intact; the only process it can
+stop is one already serving the wrong thing. If one environment genuinely hosts two
+services, set `REIN_ALLOW_FOREIGN_SERVICE_ENV=1`.
+
 Note also that **every push to `main` auto-deploys**, and with a volume attached
 Railway stops the old container before starting the new one — so a bad start command
 is real downtime, not a failed deploy that quietly rolls back.

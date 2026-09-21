@@ -95,4 +95,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 # railway.json MUST keep an equivalent `startCommand`. Removing it does NOT fall back to
 # this CMD — Railway substituted its own inferred pnpm command, which is what took the
 # site down for ~15 min in S36 (`No projects matched the filters in "/app"`).
+#
+# On a DASHBOARD-configured service the fallback is different and worse: an empty start
+# command runs this CMD, so that service silently becomes the console. It then answers
+# every probe 200 and reads as healthy, which is how engine.reinconsole.com served the
+# console for three days in September 2026. Because THIS line is what a misconfigured
+# service runs, boot.ts calls `checkServiceIdentity` before it binds anything — see
+# packages/boot/src/identity.ts and DEPLOY.md fact 3.
 CMD ["node", "apps/console/node_modules/tsx/dist/cli.mjs", "apps/console/server/boot.ts"]

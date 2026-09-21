@@ -5,10 +5,15 @@
  * store, and the drain. Everything about what the vendor SELLS is in
  * `config.ts` and `server.ts`, which stay socket-free and testable.
  */
-import { dropPrivileges } from '@reinconsole/boot';
+import { checkServiceIdentity, dropPrivileges } from '@reinconsole/boot';
 import { openReinStore, type ReinStore } from '@reinconsole/store';
 import { readVendorConfig, VendorConfigError } from './config.js';
 import { createVendorServer } from './server.js';
+
+// The vendor's own marker is REIN_VENDOR_PAY_TO, so this catches the vendor
+// entry running on the ENGINE's deployment. The reverse -- the console's CMD
+// taking over this service -- is caught by the same check in the console.
+checkServiceIdentity({ service: 'the vendor', own: ['REIN_VENDOR_PAY_TO'] });
 
 const config = (() => {
   try {
