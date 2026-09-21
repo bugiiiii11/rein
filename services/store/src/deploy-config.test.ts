@@ -267,7 +267,9 @@ describe('deploy configuration', () => {
    */
   describe('the image builds every service it starts', () => {
     const dockerfile = read('Dockerfile');
-    const buildFilters = [...dockerfile.matchAll(/--filter=(\S+)/g)].map((m) => m[1]);
+    const buildFilters = [...dockerfile.matchAll(/--filter=(\S+)/g)]
+      .map((m) => m[1])
+      .filter((f): f is string => f !== undefined);
 
     it('builds the workspace each start command runs out of dist/', () => {
       for (const name of ['railway.json', 'railway.engine.json', 'railway.vendor.json']) {
