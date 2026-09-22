@@ -364,6 +364,32 @@ describe('tenant isolation: keys', () => {
     await app.close();
   });
 
+  it('refuses an org id that is a NAME rather than a prefixed ULID', async () => {
+    // Onboarding an invited org means naming it in a key's orgId -- there is no
+    // /v1/orgs route. It is tempting to name it `org_acme`, and S71's handoff
+    // told the next session to do exactly that. OrgId is `org_` + a 26-char
+    // Crockford body, so the first invitee would have been a 400 nobody
+    // expected. The org id is GENERATED (`newId('org')`); the human-readable
+    // name lives on the key.
+    const { app, root, as } = await tenantWorld();
+    const named = await app.inject({
+      method: 'POST',
+      url: '/v1/keys',
+      headers: as(root),
+      payload: { name: 'acme-admin', scopes: ['admin'], orgId: 'org_acme' },
+    });
+    expect(named.statusCode).toBe(400);
+
+    const minted = await app.inject({
+      method: 'POST',
+      url: '/v1/keys',
+      headers: as(root),
+      payload: { name: 'acme-admin', scopes: ['admin'], orgId: newId('org') },
+    });
+    expect(minted.statusCode).toBe(201);
+    await app.close();
+  });
+
   it('404s rotate and revoke on another org’s key, and on the unscoped root key', async () => {
     const { app, adminA, adminB, root, auth, as } = await tenantWorld();
     const rootId = auth.list().find((k) => k.name === 'operator')?.id;
