@@ -137,6 +137,19 @@ export interface EngineStores {
    * still governs nothing — an alarm is news, never an input to a decision.
    */
   liveness?: LivenessMonitor;
+  /**
+   * The engine's clock, for window arithmetic and ledger timestamps. Defaults
+   * to `Date.now`.
+   *
+   * It exists because the alternative -- reading the instant off the intent --
+   * hands every rolling budget, velocity limit and circuit breaker to the
+   * caller. `intent.createdAt` is a CLIENT-SUPPLIED field; an intent dated
+   * past the end of a window makes `within()` see an empty history, so every
+   * budget reads zero and the allow that follows is a properly signed one.
+   * A test that needs to drive time injects it HERE, through a seam the
+   * request body cannot reach.
+   */
+  now?: () => number;
 }
 
 /**
@@ -159,6 +172,8 @@ export class PolicyEngine {
   private readonly log: DecisionLog;
   private readonly bus = new EventEmitter();
   private tail: Promise<unknown> = Promise.resolve();
+  /** See EngineStores.now. Never the intent's own `createdAt`. */
+  private readonly now: () => number;
 
   constructor(stores: EngineStores = {}) {
     this.spend = stores.spend ?? new InMemorySpendStore();
@@ -168,6 +183,10 @@ export class PolicyEngine {
     this.log = stores.log ?? new DecisionLog();
     this.approvals = stores.approvals;
     this.liveness = stores.liveness;
+    // Called lazily rather than captured: `vi.useFakeTimers()` REPLACES the
+    // global `Date.now`, and a reference taken here would be the real one the
+    // fake timer never touches.
+    this.now = stores.now ?? (() => Date.now());
   }
 
   get publicKeyPem(): string {
@@ -285,6 +304,16 @@ export class PolicyEngine {
   private async evaluateSerialized(input: IntentInput): Promise<EvaluateOutput> {
     const start = performance.now();
     const intent = this.normalize(input);
+    // ONE instant, from the engine's own clock, for the window arithmetic, the
+    // ledger row and the sighting. It is deliberately NOT `intent.createdAt`:
+    // that field is whatever the caller typed, and `within()` filters on a
+    // lower bound only, so an intent dated past the end of a window sees an
+    // empty history -- every rolling budget, velocity limit and breaker reads
+    // zero, and the allow that follows is a correctly signed decision the
+    // signer will honour. `createdAt` stays on the intent as the caller's
+    // REPORTED time, committed to by the hash and visible in the log; it just
+    // no longer decides anything.
+    const at = this.now();
     this.emit({ type: 'intent.created', at: new Date(), intent });
 
     const actor = this.agents.get(intent.agentId);
@@ -298,7 +327,7 @@ export class PolicyEngine {
         policyVersion: '0',
       };
     } else {
-      const ctx = this.spend.contextFor(intent.agentId, intent.createdAt.getTime());
+      const ctx = this.spend.contextFor(intent.agentId, at);
       // The agent document (labels) rides along so appliesTo.labels can match;
       // unregistered agents pass undefined and never match a labels policy.
       // Org scoping happens BEFORE targeting: another tenant's policy is not a
@@ -328,7 +357,7 @@ export class PolicyEngine {
           intentId: intent.id,
           decisionId: decision.id,
         },
-        intent.createdAt.getTime(),
+        at,
       );
     }
 
@@ -336,7 +365,7 @@ export class PolicyEngine {
     // is an agent that is alive and blocked, which is a different alarm with a
     // different remedy. Folding denials out would make a policy change double
     // as a liveness alarm, and would report a hard-blocked agent as dead.
-    await this.sight(intent.agentId, 'intent', intent.createdAt.getTime());
+    await this.sight(intent.agentId, 'intent', at);
 
     if (decision.outcome === 'escalate' && this.approvals) {
       const request = await this.approvals.open(intent, decision, {

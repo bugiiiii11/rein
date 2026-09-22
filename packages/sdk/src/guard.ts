@@ -20,9 +20,11 @@ import {
   type ResolvedRequirement,
 } from './x402.js';
 import {
+  encodeBase64Json,
   parsePaymentRequiredHeader,
   requirementFromV2,
   wrapPaymentV2,
+  type PaymentRequiredV2,
   type ResourceInfoV2,
 } from './x402v2.js';
 
@@ -233,7 +235,8 @@ export class Guard {
         const receipt = this.record(intent, decision, url, init);
         this.sweepPending();
         this.pendingByUrl.set(url, receipt);
-        return res;
+        // Only the offer that was actually evaluated. See ParsedPaywall.narrowed.
+        return paywall.narrowed ?? res;
       }
 
       // The payer always produces the v1 envelope it knows; on a v2 paywall
@@ -368,6 +371,44 @@ interface ParsedPaywall {
   wire: 1 | 2;
   /** The v2 402's shared resource info, echoed into the payment envelope. */
   resource?: ResourceInfoV2;
+  /**
+   * The same 402 carrying ONLY the offer the guard evaluated.
+   *
+   * In advisory mode the guard does not pay; it hands the 402 back to the
+   * payment layer above, which holds the key. Releasing the vendor's body
+   * verbatim meant that layer chose from the FULL `accepts` list -- including
+   * the offers the network allow-list had just rejected. A hostile 402 that
+   * lists a 0.001 Sepolia offer and a 250 USDC mainnet one gets the cheap one
+   * evaluated and allowed, and the expensive one paid, while the receipt and
+   * the engine record the cheap one. Narrowing the body is what makes the
+   * testnet pin structural rather than advisory.
+   */
+  narrowed?: Response;
+}
+
+/** Rebuild a 402 carrying a single offer, in whichever dialects it used. */
+function narrow402(
+  res: Response,
+  body: unknown,
+  v2: PaymentRequiredV2 | undefined,
+  keepV1: PaymentRequirement | undefined,
+  keepV2Index: number | undefined,
+): Response {
+  const headers = new Headers(res.headers);
+  if (v2 && keepV2Index !== undefined) {
+    const offer = v2.accepts[keepV2Index];
+    if (offer) headers.set('PAYMENT-REQUIRED', encodeBase64Json({ ...v2, accepts: [offer] }));
+  }
+  let text: string | undefined;
+  if (keepV1 && body && typeof body === 'object') {
+    text = JSON.stringify({ ...(body as Record<string, unknown>), accepts: [keepV1] });
+    headers.delete('content-length');
+  }
+  return new Response(text ?? res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 /**
@@ -382,26 +423,39 @@ async function parse402(
   networks: readonly string[] | undefined,
 ): Promise<ParsedPaywall | undefined> {
   const v2 = parsePaymentRequiredHeader(res.headers.get('PAYMENT-REQUIRED'));
-  if (v2) {
-    const resolved = selectRequirement(
-      v2.accepts.map((offer) => requirementFromV2(offer, v2.resource)),
-      assetAddresses,
-      networks,
-    );
-    if (resolved) {
-      return v2.resource !== undefined
-        ? { resolved, wire: 2, resource: v2.resource }
-        : { resolved, wire: 2 };
-    }
-  }
-
   const body = await res
     .clone()
     .json()
     .catch(() => undefined);
   const parsed = PaymentRequired.safeParse(body);
+
+  // Which v1 offer (if the body is v1) the guard would govern. Computed even
+  // on the v2 path, because a dual-stack 402 answers both and a v1-only layer
+  // above would otherwise still read the unfiltered body.
+  const v1Resolved = parsed.success
+    ? selectRequirement(parsed.data.accepts, assetAddresses, networks)
+    : undefined;
+
+  if (v2) {
+    const asRequirements = v2.accepts.map((offer) => requirementFromV2(offer, v2.resource));
+    const resolved = selectRequirement(asRequirements, assetAddresses, networks);
+    if (resolved) {
+      const index = asRequirements.indexOf(resolved.requirement);
+      const narrowed = narrow402(res, body, v2, v1Resolved?.requirement, index);
+      return v2.resource !== undefined
+        ? { resolved, wire: 2, resource: v2.resource, narrowed }
+        : { resolved, wire: 2, narrowed };
+    }
+  }
+
   if (parsed.success) {
-    return { resolved: selectRequirement(parsed.data.accepts, assetAddresses, networks), wire: 1 };
+    return {
+      resolved: v1Resolved,
+      wire: 1,
+      ...(v1Resolved
+        ? { narrowed: narrow402(res, body, v2, v1Resolved.requirement, undefined) }
+        : {}),
+    };
   }
   // A v2 header alone still marks this as a paywall — one the guard must
   // fail closed on if nothing in it was governable.

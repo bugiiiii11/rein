@@ -51,6 +51,22 @@ const NETWORK_TO_CHAIN: Record<string, Chain> = {
 };
 
 /** Canonical stablecoin contract addresses (EVM keys lowercased). */
+/**
+ * Decimals per asset, from the token contracts -- NOT from the counterparty.
+ *
+ * `extra.decimals` arrives inside the vendor's own 402 challenge, and it used
+ * to be what converted `maxAmountRequired` into the human amount policy is
+ * evaluated against. The payer signs the RAW atomic value, so the vendor owned
+ * the ratio between the number Rein judged and the number the wallet
+ * authorized: quote 500000000 with `decimals: 12` and a 500 USDC charge is
+ * evaluated as 0.0005, passes every cap and budget, and settles for 500.
+ * Circle's USDC is 6 everywhere it is deployed; USDT and EURC are 6 on Base.
+ */
+const ASSET_DECIMALS: Record<Asset, number> = { USDC: 6, USDT: 6, EURC: 6 };
+
+/** An EVM token address: only the address tables may name one. */
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
 const KNOWN_ASSET_ADDRESSES: Record<string, Asset> = {
   '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC', // USDC on Base
   '0x036cbd53842c5426634e7929541ec2318f3dcf7e': 'USDC', // USDC on Base Sepolia
@@ -101,18 +117,27 @@ export function resolveAsset(
   const direct = Asset.safeParse(requirement.asset.toUpperCase());
   if (direct.success) return direct.data;
 
+  const known =
+    extraAddresses[requirement.asset] ??
+    extraAddresses[requirement.asset.toLowerCase()] ??
+    KNOWN_ASSET_ADDRESSES[requirement.asset] ??
+    KNOWN_ASSET_ADDRESSES[requirement.asset.toLowerCase()];
+  if (known) return known;
+
+  // `extra.symbol` is the counterparty's word for its own token, and it is
+  // consulted LAST and never for an address. It used to come first, so any
+  // EIP-3009 token could present itself as `USDC`: the engine evaluated the
+  // agent's USDC caps and budgets, and the payer then signed a
+  // TransferWithAuthorization against the attacker's chosen contract, spending
+  // a balance no USDC policy was ever written about.
+  if (EVM_ADDRESS.test(requirement.asset)) return undefined;
   const symbol = requirement.extra?.['symbol'];
   if (typeof symbol === 'string') {
     const fromExtra = Asset.safeParse(symbol.toUpperCase());
     if (fromExtra.success) return fromExtra.data;
   }
 
-  return (
-    extraAddresses[requirement.asset] ??
-    extraAddresses[requirement.asset.toLowerCase()] ??
-    KNOWN_ASSET_ADDRESSES[requirement.asset] ??
-    KNOWN_ASSET_ADDRESSES[requirement.asset.toLowerCase()]
-  );
+  return undefined;
 }
 
 /**
@@ -147,9 +172,29 @@ export function decimalToAtomic(decimal: string, decimals: number): string {
   return atomic.replace(/^0+(?=\d)/, '');
 }
 
-export function requirementDecimals(requirement: PaymentRequirement): number {
+/**
+ * The decimals to read `maxAmountRequired` with.
+ *
+ * Pass the RESOLVED asset and the answer comes from `ASSET_DECIMALS` -- the
+ * token's own precision, which the counterparty does not get a vote on. The
+ * no-asset form is the legacy one and still honours `extra.decimals`; it must
+ * not be used on any path that leads to a signature.
+ */
+export function requirementDecimals(requirement: PaymentRequirement, asset?: Asset): number {
+  if (asset) return ASSET_DECIMALS[asset];
   const decimals = requirement.extra?.['decimals'];
   return typeof decimals === 'number' && Number.isInteger(decimals) && decimals >= 0 ? decimals : 6;
+}
+
+/**
+ * Does the vendor's stated precision match the token's? A disagreement is not
+ * an error to correct silently -- it is an offer whose amount we cannot agree
+ * on, which makes it ungovernable, so `selectRequirement` skips it.
+ */
+export function decimalsAgree(requirement: PaymentRequirement, asset: Asset): boolean {
+  const stated = requirement.extra?.['decimals'];
+  if (stated === undefined) return true;
+  return stated === ASSET_DECIMALS[asset];
 }
 
 /** A requirement the guard fully understood, mapped into Rein's domain. */
@@ -189,7 +234,14 @@ export function selectRequirement(
     if (allowed && !allowed.includes(caip2Of(requirement.network))) continue;
     const asset = resolveAsset(requirement, extraAddresses);
     if (!asset) continue;
-    const amount = atomicToDecimal(requirement.maxAmountRequired, requirementDecimals(requirement));
+    // Fail closed on a token whose precision the vendor states differently
+    // from the contract: the amount policy would judge and the amount the
+    // wallet would authorize are not the same number.
+    if (!decimalsAgree(requirement, asset)) continue;
+    const amount = atomicToDecimal(
+      requirement.maxAmountRequired,
+      requirementDecimals(requirement, asset),
+    );
     return { requirement, chain, asset, amount };
   }
   return undefined;

@@ -104,6 +104,27 @@ export function createX402Payer(options: X402PayerOptions): Payer {
       );
     }
 
+    // The token contract this authorization will be verified against is the
+    // one the counterparty named, and until this check it was never compared
+    // to anything. A vendor could quote any EIP-3009 token, call it USDC in
+    // `extra.symbol`, and have the agent sign away a balance no USDC policy
+    // was written about. The profile for the network being paid knows which
+    // contract is the real one; where there is no profile there is also no
+    // trustworthy EIP-712 domain, so refusing is the honest answer.
+    const pinned = options.profile ?? profileForNetwork(requirement.network);
+    if (!pinned || pinned.caip2 !== caip2Of(requirement.network)) {
+      throw new RailsError(
+        'unsupported_network',
+        `no pinned profile for "${requirement.network}" -- refusing to sign against an unverified token contract`,
+      );
+    }
+    if (requirement.asset.toLowerCase() !== pinned.usdc.toLowerCase()) {
+      throw new RailsError(
+        'unsupported_asset',
+        `requirement pays token ${requirement.asset}, which is not ${pinned.name} USDC (${pinned.usdc})`,
+      );
+    }
+
     const ts = now();
     const authorization: ExactEvmAuthorization = {
       from: account.address,

@@ -103,6 +103,52 @@ which is why an ignore with no expiry and no stated reason is itself a defect.
 
 _None accepted as of 2026-09-16._
 
+## Review history
+
+**2026-09-23 -- pre-mainnet review of the hosted stack (Sprints 1-6, `b13ab1f..HEAD`).**
+Four reviewers over authentication and tenancy, the decision and approval core, the payment
+rails, and the deployment and ops surface. Five issues found; all five fixed in the same
+change, each pinned by a test that was confirmed to fail with the defect restored. Nothing
+was accepted unfixed. Recorded here because the fixes read as ordinary code once merged, and
+the reasoning that produced them is the part worth keeping.
+
+- **The evaluation clock was the caller's.** `IntentInput.createdAt` is an optional,
+  unbounded field on the `/v1/evaluate` body, and it was the instant every time-based
+  predicate was measured against. Window filters take a lower bound only, so an intent dated
+  past the end of a window saw an empty history: every rolling budget, velocity limit and
+  circuit breaker read zero, and the resulting allow was a correctly signed decision the
+  signer honoured. The allowance was then written at the same future instant, outside the
+  window reconciliation reads, so the overspend did not appear in the report either. The
+  engine now reads its own clock; `createdAt` is still carried and still hashed, it just
+  decides nothing. Tests inject `EngineStores.now`.
+- **The vendor set the scale of its own price.** `extra.decimals`, from the 402 challenge,
+  converted `maxAmountRequired` into the human amount sent to policy, while the payer signed
+  the raw atomic value. A 500 USDC charge quoted as `decimals: 12` was evaluated as 0.0005,
+  cleared every cap, and settled for 500. Decimals now come from the resolved asset; an offer
+  whose stated precision disagrees with the token's is ungovernable and skipped. The signer's
+  voucher cross-check reads decimals from the decision's asset, not the requirement -- the
+  attacker was supplying both sides of that equality.
+- **Any token could call itself USDC.** `extra.symbol` was consulted before the canonical
+  address table, so an unknown EIP-3009 contract resolved to `USDC`, was evaluated against
+  the agent's USDC policy, and was signed against as the EIP-712 `verifyingContract`. The
+  symbol is now consulted last and never for an address, and the payer refuses any token that
+  is not the pinned profile's USDC for the network being paid.
+- **The network pin did not survive advisory mode.** With no payer the guard released the
+  vendor's 402 verbatim to the payment layer above, rejected offers included -- so the cheap
+  testnet offer could be evaluated and the expensive mainnet one paid, with the receipt
+  recording the first. The released 402 now carries only the offer that was evaluated, in
+  both wire dialects.
+- **A narrowed key could widen itself.** `POST /v1/keys` refuses to mint a key wider than the
+  caller; rotate and revoke checked only the org. Rotate answers with the replacement
+  plaintext secret, so an agent-narrowed admin key could rotate its org's un-narrowed admin
+  key and read the new secret from the response. Both now enforce the same narrowing. No key
+  issued to date carries `admin` with an `agentIds` narrowing, so this was a broken guarantee
+  rather than a live exposure.
+
+One hardening change with no exploit path: `.dockerignore` excluded `.env` but not `.env.*`,
+so a local `docker build .` would have copied the operator credentials into the image.
+Railway builds from git, where those files are ignored, so no published image was affected.
+
 Findings we are especially interested in: anything that releases a signature without a
 valid engine-signed allow voucher, replays a spent voucher, evades a session or budget cap,
 forges or breaks the decision hash chain, or turns an escalation into an approval without a

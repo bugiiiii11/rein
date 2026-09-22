@@ -11,5 +11,11 @@
 .rein-console-data*
 .env
 **/.env
+# `.env` alone is not the file that matters: the operator credentials live in
+# .env.engine-ops, .env.pilot and .env.invitee-*. Railway builds from git,
+# where those are gitignored, but a local `docker build .` would otherwise
+# bake the unscoped engine key into the image.
+.env.*
+**/.env.*
 **/*.pem
 *.log

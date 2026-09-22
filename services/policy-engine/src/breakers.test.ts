@@ -194,10 +194,20 @@ function grantFor(
   };
 }
 
-async function breakerEngine(breakers: Policy['breakers']) {
+/**
+ * `clock` advances the ENGINE's time. It used to be done by dating the intent,
+ * which is the same thing an attacker does: `createdAt` is request-body input,
+ * and an intent dated past the window emptied every breaker. Time is moved
+ * here now, through a seam a caller cannot reach.
+ */
+async function breakerEngine(breakers: Policy['breakers'], clock?: { now: number }) {
   const approvals = new ApprovalService();
   const spend = new InMemorySpendStore();
-  const engine = new PolicyEngine({ approvals, spend });
+  const engine = new PolicyEngine({
+    approvals,
+    spend,
+    ...(clock ? { now: () => clock.now } : {}),
+  });
   await engine.addPolicy({ policyId: 'pol_breaker', breakers, default: 'allow' });
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const approver = await approvals.registerApprover({
@@ -208,7 +218,9 @@ async function breakerEngine(breakers: Policy['breakers']) {
   return { engine, spend, approver, privateKey };
 }
 
-function pay(agentId: string, amount = '1.00', createdAt?: Date, taskId?: string) {
+// No `createdAt` parameter, deliberately. Setting it would look like moving
+// the clock and would move nothing -- the engine reads its own. Use `clock`.
+function pay(agentId: string, amount = '1.00', taskId?: string) {
   return {
     agentId,
     vendor: { host: 'api.example.com', address: '0x1' },
@@ -216,7 +228,6 @@ function pay(agentId: string, amount = '1.00', createdAt?: Date, taskId?: string
     amount,
     asset: 'USDC' as const,
     chain: 'base' as const,
-    ...(createdAt ? { createdAt } : {}),
     ...(taskId ? { taskContext: { taskId } } : {}),
   };
 }
@@ -307,16 +318,16 @@ describe('breakers end-to-end through the engine', () => {
   });
 
   it('the window rolling forward resets a breaker with no human involved', async () => {
-    const { engine } = await breakerEngine([{ id: 'velocity', window: '1h', txCount: 2 }]);
+    const clock = { now: new Date('2026-09-09T00:00:00Z').getTime() };
+    const { engine } = await breakerEngine([{ id: 'velocity', window: '1h', txCount: 2 }], clock);
     const agentId = newId('agt');
-    const t0 = new Date('2026-09-09T00:00:00Z');
-    await engine.evaluateIntent(pay(agentId, '1.00', t0));
-    await engine.evaluateIntent(pay(agentId, '1.00', t0));
-    const blocked = await engine.evaluateIntent(pay(agentId, '1.00', t0));
+    await engine.evaluateIntent(pay(agentId));
+    await engine.evaluateIntent(pay(agentId));
+    const blocked = await engine.evaluateIntent(pay(agentId));
     expect(blocked.decision.outcome).toBe('escalate');
 
-    const later = new Date(t0.getTime() + 2 * 3_600_000);
-    const after = await engine.evaluateIntent(pay(agentId, '1.00', later));
+    clock.now += 2 * 3_600_000;
+    const after = await engine.evaluateIntent(pay(agentId));
     expect(after.decision.outcome).toBe('allow');
   });
 
@@ -347,8 +358,8 @@ describe('breakers end-to-end through the engine', () => {
     });
     const agentId = newId('agt');
 
-    await engine.evaluateIntent(pay(agentId, '2.00', undefined, 'task-1'));
-    const blocked = await engine.evaluateIntent(pay(agentId, '1.00', undefined, 'task-1'));
+    await engine.evaluateIntent(pay(agentId, '2.00', 'task-1'));
+    const blocked = await engine.evaluateIntent(pay(agentId, '1.00', 'task-1'));
     expect(blocked.decision.outcome).toBe('escalate');
     expect(blocked.approval?.taskId).toBe('task-1');
 

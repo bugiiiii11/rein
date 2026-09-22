@@ -93,7 +93,11 @@ describe('every intent is a sighting', () => {
   it('counts a DENIED intent as activity', async () => {
     const t0 = 2_000_000;
     const liveness = monitorAt(t0);
-    const engine = new PolicyEngine({ liveness });
+    // The engine reads its OWN clock for the sighting, never the intent's
+    // `createdAt` -- a caller that could stamp its own sighting could keep a
+    // dead agent looking alive forever by dating one intent into next week.
+    const clock = { now: t0 };
+    const engine = new PolicyEngine({ liveness, now: () => clock.now });
     const agentId = newId('agt');
     await engine.addPolicy({
       policyId: 'pol_deny',
@@ -103,10 +107,8 @@ describe('every intent is a sighting', () => {
     await liveness.watch({ agentId, interval: '15m', graceMs: MINUTE });
 
     const at = t0 + 5 * MINUTE;
-    const { decision } = await engine.evaluateIntent({
-      ...baseIntent(agentId, '5.00'),
-      createdAt: new Date(at),
-    });
+    clock.now = at;
+    const { decision } = await engine.evaluateIntent(baseIntent(agentId, '5.00'));
     expect(decision.outcome).toBe('deny');
 
     // An agent hammering a wall is alive. Treating a denial as silence would
@@ -293,10 +295,7 @@ describe('liveness carries no authority', () => {
 
     // The agent comes back with a payment. A dead-man alarm is news, not a
     // gate: it cannot deny, escalate, or hold the first intent back.
-    const { decision } = await engine.evaluateIntent({
-      ...baseIntent(agentId),
-      createdAt: new Date(t0 + 11 * MINUTE),
-    });
+    const { decision } = await engine.evaluateIntent(baseIntent(agentId));
     expect(decision.outcome).toBe('allow');
     expect(decision.matchedRules).not.toContain('liveness');
   });
@@ -342,7 +341,6 @@ describe('liveness carries no authority', () => {
     await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
     const { decision } = await engine.evaluateIntent({
       ...baseIntent(agentId),
-      createdAt: new Date(t0 + MINUTE),
     });
     expect(decision.outcome).toBe('allow');
     expect(errors).toEqual([agentId]);

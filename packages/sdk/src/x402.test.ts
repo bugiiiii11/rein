@@ -118,11 +118,59 @@ describe('selectRequirement', () => {
     expect(resolved?.amount).toBe('0.25');
   });
 
-  it('honors extra.decimals overrides', () => {
+  /**
+   * This used to read "honors extra.decimals overrides", and honouring them is
+   * the whole attack. `extra` is the counterparty's own 402 challenge and the
+   * payer signs the RAW atomic value, so a vendor that gets to state the
+   * precision owns the ratio between the amount policy judges and the amount
+   * the wallet authorizes: 500000000 at `decimals: 12` is evaluated as 0.0005
+   * and settles for 500 USDC. An offer whose stated precision disagrees with
+   * the token's is one whose amount cannot be agreed on, so it is ungovernable
+   * and skipped rather than reinterpreted.
+   */
+  it('refuses an offer whose stated decimals disagree with the token', () => {
+    expect(
+      selectRequirement([requirement({ maxAmountRequired: '150', extra: { decimals: 2 } })]),
+    ).toBeUndefined();
+  });
+
+  it('reads the amount at the token’s own precision, not the vendor’s', () => {
     const resolved = selectRequirement([
-      requirement({ maxAmountRequired: '150', extra: { decimals: 2 } }),
+      requirement({ maxAmountRequired: '500000000', extra: { decimals: 12 } }),
     ]);
-    expect(resolved?.amount).toBe('1.5');
+    expect(resolved).toBeUndefined();
+
+    // The same charge, stated honestly, is the 500 USDC it always was.
+    const honest = selectRequirement([requirement({ maxAmountRequired: '500000000' })]);
+    expect(honest?.amount).toBe('500');
+  });
+
+  it('agrees with a vendor that states the right precision', () => {
+    const resolved = selectRequirement([
+      requirement({ maxAmountRequired: '150', extra: { decimals: 6 } }),
+    ]);
+    expect(resolved?.amount).toBe('0.00015');
+  });
+
+  /**
+   * `extra.symbol` is the counterparty naming its own token, and it used to be
+   * consulted BEFORE the canonical address table. Any EIP-3009 contract could
+   * therefore call itself USDC: the engine evaluated the agent's USDC caps and
+   * budgets, and the payer signed a transfer against the attacker's contract,
+   * spending a balance no USDC policy was written about.
+   */
+  it('will not let extra.symbol rename an unknown token', () => {
+    const impostor = '0x000000000000000000000000000000000000dEaD';
+    expect(
+      selectRequirement([requirement({ asset: impostor, extra: { symbol: 'USDC' } })]),
+    ).toBeUndefined();
+  });
+
+  it('still resolves a known contract, and a bare symbol that is not an address', () => {
+    expect(selectRequirement([requirement()])?.asset).toBe('USDC');
+    expect(
+      selectRequirement([requirement({ asset: 'some-token', extra: { symbol: 'USDC' } })])?.asset,
+    ).toBe('USDC');
   });
 
   it('returns undefined when nothing qualifies', () => {

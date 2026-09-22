@@ -229,10 +229,13 @@ describe('openReinStore', () => {
 
     const a = await open(dir);
     const monitorA = new LivenessMonitor({ store: a.livenessStore, startedAt: t0, now: () => t0 });
-    const engineA = new PolicyEngine({ ...a, liveness: monitorA });
+    // The engine stamps the sighting from its OWN clock, so a test that wants
+    // the intent to land a day ago moves the clock -- it cannot date the
+    // intent, and neither can a caller (see intent-clock.test.ts).
+    const engineA = new PolicyEngine({ ...a, liveness: monitorA, now: () => t0 });
     await engineA.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
     await engineA.watchLiveness({ agentId, interval: '15m', graceMs: 0, note: 'price poller' });
-    await engineA.evaluateIntent({ ...intent(agentId, '1.00'), createdAt: new Date(t0) });
+    await engineA.evaluateIntent(intent(agentId, '1.00'));
     expect(await monitorA.sweep(t0 + 3_600_000)).toHaveLength(1);
     await a.close();
 

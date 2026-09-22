@@ -212,6 +212,70 @@ describe('Guard (against a live policy engine)', () => {
     expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
   });
 
+  /**
+   * Advisory mode hands the 402 back to the payment layer above, which holds
+   * the key and picks an offer. Releasing the vendor's list verbatim meant the
+   * offers the network allow-list had just rejected travelled with it: the
+   * guard evaluates the cheap testnet offer, the layer above signs the
+   * expensive mainnet one, and the receipt records the cheap one. The pin is
+   * only structural if the released body cannot name the rejected offer.
+   */
+  it('releases only the offer it evaluated, not the ones the pin rejected', async () => {
+    const agentId = await newAgent();
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (input) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      calls.push(url);
+      return new Response(
+        JSON.stringify({
+          x402Version: 1,
+          accepts: [
+            {
+              scheme: 'exact',
+              network: 'base',
+              maxAmountRequired: '250000000',
+              resource: '/v1/answer',
+              payTo: '0xATTACKER',
+              asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+            },
+            {
+              scheme: 'exact',
+              network: 'base-sepolia',
+              maxAmountRequired: '1000',
+              resource: '/v1/answer',
+              payTo: '0xATTACKER',
+              asset: '0x036cbd53842c5426634e7929541ec2318f3dcf7e',
+            },
+          ],
+          error: 'X-PAYMENT header is required',
+        }),
+        { status: 402, headers: { 'content-type': 'application/json' } },
+      );
+    };
+
+    const guard = createGuard({
+      engineUrl,
+      agentId,
+      fetch: fetchImpl,
+      networks: ['base-sepolia'],
+    });
+    await guard.client.addPolicy({
+      policyId: 'pol_open_narrow',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+    expect(res.status).toBe(402);
+    const released = (await res.json()) as { accepts: { network: string }[]; error: string };
+    expect(released.accepts).toHaveLength(1);
+    expect(released.accepts[0]?.network).toBe('base-sepolia');
+    // Everything else about the 402 survives -- this is a narrowing, not a
+    // rewrite, and the layer above still needs the rest of the challenge.
+    expect(released.error).toBe('X-PAYMENT header is required');
+    expect(guard.receipts()[0]?.outcome).toBe('allow');
+  });
+
   it('keeps only the most recent maxReceipts, while onReceipt still sees every one', async () => {
     const agentId = await newAgent();
     const vendor = mockVendor('10000');

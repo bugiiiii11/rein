@@ -390,6 +390,47 @@ describe('tenant isolation: keys', () => {
     await app.close();
   });
 
+  /**
+   * The narrowing has to hold on ROTATE, not only on issue.
+   *
+   * `POST /v1/keys` already refuses to mint a key wider than the caller --
+   * "otherwise the narrowing would be one API call away from undone" -- and
+   * rotate was that one API call. It answers with the replacement plaintext
+   * secret, so an agent-narrowed admin could list its org's keys, rotate the
+   * un-narrowed org admin key, and read the new secret out of the 200: full
+   * spend authority over every agent in the org, which is the entire blast
+   * radius the narrowing exists to contain. Revoke was the same hole pointed
+   * at destruction instead.
+   */
+  it('404s rotate and revoke of a WIDER key in the caller’s own org', async () => {
+    const { app, auth, adminA, agentA, as } = await tenantWorld();
+    const narrowed = await auth.issue({
+      name: 'a-agent-admin',
+      scopes: ['admin'],
+      orgId: ORG_A,
+      agentIds: [agentA.id],
+    });
+
+    for (const path of ['rotate', 'revoke']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/keys/${adminA.key.id}/${path}`,
+        headers: as(narrowed),
+      });
+      expect(res.statusCode, path).toBe(404);
+    }
+
+    // Its own key is still its own to rotate: this is a narrowing, not a
+    // freeze, and the same 404 for both would make the rule unlearnable.
+    const own = await app.inject({
+      method: 'POST',
+      url: `/v1/keys/${narrowed.key.id}/rotate`,
+      headers: as(narrowed),
+    });
+    expect(own.statusCode).toBe(200);
+    await app.close();
+  });
+
   it('404s rotate and revoke on another org’s key, and on the unscoped root key', async () => {
     const { app, adminA, adminB, root, auth, as } = await tenantWorld();
     const rootId = auth.list().find((k) => k.name === 'operator')?.id;

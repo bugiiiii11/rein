@@ -689,14 +689,29 @@ export function buildServer(
 }
 
 /**
- * A scoped caller may only rotate or revoke keys in its own org. The answer
- * for a foreign key is the same 404 an unknown id gets, so the key list of
- * another org cannot be enumerated one id at a time.
+ * A scoped caller may only rotate or revoke keys in its own org, and an
+ * agent-narrowed caller only keys narrowed no wider than itself. The answer
+ * for a key it cannot reach is the same 404 an unknown id gets, so the key
+ * list of another org -- or of the org above its own narrowing -- cannot be
+ * enumerated one id at a time.
+ *
+ * The second rule is the one this used to be missing. `POST /v1/keys` already
+ * refuses to MINT a key wider than the caller, "otherwise the narrowing would
+ * be one API call away from undone" -- and rotate was that one API call: it
+ * returns the replacement plaintext secret, so a key narrowed to one agent
+ * could rotate its own org's un-narrowed admin key and read the new secret out
+ * of the response. Revoke was the same hole pointed the other way.
  */
 function requireOwnKey(auth: ApiKeyAuth, keyId: string, scope: TenantScope | undefined): void {
   if (!scope) return;
   const key = auth.get(keyId);
   if (!key || !ownsOrg(scope, key.orgId)) {
+    throw new TenantError(404, 'not_found', `no such key: ${keyId}`);
+  }
+  if (!scope.agentIds) return;
+  const target = key.agentIds ?? [];
+  const wider = target.length === 0 || target.some((id) => !scope.agentIds?.includes(id));
+  if (wider) {
     throw new TenantError(404, 'not_found', `no such key: ${keyId}`);
   }
 }

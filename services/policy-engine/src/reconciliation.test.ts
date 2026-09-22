@@ -29,8 +29,14 @@ function baseIntent(agentId: string, amount = '1.00') {
   };
 }
 
-async function allowingEngine() {
-  const engine = new PolicyEngine();
+/**
+ * `clock` moves the engine's time. Allowances used to be aged by dating the
+ * intent, which is request-body input: the same field let a caller stamp a
+ * spend outside every window that would have counted it, so reconciliation
+ * never saw it either.
+ */
+async function allowingEngine(clock?: { now: number }) {
+  const engine = new PolicyEngine(clock ? { now: () => clock.now } : {});
   await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
   return engine;
 }
@@ -269,13 +275,12 @@ describe('an approved escalation', () => {
 
 describe('the report itself', () => {
   it('caps its rows without lying about the counts, keeping the oldest gaps', async () => {
-    const engine = await allowingEngine();
+    const clock = { now: Date.now() - 5_000 };
+    const engine = await allowingEngine(clock);
     const agentId = newId('agt');
     for (let i = 0; i < 5; i++) {
-      await engine.evaluateIntent({
-        ...baseIntent(agentId, '0.01'),
-        createdAt: new Date(Date.now() - (5 - i) * 1_000),
-      });
+      await engine.evaluateIntent(baseIntent(agentId, '0.01'));
+      clock.now += 1_000;
     }
     const report = engine.reconcile({ graceMs: 0, limit: 2 });
     expect(report.unsettled).toBe(5);
@@ -286,12 +291,11 @@ describe('the report itself', () => {
   });
 
   it('sorts unsettled before in-flight — the alarm is never below the fold', async () => {
-    const engine = await allowingEngine();
+    const clock = { now: Date.now() - 120_000 };
+    const engine = await allowingEngine(clock);
     const agentId = newId('agt');
-    await engine.evaluateIntent({
-      ...baseIntent(agentId, '1.00'),
-      createdAt: new Date(Date.now() - 120_000),
-    });
+    await engine.evaluateIntent(baseIntent(agentId, '1.00'));
+    clock.now = Date.now();
     await engine.evaluateIntent(baseIntent(agentId, '2.00'));
     const report = engine.reconcile({ graceMs: 60_000 });
     expect(report.gaps.map((g) => g.state)).toEqual(['unsettled', 'in-flight']);

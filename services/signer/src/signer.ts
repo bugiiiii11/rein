@@ -396,7 +396,14 @@ export class SessionSigner {
         ctx,
       );
     }
-    const offered = atomicToDecimal(requirement.maxAmountRequired, requirementDecimals(requirement));
+    // Decimals from the DECISION's asset, not from the requirement's `extra`.
+    // Reading them off the requirement let the counterparty supply both sides
+    // of this equality: a 500 USDC charge quoted with `decimals: 12` matched a
+    // voucher for 0.0005 and was signed.
+    const offered = atomicToDecimal(
+      requirement.maxAmountRequired,
+      requirementDecimals(requirement, intent.asset),
+    );
     if (compareDecimal(offered, intent.amount) !== 0) {
       throw this.refuse(
         'requirement_mismatch',

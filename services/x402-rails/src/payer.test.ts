@@ -195,7 +195,42 @@ describe('createX402Payer network bounds', () => {
 
   it('signs any known network when no allow-list is given (the old behaviour)', async () => {
     const payer = createX402Payer({ privateKey: KEY, now: () => NOW });
-    await expect(payer(requirement({ network: 'base' }), intent(), decision)).resolves.toContain('');
+    await expect(
+      // Each network's OWN token: the address is pinned to the profile for the
+      // network being paid, so `base` with the Sepolia contract is refused.
+      payer(requirement({ network: 'base', asset: BASE_USDC }), intent(), decision),
+    ).resolves.toContain('');
+  });
+
+  /**
+   * The token contract used to be whatever the counterparty put in `asset`,
+   * and it became the EIP-712 `verifyingContract` unexamined. Combined with
+   * `extra.symbol`, that let any EIP-3009 token be presented as USDC: policy
+   * evaluated the agent's USDC caps and the signature spent a different
+   * balance entirely.
+   */
+  it('refuses a token that is not the profile’s USDC for that network', async () => {
+    const payer = createX402Payer({ privateKey: KEY, now: () => NOW });
+    const impostor = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'; // Ethereum USDC
+    await expect(
+      payer(
+        requirement({ network: 'base', asset: impostor, extra: { symbol: 'USDC' } }),
+        intent(),
+        decision,
+      ),
+    ).rejects.toThrow(/requirement pays token 0xA0b86991/i);
+  });
+
+  it('refuses a network it cannot pin a contract for', async () => {
+    const payer = createX402Payer({ privateKey: KEY, now: () => NOW });
+    // `chainIdForNetwork` rejects an unknown name first; the profile pin is
+    // the second line, for a network that HAS a chain id but no profile.
+    await expect(payer(requirement({ network: 'avalanche' }), intent(), decision)).rejects.toThrow(
+      /cannot sign for x402 network/i,
+    );
+    await expect(
+      payer(requirement({ network: 'polygon' }), intent(), decision),
+    ).rejects.toThrow(/cannot sign for x402 network|no pinned profile/i);
   });
 
   /**
@@ -222,7 +257,12 @@ describe('createX402Payer network bounds', () => {
     await spy(requirement(bare), intent(), decision);
     expect(seen.at(-1)?.name).toBe('USD Coin');
 
-    await spy(requirement({ ...bare, network: 'base-sepolia' }), intent(), decision);
+    // Sepolia's own contract, because the asset is pinned per network.
+    await spy(
+      requirement({ ...bare, network: 'base-sepolia', asset: USDC }),
+      intent(),
+      decision,
+    );
     expect(seen.at(-1)?.name).toBe('USDC');
 
     // The vendor's own declaration still wins over both.

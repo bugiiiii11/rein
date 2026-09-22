@@ -1,4 +1,8 @@
-export type RailsErrorCode = 'malformed_payment' | 'unsupported_network';
+export type RailsErrorCode =
+  | 'malformed_payment'
+  | 'unsupported_network'
+  /** The requirement names a token that is not the pinned profile's USDC. */
+  | 'unsupported_asset';
 
 /** A payload or requirement these rails refuse to handle, with a machine-readable code. */
 export class RailsError extends Error {
