@@ -887,6 +887,26 @@ policy allowed and nothing ever paid is exactly what advisory mode IS, so the
 gap is correct and must not be "fixed". Within the report's 24h window there
 should be about one of them, which makes it a liveness signal in its own right.
 
+**The advisory check cannot assert `allow`, and the first version did.** Its
+very first CI run failed: the $0.04 hourly cap had already been spent, so the
+engine denied a $0.001 ping. That is not a fault -- a `deny` from the rolling
+budget proves the vendor is up, the cert is valid, the 402 quotes correctly,
+the engine reached a signed decision and the agent and policy still exist,
+which is everything this check exists to prove. It now passes on either a
+`402` released unpaid OR a deny whose reason names `hour-budget`, and the
+tolerance is deliberately that narrow: any other denial -- a frozen agent, a
+vanished policy, a `tx-cap` that should not match $0.001 -- is a real failure
+and stays one.
+
+What makes this unavoidable rather than bad luck: **`rollingSum` counts
+ALLOWED decisions, settled or not, so the free advisory check moves the budget
+it is measured against.** Four unpaid pings in an hour will tip a cap that
+$0.005 calls left room under, because the rule compares the sum PLUS this
+amount -- which is also why a $0.001 ping can slip under a ceiling that
+refuses a $0.005 one. Check 3 spends the cap on purpose, so every Monday run
+leaves roughly an hour in which the old assertion would have failed, and any
+manual run does the same.
+
 ## Network profiles (S58)
 
 `REIN_NETWORK_PROFILE` is `testnet` (the default) or `mainnet`, and an unknown

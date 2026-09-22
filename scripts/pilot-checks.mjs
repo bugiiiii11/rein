@@ -83,33 +83,66 @@ const record = (n, name, pass, detail) => {
 if (checks.includes(1)) {
   console.log('\n[1] advisory -- policy decides, nothing is paid');
   const guard = createGuard(base); // no payer => advisory mode
-  const res = await guard.wrap()(PING);
+  let res;
+  let blocked;
+  try {
+    res = await guard.wrap()(PING);
+  } catch (err) {
+    if (!(err instanceof PaymentBlockedError)) throw err;
+    blocked = err.decision;
+  }
   const r = guard.receipts().at(-1);
-  const ok = res.status === 402 && r?.outcome === 'allow' && !r?.settlement;
+
+  // What this check actually proves is that the estate is INTACT: the vendor
+  // is up, the cert is valid, the 402 quotes correctly, the engine reached a
+  // signed decision, and the agent and policy still exist. A `deny` from the
+  // rolling budget proves every one of those too -- so asserting `allow` was
+  // asserting the wrong thing, and it made the check fail whenever the budget
+  // had been spent within the hour. Check 3 spends it ON PURPOSE, and so does
+  // any manual run, which is how this surfaced.
+  //
+  // The tolerance is narrow on purpose: ONLY the known rolling cap. Any other
+  // denial -- a frozen agent, a vanished policy, a tx-cap that should not have
+  // matched $0.001 -- is a real failure and must stay one.
+  const budgetSpent = blocked?.outcome === 'deny' && /hour-budget/.test(blocked.reason ?? '');
+  const advisory = res?.status === 402 && r?.outcome === 'allow' && !r?.settlement;
+  const ok = advisory || budgetSpent;
   record(
     1,
-    'ALLOWED_BUT_UNPAID',
+    advisory ? 'ALLOWED_BUT_UNPAID' : budgetSpent ? 'DECIDED (budget already spent this hour)' : 'ALLOWED_BUT_UNPAID',
     ok,
-    ok
+    advisory
       ? `402 released upward unpaid; decision ${r.decisionId ?? '(no id)'} is on the console`
-      : `expected 402 + allow + unsettled, got ${res.status} / ${r?.outcome ?? 'no receipt'} / settled=${Boolean(r?.settlement)}`,
+      : budgetSpent
+        ? `the engine decided and refused: ${blocked.reason}. The estate is intact -- this is check 3 or a manual run having spent the $0.04 hourly cap, not a fault`
+        : blocked
+          ? `denied for a reason that is NOT the rolling budget: ${blocked.outcome} / ${blocked.reason}`
+          : `expected 402 + allow + unsettled, got ${res?.status} / ${r?.outcome ?? 'no receipt'} / settled=${Boolean(r?.settlement)}`,
   );
 }
 
 if (checks.includes(2)) {
   console.log('\n[2] settled -- the Sprint 5 gate, $0.001 on Base Sepolia');
   const guard = createGuard({ ...base, payer: payer() });
-  const res = await guard.wrap()(PING);
+  let res;
+  let blocked;
+  try {
+    res = await guard.wrap()(PING);
+  } catch (err) {
+    if (!(err instanceof PaymentBlockedError)) throw err;
+    blocked = err.decision; // a deny throws; record it rather than aborting check 3
+  }
   const r = guard.receipts().at(-1);
   const tx = r?.settlement?.txHash;
-  const ok = res.status === 200 && /^0x[0-9a-fA-F]{64}$/.test(tx ?? '');
+  const ok = res?.status === 200 && /^0x[0-9a-fA-F]{64}$/.test(tx ?? '');
   record(
     2,
     'SETTLED',
     ok,
     ok
       ? `tx ${tx} on ${r.settlement.networkId}\n        https://sepolia.basescan.org/tx/${tx}`
-      : `expected 200 + a txHash, got ${res.status} / tx=${tx ?? 'none'} / outcome=${r?.outcome ?? 'no receipt'}`,
+      : `expected 200 + a txHash, got ${blocked ? `${blocked.outcome} (${blocked.reason})` : res?.status} / tx=${tx ?? 'none'} / outcome=${r?.outcome ?? 'no receipt'}`
+        + ' -- if the outcome is a deny, the $0.04 hourly cap was already spent; wait out the hour rather than reading this as a settlement fault',
   );
 }
 
