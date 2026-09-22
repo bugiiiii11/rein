@@ -395,8 +395,11 @@ describe('deploy configuration', () => {
      * the running process: docs are prose (the one app that SERVES markdown is
      * apps/landing, which deploys on Vercel, not here), `.github/` is CI,
      * `.claude/` is agent config, and `scripts/` holds operator tooling (the CI
-     * package smoke, the backup export, the approval signer) -- none of which
-     * the root `build` script touches or the image runs.
+     * package smoke, the backup export, the approval signer, and the S71 pilot
+     * pair) -- none of which the root `build` script touches or the image runs.
+     * That exclusion is WHY they live there: both pilot scripts started at the
+     * repo root and in `apps/demo`, where `**` would have redeployed the
+     * console every time an ops script was edited.
      */
     it('skips only docs, CI, agent config and operator scripts', () => {
       const patterns = patternsOf('railway.json');
@@ -409,6 +412,8 @@ describe('deploy configuration', () => {
         'scripts/package-smoke.mjs',
         'scripts/export-decisions.mjs',
         'scripts/approve.mjs',
+        'scripts/pilot-setup.sh',
+        'scripts/pilot-checks.mjs',
       ]) {
         expect(deploys(patterns, file), `${file} should not trigger a deploy`).toBe(false);
       }

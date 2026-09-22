@@ -854,6 +854,39 @@ meaning the same thing. Repository secrets: `REIN_SEPOLIA_PRIVATE_KEY`,
 rate-limits), `REIN_SEPOLIA_ERC8004_ID`, the Telegram pair, and once the engine
 is up `REIN_E2E_ENGINE_URL` + `REIN_ENGINE_API_KEY`.
 
+### The vendor leg pays for itself once a week (S71)
+
+The sixth leg runs `scripts/pilot-checks.mjs` against the whole live estate at
+once -- `vendor.reinconsole.com` quoting, `engine.reinconsole.com` deciding,
+Base Sepolia settling -- which is the only check that covers the seam between
+them rather than any one service. It is also the only leg that spends money on
+purpose, so the mode is chosen rather than fixed:
+
+- **Advisory every night** (`--advisory`), and it is FREE. No payer key is
+  constructed at all, so the run proves the service is up, the cert is valid,
+  the 402 quotes correctly, the engine decides, and the pilot agent and policy
+  are intact -- everything that realistically breaks.
+- **Full once a week** (`--all`, Mondays by `date -u +%u`), at about $0.046.
+  This is what catches the facilitator or the chain being down, which advisory
+  cannot: roughly $2.40 a year against $17 for running it nightly.
+- `workflow_dispatch` with `spend: true` forces the full run on any day.
+
+Secrets: `REIN_PILOT_AGENT_ID` and `REIN_PILOT_AGENT_KEY` (a key narrowed to
+that one agent, scopes `evaluate`+`read`). The payer falls back to
+`REIN_SEPOLIA_PRIVATE_KEY`, the wallet the other spending suites already use --
+nothing in the engine binds a payer to an agent's registered `wallets`, which
+is descriptive metadata and not enforcement. Set
+`REIN_PILOT_PAYER_PRIVATE_KEY` only to pay from the pilot's own wallet.
+
+**Two deliberate shapes here.** The mode step emits an EMPTY `arg` when the
+pilot secrets are unset, so the leg genuinely skips instead of exiting 0 -- an
+unconfigured check reading green is the S69 outage in miniature, where a
+passing healthcheck meant nothing had been checked. And each advisory run
+leaves a permanent `unsettled` row in `/v1/reconciliation`: a decision the
+policy allowed and nothing ever paid is exactly what advisory mode IS, so the
+gap is correct and must not be "fixed". Within the report's 24h window there
+should be about one of them, which makes it a liveness signal in its own right.
+
 ## Network profiles (S58)
 
 `REIN_NETWORK_PROFILE` is `testnet` (the default) or `mainnet`, and an unknown

@@ -19,7 +19,12 @@ on:
         required: false
         default: all
         type: choice
-        options: [all, rails, gate, erc8004, telegram, engine]
+        options: [all, rails, gate, erc8004, telegram, engine, vendor]
+      spend:
+        description: 'Vendor leg: also run the settling checks (costs ~$0.046)'
+        required: false
+        default: false
+        type: boolean
 
 # NEVER two spenders at once. The suites share one funded Sepolia wallet, and
 # concurrent runs race on its nonce and its balance. Unlike ci.yml this does
@@ -48,6 +53,13 @@ jobs:
       REIN_TELEGRAM_CHAT_ID: ${{ secrets.REIN_TELEGRAM_CHAT_ID }}
       REIN_E2E_ENGINE_URL: ${{ secrets.REIN_E2E_ENGINE_URL }}
       REIN_ENGINE_API_KEY: ${{ secrets.REIN_ENGINE_API_KEY }}
+      # The vendor leg speaks as Rein's own pilot agent, through a key narrowed
+      # to it (scopes evaluate+read). The payer falls back to the wallet the
+      # other spending suites already use: nothing in the engine binds a payer
+      # to an agent's registered `wallets`, which is metadata, not enforcement.
+      REIN_AGENT_ID: ${{ secrets.REIN_PILOT_AGENT_ID }}
+      REIN_PILOT_AGENT_KEY: ${{ secrets.REIN_PILOT_AGENT_KEY }}
+      REIN_PAYER_PRIVATE_KEY: ${{ secrets.REIN_PILOT_PAYER_PRIVATE_KEY || secrets.REIN_SEPOLIA_PRIVATE_KEY }}
       # NODE_EXTRA_CA_CERTS is deliberately absent: it is a local-machine
       # workaround for a MITM antivirus root, and setting it here would only
       # break a runner that has no such file.
@@ -105,6 +117,44 @@ jobs:
         id: engine
         run: pnpm --filter @reinconsole/store exec vitest run src/engine.e2e.live.test.ts --retry=1
 
+      # The vendor + settlement path (S71's Sprint 5 gate, kept as an alarm).
+      # ADVISORY every night and FULL once a week, because only the advisory
+      # check is free: it proves the service is up, the cert is valid, the 402
+      # quotes correctly, the engine decides and the agent and policy are
+      # intact -- everything that realistically breaks. The settling checks
+      # cost ~$0.046 a run and are the only way to catch the facilitator or
+      # the chain going down, which is worth ~$2.40 a year but not ~$17.
+      #
+      # Monday is arbitrary; what matters is that a schedule cannot spend six
+      # days in seven. A dispatch can force it with spend=true.
+      # Decides BOTH whether the leg can run and what it costs. Emitting an
+      # empty `arg` when the pilot secrets are unset is what makes the step
+      # below genuinely SKIP rather than exit 0 -- an unconfigured leg reading
+      # green is the shape of the S69 outage, where a passing check meant
+      # nothing had been checked.
+      - name: Vendor leg — mode
+        if: ${{ inputs.suite == 'all' || inputs.suite == 'vendor' || inputs.suite == '' }}
+        id: vendor_mode
+        run: |
+          if [ -z "${REIN_PILOT_AGENT_KEY}" ] || [ -z "${REIN_AGENT_ID}" ]; then
+            echo 'REIN_PILOT_AGENT_ID / REIN_PILOT_AGENT_KEY unset -- the vendor leg will skip'
+            echo 'label=unconfigured' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ inputs.spend }}" = "true" ] || [ "$(date -u +%u)" = "1" ]; then
+            echo 'arg=--all' >> "$GITHUB_OUTPUT"
+            echo 'label=full (advisory + settled + denied)' >> "$GITHUB_OUTPUT"
+          else
+            echo 'arg=--advisory' >> "$GITHUB_OUTPUT"
+            echo 'label=advisory only (no spend)' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Vendor — ${{ steps.vendor_mode.outputs.label }}
+        if: ${{ steps.vendor_mode.outputs.arg != '' }}
+        continue-on-error: true
+        id: vendor
+        run: node scripts/pilot-checks.mjs ${{ steps.vendor_mode.outputs.arg }}
+
       # Every suite runs even when an earlier one fails (continue-on-error),
       # because "the facilitator is down" should not hide "Telegram is also
       # down". This step is what actually fails the run.
@@ -121,6 +171,7 @@ jobs:
             echo "| erc8004 | ${{ steps.erc8004.outcome }} |"
             echo "| telegram | ${{ steps.telegram.outcome }} |"
             echo "| engine | ${{ steps.engine.outcome }} |"
+            echo "| vendor (${{ steps.vendor_mode.outputs.label }}) | ${{ steps.vendor.outcome }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           failed=""
@@ -129,7 +180,8 @@ jobs:
             "gate:${{ steps.gate.outcome }}" \
             "erc8004:${{ steps.erc8004.outcome }}" \
             "telegram:${{ steps.telegram.outcome }}" \
-            "engine:${{ steps.engine.outcome }}"; do
+            "engine:${{ steps.engine.outcome }}" \
+            "vendor:${{ steps.vendor.outcome }}"; do
             name="${pair%%:*}"
             outcome="${pair##*:}"
             if [ "$outcome" = "failure" ]; then failed="$failed $name"; fi
