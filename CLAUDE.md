@@ -11,3 +11,10 @@ The control plane for AI agent payments (x402 / ERC-8004 stack). Non-custodial: 
 ## Conventions
 
 - No emojis in project docs.
+
+## Response style
+
+- Keep answers SHORT. No long narrative, no restating context I already have.
+- When something blocks me and the founder must act: lead with **numbered exact steps** (literal commands, literal URLs, literal values -- copy-pasteable, Git Bash not PowerShell 5.1). Put a one-line "why" UNDER each step, not above it.
+- Separate **what I do** from **what you do**. Never bury a founder action inside prose.
+- State outcomes plainly: done / failed / skipped. No hedging, no summaries of work already reported.
