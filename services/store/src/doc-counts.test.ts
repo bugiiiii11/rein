@@ -48,7 +48,12 @@ describe('published test counts', () => {
 
   it('all six agree with each other', () => {
     const counts = SITES.map(([file, pattern]) => {
-      const found = read(file).match(pattern)?.[1].replace(/,/g, '');
+      // `?.[1]?.` on BOTH hops, not just the match: a pattern with no capture
+      // group hands back undefined at index 1 while the match itself succeeded.
+      // Unreachable while the test above passes; if it ever is reached, Number
+      // gives NaN and the distinct-count assertion below fails loudly with the
+      // offending site named, which is the behaviour wanted anyway.
+      const found = read(file).match(pattern)?.[1]?.replace(/,/g, '');
       return { site: `${file} ${pattern.source.slice(0, 24)}`, count: Number(found) };
     });
     const distinct = [...new Set(counts.map((c) => c.count))];
