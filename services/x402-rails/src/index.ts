@@ -61,6 +61,7 @@ export {
   railEventsAbi,
   type OnchainIndexerOptions,
   type EngineEvents,
+  type AllowedIntent,
   type ChainReader,
   type RailLog,
   type ShadowSpend,

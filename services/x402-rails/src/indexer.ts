@@ -10,6 +10,24 @@ export interface EngineEvents {
   onEvent(handler: (event: ReinEvent) => void): void;
 }
 
+/**
+ * The whole of an allowed intent that reconciliation actually reads: which
+ * intent, and whose. `PaymentIntent` satisfies this structurally, so the
+ * in-process path is unchanged.
+ *
+ * It is stated as its own type because a REMOTE reader cannot produce a
+ * PaymentIntent and does not need to. `agentId` is the load-bearing half: it
+ * is what stops agent B signing an authorization whose nonce derives from
+ * agent A's allowed intent, and having its own unauthorized spend counted as
+ * A's settled payment -- which would close A's reconciliation gap on a
+ * payment that never happened and hide B's from shadow detection in the same
+ * stroke. A remote source that cannot name the agent must not guess one.
+ */
+export interface AllowedIntent {
+  id: string;
+  agentId: string;
+}
+
 /** The two FiatTokenV2 events one transferWithAuthorization settlement emits. */
 export const railEventsAbi = parseAbi([
   'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -89,7 +107,7 @@ export class OnchainIndexer {
   /** Every intent the engine has seen, by id (from `intent.created`). */
   private readonly intents = new Map<string, PaymentIntent>();
   /** Intents with an ALLOW decision, by id. */
-  private readonly allowed = new Map<string, PaymentIntent>();
+  private readonly allowed = new Map<string, AllowedIntent>();
   private readonly settledIntents = new Set<string>();
   /** Expected on-chain nonce -> intent id, for every allowed intent. */
   private readonly nonceToIntent = new Map<string, string>();
@@ -108,12 +126,32 @@ export class OnchainIndexer {
         this.intents.set(event.intent.id, event.intent);
       } else if (event.type === 'decision.made' && event.decision.outcome === 'allow') {
         const intent = this.intents.get(event.decision.intentId);
-        if (intent) {
-          this.allowed.set(intent.id, intent);
-          this.nonceToIntent.set(intentNonce(intent.id).toLowerCase(), intent.id);
-        }
+        if (intent) this.learnAllowed(intent);
       }
     });
+  }
+
+  /**
+   * Learn an allowed intent from outside the in-process bus.
+   *
+   * `connectEngine` is the only way in today, and it needs an EventEmitter in
+   * the same process -- which a runner pointed at a REMOTE engine does not
+   * have, so the indexer it starts learns nothing and reports every genuine
+   * settlement as a shadow spend. This is the seam a remote source writes to.
+   *
+   * Idempotent: the same intent arriving twice (a poll overlapping the bus,
+   * or a paged feed re-reading its last row) is not an error. Settlement is
+   * guarded separately by `settledIntents`, so a re-learn cannot resurrect an
+   * intent that has already been reconciled.
+   */
+  learnAllowed(intent: AllowedIntent): void {
+    this.allowed.set(intent.id, intent);
+    this.nonceToIntent.set(intentNonce(intent.id).toLowerCase(), intent.id);
+  }
+
+  /** Intent ids the indexer will reconcile against, for a caller checking its own wiring. */
+  allowedIntentIds(): readonly string[] {
+    return [...this.allowed.keys()];
   }
 
   /** Begin polling. Scans from `fromBlock` (default: the current head). */
@@ -243,7 +281,7 @@ export class OnchainIndexer {
     }
   }
 
-  private reconcile(tx: TxLogs, from: string, agentId: string): PaymentIntent | undefined {
+  private reconcile(tx: TxLogs, from: string, agentId: string): AllowedIntent | undefined {
     for (const auth of tx.authorizations) {
       const { authorizer, nonce } = auth.args;
       if (authorizer === undefined || nonce === undefined) continue;

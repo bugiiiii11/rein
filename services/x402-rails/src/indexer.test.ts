@@ -4,7 +4,7 @@ import type { Address, Hex } from 'viem';
 import { newId } from '@reinconsole/core';
 import { PolicyEngine, buildServer } from '@reinconsole/policy-engine';
 import { EngineClient } from '@reinconsole/sdk';
-import { OnchainIndexer, type ChainReader, type RailLog } from './indexer.js';
+import { OnchainIndexer, type ChainReader, type OnchainIndexerOptions, type RailLog } from './indexer.js';
 import { intentNonce } from './nonce.js';
 
 const WALLET: Address = '0x1111111111111111111111111111111111111111';
@@ -201,5 +201,130 @@ describe('OnchainIndexer', () => {
     await world.indexer.scan(); // nothing new — must not re-emit
 
     expect(world.indexer.events()).toHaveLength(1);
+  });
+});
+
+/**
+ * The remote seam. A runner pointed at a hosted engine has no in-process bus
+ * to subscribe to, so `connectEngine` cannot reach it and the indexer starts
+ * knowing nothing -- which classifies every genuine settlement as a shadow
+ * spend. These drive `learnAllowed` directly: no engine, no HTTP, just the
+ * two facts a remote reader can actually supply.
+ */
+describe('OnchainIndexer.learnAllowed (the remote seam)', () => {
+  const AGENT_A = newId('agt');
+  const AGENT_B = newId('agt');
+
+  /** Two managed agents, two wallets, a fake chain. No policy engine. */
+  function remoteRig() {
+    const chain = fakeChain();
+    const agents = [
+      { id: AGENT_A, wallets: [{ chain: 'base', address: WALLET }] },
+      { id: AGENT_B, wallets: [{ chain: 'base', address: OTHER }] },
+    ];
+    const indexer = new OnchainIndexer({
+      client: chain.reader,
+      // The indexer reads only id + wallets; the full Agent record is the
+      // engine's business and a remote directory need not reproduce it.
+      agents: () => agents as unknown as ReturnType<OnchainIndexerOptions['agents']>,
+      facilitator: 'x402.org',
+      fromBlock: 1n,
+      pollIntervalMs: 60_000,
+    });
+    return { chain, indexer };
+  }
+
+  it('reconciles an intent learned without an in-process engine', async () => {
+    const { chain, indexer } = remoteRig();
+    await indexer.start();
+    indexer.stop();
+    const intentId = newId('int');
+
+    indexer.learnAllowed({ id: intentId, agentId: AGENT_A });
+    chain.mine(
+      transfer(TX1, WALLET, PAY_TO, 10_000n),
+      authorizationUsed(TX1, WALLET, intentNonce(intentId)),
+    );
+    await indexer.scan();
+
+    expect(indexer.shadowSpends()).toHaveLength(0);
+    expect(indexer.settledPayments()).toEqual([
+      expect.objectContaining({ intentId, txHash: TX1, facilitator: 'x402.org' }),
+    ]);
+  });
+
+  it('without the seam the same settlement is a false shadow spend', async () => {
+    // The bug this exists to prevent, stated as a test: an indexer that was
+    // never told anything reports a legitimate, authorized payment as an
+    // alarm. This is what a remote runner got before `learnAllowed`.
+    const { chain, indexer } = remoteRig();
+    await indexer.start();
+    indexer.stop();
+    const intentId = newId('int');
+
+    chain.mine(
+      transfer(TX1, WALLET, PAY_TO, 10_000n),
+      authorizationUsed(TX1, WALLET, intentNonce(intentId)),
+    );
+    await indexer.scan();
+
+    expect(indexer.settledPayments()).toHaveLength(0);
+    expect(indexer.shadowSpends()).toHaveLength(1);
+  });
+
+  it('will not credit one agent a payment made from another agent wallet', async () => {
+    // The reason AllowedIntent carries agentId at all. B signs an EIP-3009
+    // authorization whose nonce derives from A's allowed intent and spends
+    // its OWN money. If the indexer matched on nonce alone it would call this
+    // A's settlement: A's reconciliation gap closes on a payment A never
+    // made, and B's unauthorized spend stops being a shadow spend. The nonce
+    // is the memo, but the memo is not the authority.
+    const { chain, indexer } = remoteRig();
+    await indexer.start();
+    indexer.stop();
+    const intentId = newId('int');
+
+    indexer.learnAllowed({ id: intentId, agentId: AGENT_A });
+    chain.mine(
+      transfer(TX1, OTHER, PAY_TO, 10_000n),
+      authorizationUsed(TX1, OTHER, intentNonce(intentId)),
+    );
+    await indexer.scan();
+
+    expect(indexer.settledPayments()).toHaveLength(0);
+    expect(indexer.shadowSpends()).toEqual([
+      expect.objectContaining({ agentId: AGENT_B, txHash: TX1 }),
+    ]);
+  });
+
+  it('is idempotent, and a re-learn cannot resurrect a settled intent', async () => {
+    // A paged feed re-reading its last row, or a poll overlapping the bus.
+    const { chain, indexer } = remoteRig();
+    await indexer.start();
+    indexer.stop();
+    const intentId = newId('int');
+
+    indexer.learnAllowed({ id: intentId, agentId: AGENT_A });
+    indexer.learnAllowed({ id: intentId, agentId: AGENT_A });
+    expect(indexer.allowedIntentIds()).toEqual([intentId]);
+
+    chain.mine(
+      transfer(TX1, WALLET, PAY_TO, 10_000n),
+      authorizationUsed(TX1, WALLET, intentNonce(intentId)),
+    );
+    await indexer.scan();
+    expect(indexer.settledPayments()).toHaveLength(1);
+
+    // Learning it again after settlement, then seeing a SECOND transfer reuse
+    // the nonce: the replay is a shadow spend, not a second settlement.
+    indexer.learnAllowed({ id: intentId, agentId: AGENT_A });
+    chain.mine(
+      transfer(TX2, WALLET, PAY_TO, 10_000n),
+      authorizationUsed(TX2, WALLET, intentNonce(intentId)),
+    );
+    await indexer.scan();
+
+    expect(indexer.settledPayments()).toHaveLength(1);
+    expect(indexer.shadowSpends()).toEqual([expect.objectContaining({ txHash: TX2 })]);
   });
 });
