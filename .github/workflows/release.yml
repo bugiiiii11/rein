@@ -1,0 +1,99 @@
+name: Release
+
+# Publishes the 11 @reinconsole/* packages with npm Trusted Publishing (OIDC):
+# no npm token exists in this repo, its secrets, or this workflow. npm trusts
+# THIS file (by name) running in the `release` environment, per package, as
+# configured on npmjs.com. Renaming this file or the environment breaks that
+# trust silently until the next publish -- change npmjs.com in the same breath.
+#
+# Triggers:
+#   - push a tag `v<version>`  -> real publish; the tag must equal every
+#     package's version (a prerelease goes under `next`, never `latest`)
+#   - Actions -> Release -> Run workflow -> dry run (the default): packs and
+#     `npm publish --dry-run`s everything, reaches nothing
+#
+# Every run waits for a required reviewer on the `release` environment, so a
+# pushed tag alone never publishes.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: pack and npm publish --dry-run, nothing reaches the registry'
+        type: boolean
+        default: true
+      dist_tag:
+        description: 'npm dist-tag (empty: next for a prerelease, latest otherwise)'
+        type: string
+        default: ''
+
+# Two publishes racing each other can interleave packages; queue instead.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Same pin as ci.yml: the live suites must never settle real payments here.
+  RUN_LIVE: ''
+
+jobs:
+  publish:
+    name: publish (${{ github.event_name == 'push' && github.ref_name || (inputs.dry_run && 'dry run' || 'dispatch') }})
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # The OIDC token npm exchanges for a short-lived publish credential, and
+      # what signs the provenance attestation.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      # No `cache: pnpm`: a provenance-attested artifact should be built from a
+      # clean install, not from a store some earlier run wrote.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # pnpm 10 never performs the OIDC exchange, so the tarballs are packed by
+      # pnpm and published by npm (scripts/release-publish.mjs). Node 22's
+      # bundled npm is 10.x; Trusted Publishing needs >= 11.5.1.
+      - name: npm with Trusted Publishing support
+        run: npm install -g npm@^11.5.1 && npm --version
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # The build and the tests are separate gates (S69/S73: a green suite
+      # over a failing typecheck), so a release runs both.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Pack, install and import as a consumer
+        run: pnpm smoke
+
+      - name: Publish
+        env:
+          # Inputs arrive as env, never interpolated into the script body.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          DIST_TAG: ${{ inputs.dist_tag }}
+        run: |
+          args=()
+          if [ "$GITHUB_EVENT_NAME" = push ]; then args+=(--expect-version "${GITHUB_REF_NAME#v}"); fi
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
+          if [ -n "$DIST_TAG" ]; then args+=(--tag "$DIST_TAG"); fi
+          node scripts/release-publish.mjs "${args[@]}"
