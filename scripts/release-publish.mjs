@@ -160,15 +160,12 @@ for (const { dir, manifest } of workspaces) {
   const id = `${manifest.name}@${manifest.version}`;
   if (!existsSync(path.join(dir, 'dist'))) die(`${manifest.name}: no dist/ -- run \`pnpm build\` first`);
 
-  // A dry run still packs and dry-publishes a version that is already out --
-  // otherwise, between releases, it would exercise nothing at all.
   const already = published(manifest.name, manifest.version);
   if (already && !dryRun) {
     console.log(`  skip     ${id}  (already on the registry)`);
     results.push({ id, manifest, state: 'skipped' });
     continue;
   }
-  if (already) console.log(`  (${id} is already on the registry -- a real run skips it)`);
 
   // One directory per package, so the tarball is the only file in it.
   const out = path.join(packRoot, manifest.name.replace('/', '__'));
@@ -176,6 +173,15 @@ for (const { dir, manifest } of workspaces) {
   run(pnpmCmd, ['pack', '--pack-destination', out], dir);
   const tarballs = readdirSync(out).filter((f) => f.endsWith('.tgz'));
   if (tarballs.length !== 1) die(`${manifest.name}: expected one tarball, got ${tarballs.length}`);
+
+  // npm 11 checks the registry even under --dry-run and refuses a version that
+  // is already out (npm 10 did not -- a local dry run passed where CI's failed,
+  // S76). So between releases a dry run proves the pack, not the publish.
+  if (already) {
+    console.log(`  packed   ${id}  (already on the registry: a real run skips it)`);
+    results.push({ id, manifest, state: 'packed' });
+    continue;
+  }
 
   const args = ['publish', path.join(out, tarballs[0]), '--access', 'public', '--tag', distTag];
   // Trusted Publishing attests provenance on its own; the flag makes a
@@ -207,6 +213,7 @@ if (!dryRun) {
 
 const count = (s) => results.filter((r) => r.state === s).length;
 console.log(
-  `\n  OK  published ${count('published')}, dry-run ${count('dry-run')}, skipped ${count('skipped')} ` +
+  `\n  OK  published ${count('published')}, dry-run ${count('dry-run')}, packed ${count('packed')}, ` +
+    `skipped ${count('skipped')} ` +
     `(dist-tag ${distTag})\n`,
 );

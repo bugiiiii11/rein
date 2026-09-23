@@ -19,23 +19,30 @@ Packages: `core`, `sdk`, `gate`, `policy-engine`, `graph`, `erc8004`, `mock-rail
 1. Sign in to https://www.npmjs.com as the account that owns the `@reinconsole` scope.
 2. Open `https://www.npmjs.com/package/@reinconsole/<package>/access` -- the package's **Settings**
    tab (for example https://www.npmjs.com/package/@reinconsole/core/access).
-3. In the **Trusted Publisher** section, under **Select your publisher**, click **GitHub Actions**.
+3. In the **Trusted Publisher** section, set **Publisher** to **GitHub Actions**.
 4. Fill in exactly:
 
    | Field | Value |
    |---|---|
-   | Organization or user | `bugiiiii11` |
+   | Label | leave empty (optional) |
+   | Organization or user | `bugiiiii11` (five i's -- must match the repo URL in the sidebar) |
    | Repository | `rein` |
    | Workflow filename | `release.yml` (file name only, no `.github/workflows/` path) |
    | Environment name | `release` |
-   | Allowed actions (if shown) | `npm publish` |
+   | Allowed actions: **Allow `npm publish`** | CHECKED (see below) |
 
-5. Click **Save** / **Add trusted publisher**. Your security key may be asked for (2FA).
+5. Click **Set up connection**. Your security key may be asked for (2FA).
 6. Do NOT change **Publishing access** yet (see "After the first OIDC publish").
 
-npm does not validate these fields when you save. A typo shows up only when a publish fails, and
-each package fails on its own, so check every one against the table. A wrong value surfaces as
-`ENEEDAUTH` or a 404/403 on `PUT` for that package in the workflow's Publish step.
+The connection **cannot be edited** once created -- a mistake means deleting it and creating a new
+one. npm does not validate the fields either: a typo shows up only when that package's publish
+fails (`ENEEDAUTH`, or a 404/403 on `PUT` in the workflow's Publish step), and each package fails on
+its own, so check every one against the table before clicking.
+
+**Why `npm publish` stays allowed despite npm's "Not recommended" note:** unchecked, the workflow
+could only `npm stage publish`, and every version of every package would then wait for a manual
+promotion on npmjs.com -- 11 approvals per release. The human gate here is the `release`
+environment's required reviewer instead, and `scripts/release-publish.mjs` uses `npm publish`.
 
 Renaming `release.yml` or the `release` environment breaks the trust for all 11 packages until
 npmjs.com is updated to match.
