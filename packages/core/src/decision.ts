@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DecisionId, IntentId } from './ids.js';
+import { AgentId, DecisionId, IntentId } from './ids.js';
 
 export const DecisionOutcome = z.enum(['allow', 'deny', 'escalate']);
 export type DecisionOutcome = z.infer<typeof DecisionOutcome>;
@@ -37,3 +37,19 @@ export const Decision = z.object({
   decidedAt: z.coerce.date(),
 });
 export type Decision = z.infer<typeof Decision>;
+
+/**
+ * A decision as `GET /v1/decisions` serves it (0.3.0): the signed record plus
+ * `agentId`, the agent whose intent it judged.
+ *
+ * `agentId` is an ENVELOPE field -- the engine's own attribution, outside
+ * `hash` and `signature`, so a verified chain vouches for nothing about it.
+ * Putting it inside would have changed the hash of every future decision and
+ * split the chain into two formats. It is here for a reconciler that is not
+ * co-located with the agent: `reconcile()` needs an allowed intent's agent,
+ * or agent B's payment against A's intent is credited to A (S74), and before
+ * this field only `/v1/reconciliation` carried it -- and erases it the moment
+ * a settlement lands. Absent on an unattributed (pre-tenancy) row.
+ */
+export const AttributedDecision = Decision.extend({ agentId: AgentId.optional() });
+export type AttributedDecision = z.infer<typeof AttributedDecision>;

@@ -6,6 +6,7 @@ import {
   ApprovalGrant,
   ApprovalRequest,
   ApproverKey,
+  AttributedDecision,
   Breaker,
   Decision,
   LivenessExpectation,
@@ -272,9 +273,12 @@ export class EngineClient {
    * On a chain longer than that this is a verifying PREFIX, not the whole log
    * — `prevHash` links check out, but the newest decisions are not here. Use
    * {@link decisionsPage} when you need to walk to the head.
+   *
+   * Each record carries `agentId` from a 0.3.0 engine -- unsigned, see
+   * AttributedDecision -- and lacks it from an older one.
    */
-  decisions(): Promise<Decision[]> {
-    return this.request('GET', '/v1/decisions', z.array(Decision));
+  decisions(): Promise<AttributedDecision[]> {
+    return this.request('GET', '/v1/decisions', z.array(AttributedDecision));
   }
 
   /**
@@ -291,13 +295,13 @@ export class EngineClient {
    */
   async decisionsPage(
     query: { after?: number; limit?: number } = {},
-  ): Promise<{ decisions: Decision[]; nextAfter?: number; chainLength: number }> {
+  ): Promise<{ decisions: AttributedDecision[]; nextAfter?: number; chainLength: number }> {
     const params = new URLSearchParams();
     if (query.after !== undefined) params.set('after', String(query.after));
     if (query.limit !== undefined) params.set('limit', String(query.limit));
     const qs = params.toString();
     const res = await this.send('GET', `/v1/decisions${qs ? `?${qs}` : ''}`);
-    const decisions = z.array(Decision).parse(await res.json());
+    const decisions = z.array(AttributedDecision).parse(await res.json());
     const next = res.headers.get('rein-next-after');
     const length = res.headers.get('rein-chain-length');
     return {

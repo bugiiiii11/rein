@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/signer",
-  "version": "0.2.0",
+  "version": "0.3.0-rc.1",
   "description": "Rein's session-key signer — the custody tier. Holds agent wallet keys and releases EIP-3009 signatures only against engine-signed allow decisions, under session caps.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

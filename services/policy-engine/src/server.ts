@@ -543,7 +543,13 @@ export function buildServer(
     if (start + page.length < visible.length) {
       reply.header('Rein-Next-After', String(start + page.length - 1));
     }
-    return page;
+    // `agentId` rides beside the signed record, never inside it: see
+    // AttributedDecision. The scope filter above already limits it to agents
+    // the caller owns, so it discloses nothing the page did not.
+    return page.map((d) => {
+      const agentId = engine.agentOfDecision(d.id);
+      return agentId === undefined ? d : { ...d, agentId };
+    });
   });
 
   // --- Reconciliation (B1): allowed but never settled ---

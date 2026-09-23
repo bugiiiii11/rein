@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/graph",
-  "version": "0.2.0",
+  "version": "0.3.0-rc.1",
   "description": "Rein's reputation graph (Phase 3) — turns guard receipts and gate receipts into explainable reputation scores, and feeds them back into policy (vendorReputationLt) and gate screening.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

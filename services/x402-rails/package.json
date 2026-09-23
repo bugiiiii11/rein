@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/x402-rails",
-  "version": "0.2.0",
+  "version": "0.3.0-rc.1",
   "description": "Real x402 rails for Rein — EIP-3009 payer, hosted-facilitator client, and on-chain indexer for Base Sepolia.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { Decision, newId } from '@reinconsole/core';
+import { AttributedDecision, Decision, newId } from '@reinconsole/core';
 import { buildServer } from './server.js';
 import { PolicyEngine } from './engine.js';
 import { verifyDecisionChain } from './decision-log.js';
@@ -123,6 +123,45 @@ describe('GET /v1/decisions paging', () => {
     expect(page(res)).toEqual([]);
     expect(res.headers['rein-next-after']).toBeUndefined();
     expect(res.headers['rein-chain-length']).toBe('2');
+    await app.close();
+  });
+
+  it('each record names its agent BESIDE the signature, and the page still verifies', async () => {
+    // What a reconciler that is not co-located with the agent needs (S74):
+    // without the agent, B's payment against A's allowed intent credits A.
+    const app = buildServer(new PolicyEngine());
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      payload: { policyId: 'pol_open', default: 'allow' },
+    });
+    const a = newId('agt');
+    const b = newId('agt');
+    for (const [i, agentId] of [a, b, a].entries()) {
+      await app.inject({
+        method: 'POST',
+        url: '/v1/evaluate',
+        payload: {
+          agentId,
+          vendor: { host: 'api.example.com', address: '0x1' },
+          resource: `/v1/answer/${i}`,
+          amount: '0.01',
+          asset: 'USDC',
+          chain: 'base',
+        },
+      });
+    }
+    const res = await app.inject({ method: 'GET', url: '/v1/decisions' });
+    const rows = z.array(AttributedDecision).parse(res.json());
+    expect(rows.map((d) => d.agentId)).toEqual([a, b, a]);
+
+    const key = await publicKeyOf(app);
+    expect(verifyDecisionChain(rows, key)).toBe(true);
+    // The envelope contract, pinned: agentId is NOT in the signed bytes, so a
+    // relabelled page verifies too. If this starts failing, agentId moved into
+    // the hash -- every decision after that deploy hashes differently from
+    // every one before it, and the chain has two formats.
+    expect(verifyDecisionChain(rows.map((d) => ({ ...d, agentId: b })), key)).toBe(true);
     await app.close();
   });
 

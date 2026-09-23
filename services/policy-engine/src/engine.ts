@@ -771,6 +771,11 @@ export class PolicyEngine {
     });
   }
 
+  /** The agent a decision judged, or undefined for an unattributed row. Not signed. */
+  agentOfDecision(decisionId: string): string | undefined {
+    return this.log.agentOf(decisionId);
+  }
+
   /** Liveness rows for the agents a caller owns. */
   visibleLivenessStates(scope?: TenantScope, now?: number): LivenessState[] {
     const states = this.livenessStates(now);

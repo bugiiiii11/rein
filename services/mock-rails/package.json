@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/mock-rails",
-  "version": "0.2.0",
+  "version": "0.3.0-rc.1",
   "description": "Simulated payment rails for Rein v0.1 — mock x402 facilitator, on-chain ledger, and indexer with shadow-spend detection.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",
