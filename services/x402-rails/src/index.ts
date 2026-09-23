@@ -55,6 +55,14 @@ export {
   DEFAULT_FACILITATOR_URL,
   type FacilitatorClientOptions,
 } from './facilitator.js';
+export {
+  discoverResources,
+  selectDiscovered,
+  PAYAI_DISCOVERY_URL,
+  type DiscoveredResource,
+  type DiscoveryCriteria,
+  type DiscoverOptions,
+} from './discovery.js';
 export { createRealVendor, type RealVendor, type RealVendorOptions, type VendorCall } from './vendor.js';
 export {
   OnchainIndexer,

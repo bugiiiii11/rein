@@ -7,7 +7,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsup src/index.ts src/sepolia.ts src/signer.ts src/gate.ts src/sepolia-gate.ts src/graph.ts src/erc8004.ts src/sepolia-8004.ts --format esm --no-splitting --target node22 --out-dir dist",
+    "build": "tsup src/index.ts src/sepolia.ts src/signer.ts src/gate.ts src/sepolia-gate.ts src/graph.ts src/erc8004.ts src/sepolia-8004.ts src/mainnet.ts --format esm --no-splitting --target node22 --out-dir dist",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "demo": "pnpm build && node dist/index.js",
@@ -17,7 +17,8 @@
     "demo:sepolia-gate": "pnpm build && node dist/sepolia-gate.js",
     "demo:graph": "pnpm build && node dist/graph.js",
     "demo:erc8004": "pnpm build && node dist/erc8004.js",
-    "demo:sepolia-8004": "pnpm build && node dist/sepolia-8004.js"
+    "demo:sepolia-8004": "pnpm build && node dist/sepolia-8004.js",
+    "demo:mainnet": "pnpm build && node dist/mainnet.js"
   },
   "dependencies": {
     "@reinconsole/core": "workspace:*",
