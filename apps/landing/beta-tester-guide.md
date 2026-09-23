@@ -14,7 +14,7 @@ because nobody wants a program with an open wallet. Rein is the thing in between
 before any money moves, whether a given purchase is allowed, and keeps a receipt of every decision.
 
 You will play the part of the agent. You will make a purchase that is allowed, and one that is
-refused, and see both appear on a dashboard.
+refused, and see both recorded, with a receipt for each.
 
 **All money in this test is fake.** It is "testnet" currency, issued free, worth nothing, on a
 practice network. You cannot spend real money here even by mistake, and we never see or hold your
