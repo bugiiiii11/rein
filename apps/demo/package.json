@@ -29,7 +29,7 @@
     "@reinconsole/sdk": "workspace:*",
     "@reinconsole/signer": "workspace:*",
     "@reinconsole/x402-rails": "workspace:*",
-    "viem": "^2.47.0"
+    "viem": "^2.56.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
