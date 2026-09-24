@@ -109,7 +109,10 @@ function topoSort(workspaces) {
 /** True if name@version is on the registry; throws on anything but a clean 404. */
 function published(name, version) {
   try {
-    const out = run(npmCmd, ['view', `${name}@${version}`, 'version', '--json'], repoRoot).trim();
+    // --prefer-online: npm caches a packument for its max-age (300 s), so the
+    // pre-publish check below would otherwise answer the post-publish poll
+    // with the copy fetched before the version existed (rc.1, S77).
+    const out = run(npmCmd, ['view', `${name}@${version}`, 'version', '--json', '--prefer-online'], repoRoot).trim();
     // npm prints nothing (exit 0) for a range that matches no version.
     return out !== '' && JSON.parse(out) === version;
   } catch (err) {
@@ -199,16 +202,22 @@ for (const { dir, manifest } of workspaces) {
 }
 
 // The registry is the only honest check (S49). A first publish can 404 on its
-// packument for a few minutes, so poll before calling it missing.
+// packument for a few minutes, so poll before calling it missing. The registry's
+// own CDN also caches for up to 300 s, hence a window well past that.
 if (!dryRun) {
   const pending = results.filter((r) => r.state === 'published');
-  for (let attempt = 1; pending.length > 0 && attempt <= 12; attempt++) {
+  for (let attempt = 1; pending.length > 0 && attempt <= 40; attempt++) {
     for (const r of [...pending]) {
       if (published(r.manifest.name, r.manifest.version)) pending.splice(pending.indexOf(r), 1);
     }
-    if (pending.length > 0) await new Promise((res) => setTimeout(res, 10_000));
+    if (pending.length > 0) await new Promise((res) => setTimeout(res, 15_000));
   }
-  if (pending.length > 0) die(`not visible on the registry after 2 min: ${pending.map((r) => r.id).join(', ')}`);
+  if (pending.length > 0) {
+    die(
+      `npm accepted but the registry does not show after 10 min: ${pending.map((r) => r.id).join(', ')} ` +
+        `-- check \`npm view <pkg>@<version>\`; a re-run skips whatever is already out`,
+    );
+  }
 }
 
 const count = (s) => results.filter((r) => r.state === s).length;
