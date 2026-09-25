@@ -3,7 +3,7 @@
  * suite is mostly about what it REFUSES to boot with.
  */
 import { describe, expect, it } from 'vitest';
-import { PING_PRICE, SCORE_PRICE, readVendorConfig, routesFor, VendorConfigError } from './config';
+import { readVendorConfig, routesFor, VendorConfigError } from './config';
 
 const PAY_TO = '0x1111111111111111111111111111111111111111';
 const MAINNET_PAY_TO = '0x2222222222222222222222222222222222222222';
@@ -90,7 +90,13 @@ describe('routesFor', () => {
     expect(paths).toEqual(['/testnet/v1/ping', '/testnet/v1/scores/vendor/*']);
   });
 
-  it('prices the mainnet lane at the root, at the same prices', () => {
+  /**
+   * Literal prices, not the table read back: the point is that mainnet does
+   * NOT quote testnet's $0.001, which loses money on every Base settlement
+   * once the facilitator bills gas + 30% (S77). A shared constant would pass
+   * this test while pricing both lanes the same.
+   */
+  it('prices the mainnet lane at the root, above what a settlement costs', () => {
     const config = readVendorConfig({
       ...base,
       REIN_VENDOR_MAINNET: '1',
@@ -101,6 +107,9 @@ describe('routesFor', () => {
     const mainnet = config.lanes.find((l) => l.profile.name === 'mainnet')!;
     const routes = routesFor(mainnet);
     expect(routes.map((r) => r.path)).toEqual(['/v1/ping', '/v1/scores/vendor/*']);
-    expect(routes.map((r) => r.price)).toEqual([PING_PRICE, SCORE_PRICE]);
+    expect(routes.map((r) => r.price)).toEqual(['0.01', '0.02']);
+
+    const testnet = config.lanes.find((l) => l.profile.name === 'testnet')!;
+    expect(routesFor(testnet).map((r) => r.price)).toEqual(['0.001', '0.005']);
   });
 });

@@ -10,7 +10,7 @@
  * only turns it on.
  */
 import type { GateRoute } from '@reinconsole/gate';
-import { profileFor, type NetworkProfile } from '@reinconsole/x402-rails';
+import { profileFor, type NetworkProfile, type ProfileName } from '@reinconsole/x402-rails';
 
 /** What one gate in this process is for. */
 export interface VendorLane {
@@ -47,9 +47,20 @@ export class VendorConfigError extends Error {}
  * testnet beta costs less than a faucet drip. `/v1/scores/vendor/:host` is
  * priced higher because it is a read of accumulated evidence rather than a
  * liveness echo — and it is the first thing Rein sells that is not a demo.
+ *
+ * Mainnet is priced per lane because a settlement is not free there (S77).
+ * The facilitator bills the SELLER gas + 30% — PayAI's Base rate was $0.00231
+ * against a measured mean of $0.00234 over the 296 days since Jovian's 0.005
+ * gwei base-fee floor — so a $0.001 sale loses money on every settlement, at
+ * the floor alone. A sale is under water once gas exceeds price / 1.3: at
+ * $0.01 that happened ~0.4% of the time (13 congestion days, 20 min to 9 h
+ * each), and the floor alone reaches it only near ETH $17,900. Testnet
+ * settles at $0, so its prices stay where the beta is cheapest.
  */
-export const PING_PRICE = '0.001';
-export const SCORE_PRICE = '0.005';
+export const PRICES: Record<ProfileName, { ping: string; score: string }> = {
+  testnet: { ping: '0.001', score: '0.005' },
+  mainnet: { ping: '0.01', score: '0.02' },
+};
 
 /**
  * Default per-payer velocity: generous enough that a beta invitee never trips
@@ -170,11 +181,12 @@ export function readVendorConfig(env: NodeJS.ProcessEnv): VendorConfig {
  * that read it would buy the wrong thing.
  */
 export function routesFor(lane: VendorLane): GateRoute[] {
+  const prices = PRICES[lane.profile.name];
   return [
     {
       path: `${lane.prefix}/v1/ping`,
       method: 'GET',
-      price: PING_PRICE,
+      price: prices.ping,
       description: 'Rein reference vendor — a signed liveness echo',
       mimeType: 'application/json',
       discovery: {
@@ -193,7 +205,7 @@ export function routesFor(lane: VendorLane): GateRoute[] {
     {
       path: `${lane.prefix}/v1/scores/vendor/*`,
       method: 'GET',
-      price: SCORE_PRICE,
+      price: prices.score,
       description: 'Rein reputation — this vendor’s view of a host',
       mimeType: 'application/json',
       discovery: {

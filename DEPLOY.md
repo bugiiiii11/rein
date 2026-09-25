@@ -652,6 +652,14 @@ is, and what an invitee's first settled payment will be -- and `GET
 public: the console's gate panel reads `/stats`, and a dashboard that had to pay to render
 itself would be absurd.
 
+Once armed, the mainnet lane sells the same routes at the root for **$0.01** and **$0.02**
+(`PRICES` in `apps/vendor/src/config.ts`). They are higher because a Base settlement is not
+free: the facilitator bills the SELLER gas + 30% (PayAI: ~$0.0023 at S77), so testnet's
+$0.001 would lose money on every sale. Measured over the 296 days after Base's Jovian fee floor,
+a $0.01 sale ran at a loss ~0.4% of the time -- 13 congestion days, 20 minutes to 9 hours each,
+peaking near $1.77 per settlement. Revisit the prices if ETH moves several-fold: the floor is
+priced in ETH.
+
 Exit check, once it is up:
 
 ```
