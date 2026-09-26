@@ -6,7 +6,7 @@
  * the facilitator works. The one live path is exercised by `live.yml` against
  * the deployed vendor.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GateRails } from '@reinconsole/gate';
 import { readVendorConfig } from './config';
 import { createVendorServer, laneFor, type VendorServer } from './server';
@@ -269,6 +269,59 @@ describe('the reference vendor — two lanes in one process', () => {
       };
       const byNetwork = Object.fromEntries(stats.lanes.map((l) => [l.network, l.quoted]));
       expect(byNetwork).toEqual({ 'base-sepolia': 2, base: 1 });
+    } finally {
+      await vendor.close();
+    }
+  });
+});
+
+/**
+ * The one test here that builds REAL rails: which facilitator the keyless
+ * mainnet lane calls is exactly what a stub would hide. fetch is stubbed
+ * before the server is built because FacilitatorClient captures it then.
+ */
+describe('the keyless mainnet lane', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('verifies through PayAI and sends it no credentials', async () => {
+    const realFetch = globalThis.fetch;
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const target = String(input instanceof Request ? input.url : input);
+      if (!target.startsWith('http://127.0.0.1')) {
+        calls.push({ url: target, headers: Object.fromEntries(new Headers(init?.headers)) });
+        return new Response(JSON.stringify({ isValid: false, invalidReason: 'stubbed' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return realFetch(input, init);
+    });
+
+    const config = readVendorConfig({
+      ...TESTNET_ENV,
+      REIN_VENDOR_MAINNET: '1',
+      REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
+    });
+    const vendor = createVendorServer({ config: { ...config, host: '127.0.0.1' } });
+    const url = `http://127.0.0.1:${await vendor.listen()}`;
+    try {
+      const quote = await realFetch(`${url}/v1/ping`);
+      expect(quote.status).toBe(402);
+      expect(quote.headers.get('payment-required')).toBeNull();
+      const offer = ((await quote.json()) as {
+        accepts: { network: string; asset: string; payTo: string; maxAmountRequired: string }[];
+      }).accepts[0]!;
+
+      await realFetch(`${url}/v1/ping`, {
+        headers: {
+          'X-PAYMENT': paymentHeader(offer.network, offer.asset, offer.payTo, offer.maxAmountRequired),
+        },
+      });
+      expect(calls.map((c) => c.url)).toEqual(['https://facilitator.payai.network/verify']);
+      expect(calls[0]?.headers.authorization).toBeUndefined();
     } finally {
       await vendor.close();
     }

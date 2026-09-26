@@ -21,6 +21,11 @@ export interface VendorLane {
   payTo: string;
   /** Advertise the x402 v2 PAYMENT-REQUIRED header beside the v1 body. */
   advertiseV2: boolean;
+  /**
+   * Facilitator override. Absent means the profile's own (x402.org on
+   * testnet, CDP on mainnet); the keyless mainnet lane sets PayAI here.
+   */
+  facilitatorUrl?: string;
 }
 
 export interface VendorConfig {
@@ -33,11 +38,19 @@ export interface VendorConfig {
   lanes: VendorLane[];
   /** Per-payer velocity caps, applied to every lane. */
   velocity: { windowMs: number; maxPayments: number; maxAmount: string; maxAttempts: number };
-  /** CDP credentials, required before the mainnet lane can be constructed. */
+  /** CDP credentials. With them the mainnet lane settles through CDP, without them through PayAI. */
   cdp?: { apiKeyId: string; apiKeySecret: string };
 }
 
 export class VendorConfigError extends Error {}
+
+/**
+ * PayAI's facilitator: keyless on Base mainnet for verify and settle (S74),
+ * its response shapes proven through Rein's own FacilitatorClient by a real
+ * Sepolia settlement (S75, `payai.live.test.ts`). It is the mainnet lane's
+ * facilitator whenever no CDP credentials are configured.
+ */
+export const PAYAI_FACILITATOR_URL = 'https://facilitator.payai.network';
 
 /**
  * The prices, in one place because they are the product.
@@ -102,10 +115,9 @@ function assertAddress(value: string, name: string): string {
  * The mainnet lane is OPT-IN and stays off until Sprint 8. That is not
  * caution for its own sake: the two lanes differ in exactly the places that
  * are invisible until money is real (the USDC contract, the EIP-712 domain
- * name — `USDC` on Sepolia and `USD Coin` on mainnet — and a facilitator that
- * demands credentials), so the mainnet lane must be something an operator
- * turns on deliberately, with the credentials already in hand, rather than
- * something a default quietly arms.
+ * name — `USDC` on Sepolia and `USD Coin` on mainnet — and which facilitator
+ * settles), so the mainnet lane must be something an operator turns on
+ * deliberately rather than something a default quietly arms.
  */
 export function readVendorConfig(env: NodeJS.ProcessEnv): VendorConfig {
   const testnetPayTo = assertAddress(required(env, 'REIN_VENDOR_PAY_TO'), 'REIN_VENDOR_PAY_TO');
@@ -129,21 +141,25 @@ export function readVendorConfig(env: NodeJS.ProcessEnv): VendorConfig {
     );
     const apiKeyId = env.REIN_CDP_API_KEY_ID?.trim();
     const apiKeySecret = env.REIN_CDP_API_KEY_SECRET?.trim();
-    if (!apiKeyId || !apiKeySecret) {
+    // Half a credential pair is a typo, not a choice. Falling back to PayAI
+    // here would boot a lane on a facilitator the operator did not pick.
+    if (Boolean(apiKeyId) !== Boolean(apiKeySecret)) {
       throw new VendorConfigError(
-        'REIN_VENDOR_MAINNET=1 needs REIN_CDP_API_KEY_ID and REIN_CDP_API_KEY_SECRET — ' +
-          'the mainnet facilitator authenticates, and an unauthenticated call comes back 401 ' +
-          'at settlement time, on the one network where the money is real',
+        'REIN_CDP_API_KEY_ID and REIN_CDP_API_KEY_SECRET must be set together — set both to ' +
+          'settle mainnet through CDP, or neither to settle keyless through PayAI',
       );
     }
+    const cdp = Boolean(apiKeyId && apiKeySecret);
     lanes.push({
       prefix: '',
       profile: profileFor('mainnet'),
       payTo: mainnetPayTo,
-      // Mainnet advertises the v2 header beside the v1 body: the Bazaar
-      // listing in 5.4 requires a CDP-settled v2 402, and a v1-only quote
-      // would never be listable.
-      advertiseV2: true,
+      // The v2 header carries the Bazaar listing (5.4), which requires a
+      // CDP-settled v2 402, so it is advertised only when CDP settles. PayAI
+      // is proven on the v1 path Rein's own payer takes; a v2 payment it
+      // might mis-settle is not worth a listing it cannot give.
+      advertiseV2: cdp,
+      ...(cdp ? {} : { facilitatorUrl: PAYAI_FACILITATOR_URL }),
     });
   }
 

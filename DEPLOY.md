@@ -641,10 +641,14 @@ procedure as the engine above, with these differences:
 
 **Do NOT set `REIN_VENDOR_MAINNET=1` before Sprint 8.** Without it the mainnet lane is not
 constructed at all and `/v1/*` 404s, so this process cannot take a real payment even if one
-is sent. Arming it additionally requires `REIN_VENDOR_MAINNET_PAY_TO` (a SEPARATE treasury)
-and `REIN_CDP_API_KEY_ID`/`REIN_CDP_API_KEY_SECRET`; the config refuses to boot without them,
-because an unauthenticated CDP call comes back 401 at settlement time, on the one network
-where the money is real.
+is sent. Arming it additionally requires `REIN_VENDOR_MAINNET_PAY_TO` (a SEPARATE treasury).
+The mainnet facilitator follows the credentials: with NO CDP keys the lane settles keyless
+through PayAI (`https://facilitator.payai.network`, the Sprint 8 setup); with BOTH
+`REIN_CDP_API_KEY_ID` and `REIN_CDP_API_KEY_SECRET` it settles through CDP and also advertises
+the v2 header that carries the Bazaar listing. Exactly one of the two refuses to boot -- half a
+pair is a typo, and guessing a facilitator for it is how money ends up somewhere unintended. The
+boot log names the facilitator each lane settles through (`[vendor] mainnet settles via ...`);
+read it after arming.
 
 What it sells: `GET /testnet/v1/ping` at $0.001 -- the cheapest real payer smoke target there
 is, and what an invitee's first settled payment will be -- and `GET

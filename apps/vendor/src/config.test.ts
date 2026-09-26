@@ -3,7 +3,7 @@
  * suite is mostly about what it REFUSES to boot with.
  */
 import { describe, expect, it } from 'vitest';
-import { readVendorConfig, routesFor, VendorConfigError } from './config';
+import { PAYAI_FACILITATOR_URL, readVendorConfig, routesFor, VendorConfigError } from './config';
 
 const PAY_TO = '0x1111111111111111111111111111111111111111';
 const MAINNET_PAY_TO = '0x2222222222222222222222222222222222222222';
@@ -43,20 +43,50 @@ describe('readVendorConfig', () => {
     });
     const mainnet = config.lanes.find((l) => l.profile.name === 'mainnet');
     expect(mainnet).toMatchObject({ prefix: '', payTo: MAINNET_PAY_TO, advertiseV2: true });
+    // CDP credentials mean the profile's own facilitator, which is CDP.
+    expect(mainnet?.facilitatorUrl).toBeUndefined();
+    expect(mainnet?.profile.facilitatorAuth).toBe('cdp');
     // The constant S58 found hardcoded. Base mainnet's USDC is `USD Coin`;
     // signing `USDC` there produces a valid signature the token rejects.
     expect(mainnet?.profile.eip712).toEqual({ name: 'USD Coin', version: '2' });
     expect(config.lanes.find((l) => l.profile.name === 'testnet')?.profile.eip712.name).toBe('USDC');
   });
 
-  it('refuses a mainnet lane without CDP credentials', () => {
-    expect(() =>
-      readVendorConfig({
-        ...base,
-        REIN_VENDOR_MAINNET: '1',
-        REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
-      }),
-    ).toThrow(VendorConfigError);
+  /**
+   * The Sprint 8 lane: no CDP account, so PayAI settles keyless. No v2
+   * header either -- the Bazaar listing it carries needs CDP settlement.
+   */
+  it('arms a keyless mainnet lane on PayAI when no CDP credentials are set', () => {
+    const config = readVendorConfig({
+      ...base,
+      REIN_VENDOR_MAINNET: '1',
+      REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
+    });
+    const mainnet = config.lanes.find((l) => l.profile.name === 'mainnet');
+    expect(mainnet).toMatchObject({
+      prefix: '',
+      payTo: MAINNET_PAY_TO,
+      advertiseV2: false,
+      facilitatorUrl: 'https://facilitator.payai.network',
+    });
+    expect(PAYAI_FACILITATOR_URL).toBe('https://facilitator.payai.network');
+    expect(mainnet?.profile.eip712).toEqual({ name: 'USD Coin', version: '2' });
+    expect(config.cdp).toBeUndefined();
+    // The testnet lane keeps its own facilitator.
+    expect(config.lanes.find((l) => l.profile.name === 'testnet')?.facilitatorUrl).toBeUndefined();
+  });
+
+  it('refuses half a CDP credential pair rather than guessing a facilitator', () => {
+    for (const half of [{ REIN_CDP_API_KEY_ID: 'id' }, { REIN_CDP_API_KEY_SECRET: 'secret' }]) {
+      expect(() =>
+        readVendorConfig({
+          ...base,
+          REIN_VENDOR_MAINNET: '1',
+          REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
+          ...half,
+        }),
+      ).toThrow(/must be set together/);
+    }
   });
 
   it('refuses a mainnet lane that would reuse the testnet treasury by omission', () => {

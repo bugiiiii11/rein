@@ -62,6 +62,9 @@ console.log(
   `[vendor] listening on http://${config.host}:${port} (pid ${process.pid}) — lanes: ` +
     config.lanes.map((l) => `${l.profile.name}${l.prefix || ' (/)'}`).join(', '),
 );
+for (const l of config.lanes) {
+  console.log(`[vendor] ${l.profile.name} settles via ${l.facilitatorUrl ?? l.profile.facilitatorUrl}`);
+}
 if (!config.lanes.some((l) => l.profile.name === 'mainnet')) {
   console.log('[vendor] mainnet lane is OFF — set REIN_VENDOR_MAINNET=1 to arm it (Sprint 8)');
 }

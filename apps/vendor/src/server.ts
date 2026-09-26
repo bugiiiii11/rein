@@ -10,7 +10,8 @@
  *
  * TWO GATES IN ONE PROCESS, and they are separate objects on purpose.
  * `GateOptions.rails` is gate-level, not route-level: one gate cannot settle
- * some routes through the open testnet facilitator and others through CDP.
+ * some routes through the open testnet facilitator and others through a
+ * mainnet one (PayAI, or CDP when credentials are set).
  * Beyond the plumbing, the two lanes disagree about the things that only
  * surface when money is real — the USDC contract address, the facilitator's
  * credentials, and the EIP-712 domain name, which is `USDC` on Base Sepolia
@@ -83,6 +84,8 @@ function buildLane(lane: VendorLane, options: VendorServerOptions): VendorLaneRu
     options.railsFor?.(lane) ??
     facilitatorClientRails(
       createProfileFacilitator(lane.profile, {
+        // An override is judged by its host, so PayAI gets no CDP headers.
+        ...(lane.facilitatorUrl ? { url: lane.facilitatorUrl } : {}),
         ...(config.cdp
           ? { cdp: { apiKeyId: config.cdp.apiKeyId, apiKeySecret: config.cdp.apiKeySecret } }
           : {}),
