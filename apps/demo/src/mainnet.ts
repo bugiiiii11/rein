@@ -180,6 +180,10 @@ async function main(): Promise<number> {
     // The engine folds Base Sepolia into `base`, so this list is the only
     // thing stopping a testnet run from being allowed to pay a mainnet 402.
     networks: [profile.network, profile.caip2],
+    // One task per run. The Sprint 8 policy DENIES an intent with no task id
+    // and escalates a run that spends past its task budget, so a runner that
+    // sent none would be refused on every call.
+    taskContext: { taskId: `run-${new Date().toISOString()}`, purpose: 'mainnet runner' },
     ...(payer ? { payer } : {}),
     // The indexer reports; a guard vouching for its own payment is the weak
     // evidence reconciliation exists to check.

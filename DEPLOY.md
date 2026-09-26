@@ -441,6 +441,28 @@ of submitting one. Register the approver's PUBLIC half with `POST /v1/approvers`
 invitee's org; a key registered in one org cannot answer another org's escalation, and the
 engine returns 404 rather than 403 for a foreign request so org ids stay unenumerable.
 
+### Sprint 8 pilot setup: run order (S78)
+
+Founder-run from the repo root after `pnpm build`, each against the hosted engine with the
+pilot's org-scoped admin key from `.env.pilot`. All three were rehearsed on a local engine.
+
+1. `node scripts/killswitch-rehearsal.mjs` -- testnet, pilot agent, advisory only. Baseline
+   allow, freeze -> `agent is frozen (kill switch)`, unfreeze -> allow, a THROWAWAY key revoked
+   -> 401. The agent is unfrozen in a `finally`; the pilot's own key is never touched (live.yml).
+   On mainnet the same two calls are the runbook: freeze first, revoke the runner key second.
+2. `node scripts/approver-setup.mjs` -- ed25519 keypair, private half to `~/.rein/approver.pem`
+   (only copy, back it up), public half registered in Rein's org, an `approve`+`read` key, all
+   written to `.env.approver` for `pnpm approve`. Refuses to run twice. Telegram delivery of
+   the challenge additionally needs `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` on the
+   ENGINE service -- without them the escalation still parks, but nobody is told.
+3. Advisory runner run under the INTERIM policy, to see which third-party host the catalog
+   picks; then `node scripts/runner-policy.mjs <host> --dry-run`, then without `--dry-run`. It
+   REPLACES `pol_runner` (same id): default deny, allow own vendor + `<host>`, tx-cap $0.05,
+   $1.00/24h, deny no task id, escalate first-seen vendor and task > $0.25, breaker 6 tx or
+   $0.20 per hour; and a 6 h liveness watch. Refuses without an active approver -- every
+   first-seen vendor would otherwise time out into a deny. Then pin the runner with
+   `REIN_RUNNER_THIRD_PARTY_URL`: under this policy every other host is denied.
+
 ## Standalone service bins (S48)
 
 Until S48 the *persistent* bins quietly opted out of that rule: `rein-engine` built its server
