@@ -64,6 +64,7 @@ console.log(
 );
 for (const l of config.lanes) {
   console.log(`[vendor] ${l.profile.name} settles via ${l.facilitatorUrl ?? l.profile.facilitatorUrl}`);
+  if (l.surge) console.log(`[vendor] ${l.profile.name} surge pricing on (gas + ETH/USD via ${l.surge.rpcUrl})`);
 }
 if (!config.lanes.some((l) => l.profile.name === 'mainnet')) {
   console.log('[vendor] mainnet lane is OFF — set REIN_VENDOR_MAINNET=1 to arm it (Sprint 8)');

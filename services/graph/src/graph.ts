@@ -47,6 +47,8 @@ const NO_FAULT_GATE_CODES = new Set([
   'velocity_exceeded',
   'rails_unavailable',
   'settle_unknown',
+  'price_unavailable',
+  'price_ceiling',
 ]);
 
 /**

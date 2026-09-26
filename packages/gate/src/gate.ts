@@ -12,6 +12,7 @@ import {
   type PaymentDefaults,
 } from './routes.js';
 import { InMemoryGateStore, type GateStorePort, type MaybePromise } from './stores.js';
+import { surgeQuote, validateSurge, type GateSurge } from './surge.js';
 import {
   AttemptWindow,
   payerReceiptsSince,
@@ -63,6 +64,14 @@ export interface GateOptions {
   advertiseV2?: boolean;
   /** Per-payer velocity limits (see GateVelocity). Off when omitted. */
   velocity?: GateVelocity;
+  /**
+   * Surge pricing -- the profit guard for sellers who pay per settlement (see
+   * GateSurge). Every priced route then quotes max(list, multiplier x cost),
+   * refuses 503 above ceiling x list or when the cost is unknown, and accepts
+   * any payment between the current quote and the ceiling. Off when omitted:
+   * routes quote their list price and payments must match it exactly.
+   */
+  surge?: GateSurge;
   /**
    * Rails transport-failure retry policy. `attempts` counts EXTRA tries after
    * the first (default 2), spaced `backoffMs * attemptNumber` apart (default
@@ -158,6 +167,7 @@ export class Gate {
   private readonly screenCheck: ((payer: string) => string | undefined) | undefined;
   private readonly advertiseV2: boolean;
   private readonly velocity: GateVelocity | undefined;
+  private readonly surge: GateSurge | undefined;
   private readonly attempts: AttemptWindow | undefined;
   private readonly retryPolicy: { attempts: number; backoffMs: number };
   private readonly now: () => Date;
@@ -183,6 +193,8 @@ export class Gate {
     this.advertiseV2 = options.advertiseV2 ?? false;
     if (options.velocity) validateVelocity(options.velocity);
     this.velocity = options.velocity;
+    if (options.surge) validateSurge(options.surge);
+    this.surge = options.surge;
     this.attempts = options.velocity?.maxAttempts
       ? new AttemptWindow(options.velocity.windowMs)
       : undefined;
@@ -219,7 +231,11 @@ export class Gate {
     }
   }
 
-  /** The requirement a given request would be quoted (or undefined if free). */
+  /**
+   * The requirement a given request would be quoted (or undefined if free).
+   * Always at the LIST price: a surge quote needs the async cost oracle, and
+   * only handle() consults it.
+   */
   quoteFor(method: string, url: string): PaymentRequirement | undefined {
     const route = matchRoute(this.routes, method, new URL(url).pathname);
     return route && requirementFor(route, this.defaults, url);
@@ -231,11 +247,21 @@ export class Gate {
     const route = matchRoute(this.routes, method, url.pathname);
     if (!route) return { kind: 'open' };
 
-    const requirement = requirementFor(route, this.defaults, request.url);
-    const amount = atomicToDecimal(
-      requirement.maxAmountRequired,
-      routeDecimals(route, this.defaults),
-    );
+    const decimals = routeDecimals(route, this.defaults);
+    let requirement = requirementFor(route, this.defaults, request.url);
+    // The most a payment may carry above the quote; set only under surge.
+    let ceilingAtomic: string | undefined;
+    if (this.surge) {
+      try {
+        const quote = await surgeQuote(this.surge, requirement.maxAmountRequired, decimals);
+        requirement = { ...requirement, maxAmountRequired: quote.atomic };
+        ceilingAtomic = quote.ceilingAtomic;
+      } catch (err) {
+        if (!(err instanceof GateError)) throw err;
+        return this.refuse(err, url.pathname, requirement, undefined, undefined, route);
+      }
+    }
+    const quotedAmount = atomicToDecimal(requirement.maxAmountRequired, decimals);
 
     if (request.payment === null) {
       this.fire(() => this.store.recordQuote());
@@ -244,7 +270,7 @@ export class Gate {
         at: this.now(),
         resource: url.pathname,
         method,
-        amount,
+        amount: quotedAmount,
         asset: requirement.asset,
         network: requirement.network,
       });
@@ -263,11 +289,12 @@ export class Gate {
       payer = payment.payer;
       wire = payment.version;
       this.checkRate(payment.payer);
-      this.checkConsistency(payment, requirement);
+      const paid = this.checkConsistency(payment, requirement, ceilingAtomic);
+      const amount = atomicToDecimal(paid.maxAmountRequired, decimals);
       this.screenPayer(payment.payer);
-      this.checkVelocity(payment.payer, requirement, amount);
+      this.checkVelocity(payment.payer, paid, amount);
       await this.burnReplay(request.payment);
-      const settlement = await this.settleThroughRails(request.payment, requirement);
+      const settlement = await this.settleThroughRails(request.payment, paid);
 
       const receipt = GateReceipt.parse({
         id: newId('grc'),
@@ -276,11 +303,11 @@ export class Gate {
         resource: url.pathname,
         method,
         payer: payment.payer,
-        payTo: requirement.payTo,
+        payTo: paid.payTo,
         amount,
-        amountAtomic: requirement.maxAmountRequired,
-        asset: requirement.asset,
-        network: requirement.network,
+        amountAtomic: paid.maxAmountRequired,
+        asset: paid.asset,
+        network: paid.network,
         transaction: settlement.transaction,
       });
       this.fire(() => this.store.appendReceipt(receipt));
@@ -329,7 +356,20 @@ export class Gate {
     this.bus.emit('event', event);
   }
 
-  private checkConsistency(payment: InspectedPayment, requirement: PaymentRequirement): void {
+  /**
+   * Cross-check a payment against the quote and return the requirement it
+   * settles under. Without surge that is the quote itself, and the value must
+   * match it exactly. Under surge the price moves, so a payment signed against
+   * an earlier (higher) quote is still good: any value from the CURRENT quote
+   * up to the ceiling is accepted, and the payment settles at its own value --
+   * the payer agreed to that number, and no quote above the ceiling was ever
+   * issued.
+   */
+  private checkConsistency(
+    payment: InspectedPayment,
+    requirement: PaymentRequirement,
+    ceilingAtomic?: string,
+  ): PaymentRequirement {
     if (payment.scheme.toLowerCase() !== requirement.scheme.toLowerCase()) {
       throw new GateError(
         'scheme_mismatch',
@@ -344,7 +384,15 @@ export class Gate {
         `payment is on "${payment.network}" but the quote wants "${requirement.network}"`,
       );
     }
-    if (payment.value !== requirement.maxAmountRequired) {
+    if (ceilingAtomic !== undefined && /^\d+$/.test(payment.value)) {
+      const value = BigInt(payment.value);
+      if (value < BigInt(requirement.maxAmountRequired) || value > BigInt(ceilingAtomic)) {
+        throw new GateError(
+          'amount_mismatch',
+          `payment of ${payment.value} is outside the current price range ${requirement.maxAmountRequired}..${ceilingAtomic}`,
+        );
+      }
+    } else if (payment.value !== requirement.maxAmountRequired) {
       throw new GateError(
         'amount_mismatch',
         `payment of ${payment.value} does not match the quoted ${requirement.maxAmountRequired}`,
@@ -356,6 +404,9 @@ export class Gate {
         `payment pays "${payment.to}" but the quote pays "${requirement.payTo}"`,
       );
     }
+    return payment.value === requirement.maxAmountRequired
+      ? requirement
+      : { ...requirement, maxAmountRequired: payment.value };
   }
 
   /**
@@ -551,6 +602,18 @@ export class Gate {
         code: err.code,
         reason: err.message,
         body: { error: 'refused', code: err.code, reason: err.message, ...retry },
+        ...retry,
+      };
+    }
+    if (err.code === 'price_unavailable' || err.code === 'price_ceiling') {
+      // The vendor declining to quote, not a payment defect: no accepts, and a
+      // Retry-After because the cost comes back down on its own.
+      return {
+        kind: 'refused',
+        status: 503,
+        code: err.code,
+        reason: err.message,
+        body: { error: 'refused', code: err.code, reason: err.message, retriable: true, ...retry },
         ...retry,
       };
     }

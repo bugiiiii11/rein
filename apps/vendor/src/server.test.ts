@@ -305,7 +305,10 @@ describe('the keyless mainnet lane', () => {
       REIN_VENDOR_MAINNET: '1',
       REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
     });
-    const vendor = createVendorServer({ config: { ...config, host: '127.0.0.1' } });
+    const vendor = createVendorServer({
+      config: { ...config, host: '127.0.0.1' },
+      costFor: () => async () => '0.00231',
+    });
     const url = `http://127.0.0.1:${await vendor.listen()}`;
     try {
       const quote = await realFetch(`${url}/v1/ping`);
@@ -322,6 +325,41 @@ describe('the keyless mainnet lane', () => {
       });
       expect(calls.map((c) => c.url)).toEqual(['https://facilitator.payai.network/verify']);
       expect(calls[0]?.headers.authorization).toBeUndefined();
+    } finally {
+      await vendor.close();
+    }
+  });
+});
+
+describe('surge pricing on the keyless lane', () => {
+  const KEYLESS_ENV = {
+    ...TESTNET_ENV,
+    REIN_VENDOR_MAINNET: '1',
+    REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO,
+  } as NodeJS.ProcessEnv;
+
+  it('quotes list, then 503s with Retry-After when a gas spike passes the ceiling; testnet is untouched', async () => {
+    let cost = '0.00231';
+    const vendor = createVendorServer({
+      config: { ...readVendorConfig(KEYLESS_ENV), host: '127.0.0.1' },
+      railsFor: (lane) => alwaysSettles(lane.profile.network),
+      costFor: () => async () => cost,
+    });
+    const url = `http://127.0.0.1:${await vendor.listen()}`;
+    try {
+      const quote = await fetch(`${url}/v1/ping`);
+      expect(quote.status).toBe(402);
+      const accepts = ((await quote.json()) as { accepts: { maxAmountRequired: string }[] }).accepts;
+      expect(accepts[0]!.maxAmountRequired).toBe('10000');
+
+      cost = '1.77'; // the S77 peak
+      const spiked = await fetch(`${url}/v1/ping`);
+      expect(spiked.status).toBe(503);
+      expect(spiked.headers.get('retry-after')).toBe('60');
+      expect(await spiked.json()).toMatchObject({ code: 'price_ceiling' });
+
+      // The testnet lane has no surge and keeps quoting its list price.
+      expect((await fetch(`${url}/testnet/v1/ping`)).status).toBe(402);
     } finally {
       await vendor.close();
     }

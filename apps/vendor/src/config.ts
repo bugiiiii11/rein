@@ -26,6 +26,14 @@ export interface VendorLane {
    * testnet, CDP on mainnet); the keyless mainnet lane sets PayAI here.
    */
   facilitatorUrl?: string;
+  /**
+   * Surge pricing (the gate's profit guard), set on the keyless mainnet lane
+   * only: PayAI bills this seller gas + 30% per settlement, so a gas spike
+   * can put a $0.01 sale under water. CDP bills a flat fee and testnet
+   * settles free, so neither lane needs it. `rpcUrl` is where the cost
+   * oracle reads gas and the ETH/USD feed.
+   */
+  surge?: { rpcUrl: string };
 }
 
 export interface VendorConfig {
@@ -150,9 +158,18 @@ export function readVendorConfig(env: NodeJS.ProcessEnv): VendorConfig {
       );
     }
     const cdp = Boolean(apiKeyId && apiKeySecret);
+    const profile = profileFor('mainnet');
+    // On by default wherever PayAI settles; `off` is the escape hatch if the
+    // oracle's RPC is the thing that is down and selling at a loss is the
+    // lesser evil. Anything else is a typo, and a typo must not disarm it.
+    const surgeSetting = env.REIN_VENDOR_SURGE?.trim();
+    if (surgeSetting !== undefined && surgeSetting !== '' && surgeSetting !== 'off') {
+      throw new VendorConfigError(`REIN_VENDOR_SURGE must be unset or "off", got ${JSON.stringify(surgeSetting)}`);
+    }
+    const surge = !cdp && surgeSetting !== 'off';
     lanes.push({
       prefix: '',
-      profile: profileFor('mainnet'),
+      profile,
       payTo: mainnetPayTo,
       // The v2 header carries the Bazaar listing (5.4), which requires a
       // CDP-settled v2 402, so it is advertised only when CDP settles. PayAI
@@ -160,6 +177,9 @@ export function readVendorConfig(env: NodeJS.ProcessEnv): VendorConfig {
       // might mis-settle is not worth a listing it cannot give.
       advertiseV2: cdp,
       ...(cdp ? {} : { facilitatorUrl: PAYAI_FACILITATOR_URL }),
+      ...(surge
+        ? { surge: { rpcUrl: env.REIN_VENDOR_MAINNET_RPC_URL?.trim() || profile.defaultRpcUrl } }
+        : {}),
     });
   }
 

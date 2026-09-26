@@ -26,9 +26,12 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
+  BASE_ETH_USD_FEED,
+  PAYAI_PRICING_URL,
   createGate,
   facilitatorClientRails,
   gateMiddleware,
+  settlementCostOracle,
   type Gate,
   type GateOutcome,
   type GateStorePort,
@@ -49,6 +52,8 @@ export interface VendorServerOptions {
   storeFor?: (lane: VendorLane) => GateStorePort | undefined;
   /** Injected in tests so no request leaves the process. */
   railsFor?: (lane: VendorLane) => ReturnType<typeof facilitatorClientRails>;
+  /** Injected in tests: the surge cost oracle for a lane that sets `surge`. */
+  costFor?: (lane: VendorLane) => () => Promise<string>;
   now?: () => Date;
 }
 
@@ -93,6 +98,14 @@ function buildLane(lane: VendorLane, options: VendorServerOptions): VendorLaneRu
     );
 
   const store = options.storeFor?.(lane);
+  const cost =
+    lane.surge &&
+    (options.costFor?.(lane) ??
+      settlementCostOracle({
+        rpcUrl: lane.surge.rpcUrl,
+        ethUsdFeed: BASE_ETH_USD_FEED,
+        pricing: { url: PAYAI_PRICING_URL, network: lane.profile.caip2 },
+      }));
   const gate = createGate({
     routes: routesFor(lane),
     rails,
@@ -106,6 +119,7 @@ function buildLane(lane: VendorLane, options: VendorServerOptions): VendorLaneRu
     extra: { name: lane.profile.eip712.name, version: lane.profile.eip712.version },
     advertiseV2: lane.advertiseV2,
     velocity: config.velocity,
+    ...(cost ? { surge: { cost } } : {}),
     ...(store ? { store } : {}),
     ...(options.now ? { now: options.now } : {}),
   });

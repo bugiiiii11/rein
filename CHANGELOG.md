@@ -4,6 +4,13 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 `0.3.0-rc.1` is a release candidate published under the npm `next` dist-tag (`npm i @reinconsole/sdk@next`). `latest` stays on `0.2.0` until 0.3.0 ships.
 
+## [Unreleased]
+
+### Added
+
+- **Surge pricing for `@reinconsole/gate`** (`GateOptions.surge`), a profit guard for sellers whose facilitator bills them per settlement. Routes quote `max(list price, multiplier x settlement cost)` (multiplier default `2`), rounded up to the asset's smallest unit. Above `ceiling x list price` (default `5`) the gate answers `503 price_ceiling` with `Retry-After` instead of quoting. When the cost is unknown it answers `503 price_unavailable` and never falls back to the list price. A payment anywhere from the current quote up to the ceiling is accepted and settles at its own value, so a payment signed against an earlier, higher quote still goes through. Both new refusal codes are no-fault in `@reinconsole/graph`. `quoteFor()` still returns the list price.
+- **`settlementCostOracle`** (`@reinconsole/gate`): `max(facilitator's published rate, gas price x gas units x Chainlink ETH/USD x markup)`, cached 15 s, with concurrent callers sharing one read. A stale or non-positive feed answer, a failed RPC call or a missing rate throws. Also new: `BASE_ETH_USD_FEED`, `PAYAI_PRICING_URL`, `surgeQuote`, `ceilAtomic`, `validateSurge`.
+
 ## [0.3.0-rc.1] - 2026-09-24
 
 ### Breaking

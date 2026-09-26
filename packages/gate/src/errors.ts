@@ -5,7 +5,9 @@
  * (@reinconsole/graph skips them): the throttle codes (`rate_limited`,
  * `velocity_exceeded` — the vendor's cap, not payer misbehavior) and the rails
  * codes (`rails_unavailable`, `settle_unknown` — the vendor's infrastructure
- * failing; a settle_unknown payment may even have gone through).
+ * failing; a settle_unknown payment may even have gone through), and the
+ * surge codes (`price_unavailable`, `price_ceiling` -- the vendor declining
+ * to quote).
  */
 export type GateRefusalCode =
   | 'malformed_payment'
@@ -28,7 +30,13 @@ export type GateRefusalCode =
   /** Settlement was attempted but its fate is unknown — the request may have
    *  reached the rails (503). The slot stays burned; do NOT re-pay blindly:
    *  reconcile against transaction records (e.g. the on-chain indexer) first. */
-  | 'settle_unknown';
+  | 'settle_unknown'
+  /** Surge pricing could not learn what a settlement costs, so it quotes
+   *  nothing (503; Retry-After set). Never falls back to the list price. */
+  | 'price_unavailable'
+  /** Settlement cost would price the route above its surge ceiling (503;
+   *  Retry-After set). The vendor declines to sell until the cost falls. */
+  | 'price_ceiling';
 
 export class GateError extends Error {
   /** Seconds until the refused payment could be admitted (throttle codes). */

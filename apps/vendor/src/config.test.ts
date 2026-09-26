@@ -76,6 +76,24 @@ describe('readVendorConfig', () => {
     expect(config.lanes.find((l) => l.profile.name === 'testnet')?.facilitatorUrl).toBeUndefined();
   });
 
+  it('arms surge pricing on the keyless lane only, reading the profile RPC unless told otherwise', () => {
+    const keyless = { ...base, REIN_VENDOR_MAINNET: '1', REIN_VENDOR_MAINNET_PAY_TO: MAINNET_PAY_TO };
+    const mainnetOf = (env: NodeJS.ProcessEnv) =>
+      readVendorConfig(env).lanes.find((l) => l.profile.name === 'mainnet');
+    expect(mainnetOf(keyless)?.surge).toEqual({ rpcUrl: 'https://mainnet.base.org' });
+    expect(mainnetOf({ ...keyless, REIN_VENDOR_MAINNET_RPC_URL: 'https://rpc.example' })?.surge).toEqual({
+      rpcUrl: 'https://rpc.example',
+    });
+    // CDP bills a flat fee, so its lane quotes list prices.
+    expect(
+      mainnetOf({ ...keyless, REIN_CDP_API_KEY_ID: 'id', REIN_CDP_API_KEY_SECRET: 'secret' })?.surge,
+    ).toBeUndefined();
+    expect(mainnetOf({ ...keyless, REIN_VENDOR_SURGE: 'off' })?.surge).toBeUndefined();
+    // A typo must not quietly disarm the guard.
+    expect(() => readVendorConfig({ ...keyless, REIN_VENDOR_SURGE: 'of' })).toThrow(VendorConfigError);
+    expect(readVendorConfig(base).lanes.every((l) => l.surge === undefined)).toBe(true);
+  });
+
   it('refuses half a CDP credential pair rather than guessing a facilitator', () => {
     for (const half of [{ REIN_CDP_API_KEY_ID: 'id' }, { REIN_CDP_API_KEY_SECRET: 'secret' }]) {
       expect(() =>

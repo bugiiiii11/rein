@@ -686,6 +686,15 @@ a $0.01 sale ran at a loss ~0.4% of the time -- 13 congestion days, 20 minutes t
 peaking near $1.77 per settlement. Revisit the prices if ETH moves several-fold: the floor is
 priced in ETH.
 
+**Surge pricing is ON for the keyless (PayAI) lane (S79).** Each quote is `max(list, 2 x cost)`,
+where cost is `max(PayAI's published Base rate, gas price x 90k x Chainlink ETH/USD x 1.3)`,
+read from `REIN_VENDOR_MAINNET_RPC_URL` (default `https://mainnet.base.org`) and cached 15 s.
+Above 5x list the lane answers `503 price_ceiling`; if the RPC, the feed or `/pricing` cannot
+answer, it answers `503 price_unavailable`. Both come with `Retry-After: 60`, and the lane never
+falls back to the list price. So **a dead RPC stops mainnet sales**, by design. Boot log:
+`mainnet surge pricing on (...)`. `REIN_VENDOR_SURGE=off` is the escape hatch; any other value
+refuses boot, so a typo cannot disarm it. A CDP lane has no surge, because CDP bills a flat fee.
+
 Exit check, once it is up:
 
 ```

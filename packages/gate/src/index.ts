@@ -37,6 +37,17 @@ export {
 } from './rails.js';
 export { validateVelocity, type GateVelocity } from './velocity.js';
 export {
+  settlementCostOracle,
+  surgeQuote,
+  ceilAtomic,
+  validateSurge,
+  BASE_ETH_USD_FEED,
+  PAYAI_PRICING_URL,
+  type GateSurge,
+  type SurgeQuote,
+  type SettlementCostOptions,
+} from './surge.js';
+export {
   buildPaymentRequiredV2,
   caip2Of,
   encodeBase64Json,
