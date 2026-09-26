@@ -2,7 +2,7 @@
 
 The persistence layer of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. Postgres-backed stores (embedded [PGlite](https://pglite.dev) — no Docker, no daemon, upgradeable to hosted Postgres) behind every service's store ports, so the whole stack survives a restart: agents, policies, spend, the signing key, the hash-chained decision log, reputation evidence, gate receipts and signer sessions.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
 
 ## Install
 

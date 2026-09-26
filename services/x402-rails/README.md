@@ -1,8 +1,8 @@
 # @reinconsole/x402-rails
 
-The real payment rails for **[Rein](https://github.com/bugiiiii11/rein)** — [x402](https://www.x402.org) on Base Sepolia. An EIP-3009 payer that signs real USDC payments (gasless for the agent — the facilitator submits the tx), an HTTP client for the hosted x402.org facilitator, a strict x402-v1 in-process vendor, and an on-chain indexer that reconciles USDC transfers back to the exact intents the policy engine allowed.
+The real payment rails for **[Rein](https://github.com/bugiiiii11/rein)** — [x402](https://www.x402.org) on Base and Base Sepolia. An EIP-3009 payer that signs real USDC payments (gasless for the agent — the facilitator submits the tx), an HTTP client for any x402 facilitator (the hosted x402.org one by default), a strict x402-v1 in-process vendor, and an on-chain indexer that reconciles USDC transfers back to the exact intents the policy engine allowed.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** Real USDC settled on Base Sepolia through the hosted facilitator — no API key needed. APIs may change before 1.0.
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** Real USDC settled on Base Sepolia through the hosted facilitator — no API key needed. APIs may change before 1.0.
 
 ## Install
 
@@ -19,6 +19,8 @@ import {
   OnchainIndexer,      // getLogs polling; reconciles transfers to intents via the nonce memo
   createRealVendor,    // strict x402-v1 in-process vendor
   intentNonce,         // keccak256(intent.id) — the on-chain memo
+  TESTNET, MAINNET, profileFor, // network profiles: chain id, USDC, EIP-712 domain, facilitator
+  discoverResources,   // PayAI's public catalog, filtered to a profile's chain + USDC
   generateWallet, createBaseSepoliaClient, getUsdcBalance, // wallet + chain helpers
 } from '@reinconsole/x402-rails';
 ```
@@ -26,6 +28,7 @@ import {
 - **Gasless for the agent.** The payer signs an EIP-3009 `transferWithAuthorization`; the facilitator submits the transaction and pays gas. A funded USDC balance is all the agent wallet needs ([free testnet USDC](https://faucet.circle.com)).
 - **An on-chain memo, no fuzzy matching.** The authorization nonce is derived as `keccak256(intent.id)`; USDC emits it back in `AuthorizationUsed` on settlement, so the indexer reconciles each transfer to the exact intent the engine allowed — and flags everything else from managed wallets as **shadow spend**.
 - **The hosted facilitator, for free.** `FacilitatorClient` speaks the x402.org dialect (`DEFAULT_FACILITATOR_URL`, no API key). The same client powers [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate)'s real-rails settlement via `facilitatorClientRails`.
+- **A network is a profile.** `createX402Payer({ profile })` signs only for that profile's chain and USDC contract, and throws `unsupported_network` / `unsupported_asset` for anything else — a testnet install cannot be tricked into a mainnet signature. `MAINNET` defaults to Coinbase's CDP facilitator (`createProfileFacilitator`, `cdpAuthHeaders`); pass any other facilitator URL, such as PayAI's keyless one, to `FacilitatorClient`.
 - **Wire schemas included** — payment payloads, verify/settle responses, header codecs; all zod-validated.
 
 ## Bring your own wallet (Coinbase CDP, Privy, Turnkey, ...)

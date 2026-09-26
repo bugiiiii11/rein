@@ -2,7 +2,7 @@
 
 The supply side of **[Rein](https://github.com/bugiiiii11/rein)** — vendor-side [x402](https://www.x402.org) monetization middleware. Price your routes once and every payment into your API is quoted, cross-checked, screened, rate-limited, settled, and receipted before your handler runs.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** Verified live on Base Sepolia against the hosted x402.org facilitator. APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** Verified live on Base Sepolia against the hosted x402.org facilitator. APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
 
 ## Install
 

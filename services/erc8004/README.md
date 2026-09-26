@@ -2,7 +2,7 @@
 
 [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) registry integration for **[Rein](https://github.com/bugiiiii11/rein)** — on-chain agent identity and reputation. Reads identity facts from the ratified Identity Registry (an ERC-721; tokenId = the spec's agentId) and turns them into link facts for [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph); publishes Rein's graph-derived scores on-chain through the Reputation Registry's `giveFeedback`.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** Verified against the real singleton deployments on Base Sepolia — including a live registration (agentId 7393) carrying its rein-score on-chain. APIs may change before 1.0.
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** Verified against the real singleton deployments on Base Sepolia — including a live registration (agentId 7393) carrying its rein-score on-chain. APIs may change before 1.0.
 
 ## Install
 

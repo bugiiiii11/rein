@@ -2,7 +2,7 @@
 
 Canonical [zod](https://zod.dev) schemas and shared types for **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. This package is the single source of truth for DB rows, API payloads, and SDK types across the whole stack.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the stack running live: [Rein console](https://app.reinconsole.com).
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See the stack running live: [Rein console](https://app.reinconsole.com).
 
 ## Install
 
@@ -37,7 +37,7 @@ const id = formatErc8004Id({
 | [`@reinconsole/policy-engine`](https://www.npmjs.com/package/@reinconsole/policy-engine) | The rule engine with signed, hash-chained decisions |
 | [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate) | Vendor-side x402 monetization middleware |
 | [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph) | Explainable reputation over agents and vendors |
-| [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails) | Real rails: EIP-3009 payer + x402.org facilitator client (Base Sepolia) |
+| [`@reinconsole/x402-rails`](https://www.npmjs.com/package/@reinconsole/x402-rails) | Real rails: EIP-3009 payer + facilitator client + network profiles (Base, Base Sepolia) |
 | [`@reinconsole/mock-rails`](https://www.npmjs.com/package/@reinconsole/mock-rails) | Offline twin: mock facilitator, ledger, indexer |
 | [`@reinconsole/erc8004`](https://www.npmjs.com/package/@reinconsole/erc8004) | ERC-8004 identity + reputation registry integration |
 

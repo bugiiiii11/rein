@@ -4,7 +4,7 @@
 
 Rein is developer tooling and middleware for the agentic payments economy (the [x402](https://www.x402.org) / ERC-8004 stack). It is **non-custodial**: Rein governs an agent's _authority to spend_, never the funds themselves.
 
-> Status: **v0.2 — all three phases have shipped their first cut.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@reinconsole/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@reinconsole/signer`. The supply side ships as **`@reinconsole/gate`**, vendor monetization middleware (Phase 2). The stack is **durable**: `@reinconsole/store` persists the engine (agents, policies, spend, the signed decision chain), the reputation evidence, gate receipts + replay slots, and signer sessions across restarts. And **`@reinconsole/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door. Identity is on-chain: **`@reinconsole/erc8004`** keys reputation by ratified ERC-8004 registrations — **verified live against the real Base Sepolia Identity Registry**.
+> Status: **v0.3 release candidate — all three phases have shipped their first cut, and a [hosted engine](#the-hosted-engine-invited-beta) runs an invited beta.** Advisory SDK-mode + full observability, end to end — fully offline on mock rails, and **live on real x402 rails on Base Sepolia** (EIP-3009 USDC settled by the hosted x402.org facilitator — on both sides: the guarded agent _and_ a `@reinconsole/gate`-monetized vendor). The **session-key signer tier** — the GA enforcement architecture, where the wallet key leaves the agent entirely — ships as `@reinconsole/signer`. The supply side ships as **`@reinconsole/gate`**, vendor monetization middleware (Phase 2). The stack is **durable**: `@reinconsole/store` persists the engine (agents, policies, spend, the signed decision chain), the reputation evidence, gate receipts + replay slots, and signer sessions across restarts. And **`@reinconsole/graph`** (Phase 3) turns the receipts both sides produce into explainable reputation scores that feed back into enforcement: `vendorReputationLt` policies on the agent side, payer screening at the vendor's door. Identity is on-chain: **`@reinconsole/erc8004`** keys reputation by ratified ERC-8004 registrations — **verified live against the real Base Sepolia Identity Registry**.
 
 ## Product phases
 
@@ -14,7 +14,7 @@ Rein is developer tooling and middleware for the agentic payments economy (the [
 | 2     | **Gate**  | x402 monetization middleware for API vendors (supply side)          |
 | 3     | **Graph** | Reputation scoring over agents and vendors (the data moat)          |
 
-## What's in v0.2
+## What's in v0.3
 
 A complete demand-side Guard loop, runnable two ways: fully offline on mock rails (no accounts, no Docker, no chain), or live on Base Sepolia over the real x402 stack:
 
@@ -35,7 +35,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (`0.2.0`, MIT, Node ≥22):
+The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.2.0`; the `0.3.0-rc.1` release candidate — network profiles, org-scoped keys, decision paging, overspend detection — is under `next` (`npm install @reinconsole/sdk@next`). It has breaking changes; read [CHANGELOG.md](CHANGELOG.md) before upgrading:
 
 ```bash
 npx -y @reinconsole/mcp          # the guard as an MCP server — a governed fetch for any MCP harness
@@ -168,7 +168,7 @@ const signer = new SessionSigner({ enginePublicKeyPem: engine.publicKeyPem, stor
 
 ## The hosted engine (invited beta)
 
-Rein runs a hosted policy engine at **`https://engine.reinconsole.com`** with the public console at [app.reinconsole.com](https://app.reinconsole.com) reading from it, and a reference vendor at **`vendor.reinconsole.com`** that sells two testnet routes through `@reinconsole/gate` (`/testnet/v1/ping` at $0.001, `/testnet/v1/scores/vendor/:host` at $0.005). Access is by invitation while the beta is small: an invitee gets an org, an agent, a starter policy and an org-scoped API key narrowed to that agent, which is the whole blast radius of the secret.
+Rein runs a hosted policy engine at **`https://engine.reinconsole.com`** with the public console at [app.reinconsole.com](https://app.reinconsole.com) reading from it, and a reference vendor at **`vendor.reinconsole.com`** that sells two testnet routes through `@reinconsole/gate` (`/testnet/v1/ping` at $0.001, `/testnet/v1/scores/vendor/:host` at $0.005). Its Base mainnet lane — `/v1/ping` at $0.01, `/v1/scores/vendor/:host` at $0.02 — is opt-in and answers 404 until it is armed. Access is by invitation while the beta is small: an invitee gets an org, an agent, a starter policy and an org-scoped API key narrowed to that agent, which is the whole blast radius of the secret.
 
 ```json
 {
@@ -194,7 +194,7 @@ Two things to know before the first call:
 
 ## Real rails: Base and Base Sepolia
 
-Every network Rein pays on is a `NetworkProfile` (`@reinconsole/x402-rails`): chain id, USDC contract, facilitator and the EIP-712 domain, verified live against the real contract rather than asserted. Testnet settles through the hosted x402.org facilitator, which lists only `base-sepolia` and charges nothing. Mainnet (`base`) settles through Coinbase's CDP facilitator, which needs CDP API credentials and is free for the first 1,000 settlements a month, then $0.001 each; the mainnet lane of the reference vendor stays unarmed until it has a separate treasury and those credentials.
+Every network Rein pays on is a `NetworkProfile` (`@reinconsole/x402-rails`): chain id, USDC contract, facilitator and the EIP-712 domain, verified live against the real contract rather than asserted. Testnet settles through the hosted x402.org facilitator, which lists only `base-sepolia` and charges nothing. The `MAINNET` profile (`base`) defaults to Coinbase's CDP facilitator, which needs CDP API credentials (`createProfileFacilitator`, `cdpAuthHeaders`). It is not the only way to settle on mainnet: the facilitator is just a URL, and the reference vendor's mainnet lane settles keyless through [PayAI](https://facilitator.payai.network) when no CDP credentials are set. A keyless facilitator bills the seller its gas plus a margin, so price mainnet routes well above a settlement's cost; the reference vendor's $0.01 floor is that reasoning.
 
 The same guard loop on a real chain — a guarded $0.01 USDC payment settled on-chain by the hosted x402.org facilitator, then a rogue payment that bypasses the guard and gets caught:
 

@@ -2,7 +2,7 @@
 
 The custody tier of **[Rein](https://github.com/bugiiiii11/rein)** — the control plane for AI agent payments. Wallet keys live in the signer and nowhere else; the agent holds a capped, expiring session token, and every [x402](https://www.x402.org) EIP-3009 signature is released only against an engine-signed **allow voucher for the exact transfer being signed** — verified offline, usable once.
 
-> **Status: v0.2 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
+> **Status: v0.3 — early open-source infrastructure, live on testnet.** APIs may change before 1.0. See it running: [Rein console](https://app.reinconsole.com).
 
 ## Install
 
