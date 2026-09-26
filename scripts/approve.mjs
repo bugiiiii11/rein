@@ -144,7 +144,9 @@ console.log(`escalation ${request.decisionId}`);
 console.log(`  status:    ${request.status} (${left})`);
 console.log(`  agent:     ${request.agentId}${request.orgId ? `  org ${request.orgId}` : ''}`);
 console.log(`  payment:   ${request.amount} ${request.asset} on ${request.chain}`);
-console.log(`  to:        ${request.vendorHost}${request.resource}`);
+// `resource` is a full URL from the runner, a bare path from some callers.
+const to = /^https?:\/\//.test(request.resource ?? '') ? request.resource : `${request.vendorHost}${request.resource}`;
+console.log(`  to:        ${to}`);
 console.log(`  reason:    ${request.reason}`);
 if (request.breakers?.length) console.log(`  breakers:  ${request.breakers.join(', ')} (an approval resets these)`);
 if (request.taskId) console.log(`  task:      ${request.taskId}`);

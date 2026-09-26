@@ -462,6 +462,13 @@ pilot's org-scoped admin key from `.env.pilot`. All three were rehearsed on a lo
    $0.20 per hour; and a 6 h liveness watch. Refuses without an active approver -- every
    first-seen vendor would otherwise time out into a deny. Then pin the runner with
    `REIN_RUNNER_THIRD_PARTY_URL`: under this policy every other host is denied.
+4. The pilot itself (S80): `set -a; . ./.env.runner; set +a; node apps/demo/dist/mainnet.js --pay`,
+   3-4 times a day, AT LEAST 1 h apart -- each run is 2 payments and the hourly breaker trips on
+   the 7th. A paying run WAITS on an escalation (`REIN_RUNNER_APPROVAL_WAIT_MIN`, default 15, 0 =
+   don't wait): approve from a second terminal with the `dec_` id Telegram shows. Before S80 the
+   runner exited first, and an approval that landed after it minted an allow nothing would ever
+   pay -- a permanent `unsettled` gap in `/v1/reconciliation`. `.env.approver` must hold the PEM
+   path with FORWARD slashes: sourcing it in Git Bash eats backslashes.
 
 ## Standalone service bins (S48)
 

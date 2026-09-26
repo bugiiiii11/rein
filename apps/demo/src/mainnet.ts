@@ -19,7 +19,8 @@
  * REIN_RUNNER_PRIVATE_KEY, whose address must be one of the agent's
  * registered wallets. Optional: REIN_RUNNER_RPC_URL, REIN_RUNNER_VENDOR_URL,
  * REIN_RUNNER_THIRD_PARTY_URL (skips the catalog), REIN_RUNNER_MAX_USDC
- * (per-call ceiling for catalog picks, default 0.05).
+ * (per-call ceiling for catalog picks, default 0.05), REIN_RUNNER_APPROVAL_WAIT_MIN
+ * (how long `--pay` holds an escalated call open for a human, default 15; 0 = don't wait).
  *
  * On this machine every HTTPS call needs NODE_EXTRA_CA_CERTS=$HOME/.rein-dev-ca.pem.
  */
@@ -93,6 +94,18 @@ async function main(): Promise<number> {
   console.log(`\n  Rein mainnet runner  ·  profile ${profile.name} (${profile.network})`);
   console.log(`  mode ${pay ? 'PAY -- real settlement' : 'advisory -- nothing is signed'}`);
   console.log(`  engine ${local ? 'in-process (--local)' : 'remote'}`);
+  // A paying run WAITS on an escalation, so an approval is spent by the run it
+  // was asked for. Without the wait the run exits first and the approval mints
+  // an allow nothing will ever pay -- a permanent reconciliation gap (S80).
+  const approvalWaitMin = Number(process.env.REIN_RUNNER_APPROVAL_WAIT_MIN ?? '15');
+  if (!Number.isFinite(approvalWaitMin) || approvalWaitMin < 0) {
+    throw new Error('REIN_RUNNER_APPROVAL_WAIT_MIN must be a number of minutes >= 0');
+  }
+  if (pay && approvalWaitMin > 0) {
+    console.log(
+      `  escalations wait up to ${approvalWaitMin} min -- approve from another terminal: pnpm approve <dec_id from Telegram> approve --yes`,
+    );
+  }
 
   // ── Engine ──────────────────────────────────────────────────────────────────
   let close: () => Promise<void> = async () => {};
@@ -188,6 +201,9 @@ async function main(): Promise<number> {
     // The indexer reports; a guard vouching for its own payment is the weak
     // evidence reconciliation exists to check.
     reportSettlement: false,
+    ...(pay && approvalWaitMin > 0
+      ? { escalation: { await: true, timeoutMs: approvalWaitMin * 60_000, pollMs: 3_000 } }
+      : {}),
   });
   const fetch = guard.wrap();
 

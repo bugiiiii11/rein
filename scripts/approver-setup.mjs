@@ -88,7 +88,8 @@ writeFileSync(
     `REIN_ENGINE_URL=${ENGINE}`,
     `REIN_KEY_APPROVE=${key.secret}`,
     `REIN_APPROVER_KEY_ID=${approver.id}`,
-    `REIN_APPROVER_PRIVATE_KEY_FILE=${PEM}`,
+    // Forward slashes: sourcing this file in Git Bash eats unquoted backslashes.
+    `REIN_APPROVER_PRIVATE_KEY_FILE=${PEM.replaceAll('\\', '/')}`,
     '',
   ].join('\n'),
   { mode: 0o600 },
