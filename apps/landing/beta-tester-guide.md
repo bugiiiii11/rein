@@ -104,9 +104,17 @@ async function call(url) {
 }
 
 // Why an allowed call was not paid: the HTTP status and the vendor's own words.
+// A refused payment comes back as a fresh 402 quote with the reason in `error`
+// AFTER the quote, so pick the reason fields out rather than printing the body.
 async function whyUnpaid(res) {
-  const body = res ? (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160) : '';
-  return `HTTP ${res?.status ?? 'none'}${body ? `: ${body}` : ''}`;
+  const text = res ? await res.text().catch(() => '') : '';
+  let why = text;
+  try {
+    const j = JSON.parse(text);
+    why = [j.code, j.error, j.reason].filter((v) => typeof v === 'string').join(' -- ') || text;
+  } catch {}
+  why = why.replace(/\s+/g, ' ').slice(0, 300);
+  return `HTTP ${res?.status ?? 'none'}${why ? `: ${why}` : ''}`;
 }
 
 console.log('--- Test 1: can you buy something? ($0.001) ---');

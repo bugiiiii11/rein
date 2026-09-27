@@ -73,22 +73,63 @@ describe('facilitatorClientRails', () => {
     },
   });
 
+  /** `settle` may be a list: one response per settle call, in order. */
   function clientWith(responses: { verify?: unknown; settle?: unknown }) {
     const calls: { url: string; body: unknown }[] = [];
+    const settles = Array.isArray(responses.settle) ? [...responses.settle] : undefined;
     const client = new FacilitatorClient({
       url: 'https://fac.test',
       fetch: async (input, init) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
         calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-        const body = url.endsWith('/verify') ? responses.verify : responses.settle;
+        const body = url.endsWith('/verify')
+          ? responses.verify
+          : settles
+            ? settles.shift()
+            : responses.settle;
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
       },
     });
-    return { rails: facilitatorClientRails(client), calls };
+    return { rails: facilitatorClientRails(client, { retryDelayMs: 0 }), calls };
   }
+
+  // S80: x402.org's hot wallet raced its own nonce; the viem text is what it relayed.
+  const race = {
+    success: false,
+    errorReason: 'Missing or invalid parameters. ... Details: replacement transaction underpriced',
+    transaction: '',
+    network: 'base-sepolia',
+  };
+  const settlesAt = (calls: { url: string }[]) => calls.filter((c) => c.url.endsWith('/settle')).length;
+
+  it('retries a settle ONCE when the facilitator raced its own nonce, and relays the retry', async () => {
+    const ok = { success: true, transaction: '0xretried', network: 'base-sepolia', payer: WALLET };
+    const { rails, calls } = clientWith({ settle: [race, ok] });
+    const settlement = await rails.settle(evmHeader, requirement);
+    expect(settlement.transaction).toBe('0xretried');
+    expect(settlesAt(calls)).toBe(2);
+  });
+
+  it('gives up after one retry, reporting the second failure', async () => {
+    const nonceLow = { ...race, errorReason: 'nonce too low' };
+    const { rails, calls } = clientWith({ settle: [race, nonceLow, race] });
+    await expect(rails.settle(evmHeader, requirement)).rejects.toMatchObject({
+      code: 'settle_failed',
+      message: 'nonce too low',
+    });
+    expect(settlesAt(calls)).toBe(2);
+  });
+
+  it('does not retry any other settle failure -- `already known` may still land', async () => {
+    for (const errorReason of ['authorization already used', 'already known', 'insufficient funds']) {
+      const { rails, calls } = clientWith({ settle: [{ ...race, errorReason }, race] });
+      await expect(rails.settle(evmHeader, requirement)).rejects.toMatchObject({ message: errorReason });
+      expect(settlesAt(calls)).toBe(1);
+    }
+  });
 
   it('posts the decoded v1 envelope and relays the settlement verbatim', async () => {
     const settle = { success: true, transaction: '0xabc123', network: 'base-sepolia', payer: WALLET };

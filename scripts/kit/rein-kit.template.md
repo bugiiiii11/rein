@@ -109,8 +109,11 @@ Prices: the first call (ping) costs **$0.001**, each call in test 2 costs **$0.0
 limit is **$0.04 per hour**: $0.001 + 7 x $0.005 = $0.036 fits, an 8th call would make $0.041, so Rein
 refuses it.
 
-Rarely, one call in test 2 shows `NOT paid -- HTTP ...: settle_failed ...`. That is the public practice
-network's payment service being busy -- your wallet is fine and no money moved. Send the output as it is.
+Sometimes a call shows `NOT paid -- HTTP 402: settle_failed ...`. That is the public practice network's
+payment service being busy -- your wallet is fine and no money moved. Send the output as it is. Such a
+call still counts toward the $0.04 limit, on purpose: Rein reserves the amount the moment it says yes,
+because at that moment nobody can know yet whether the payment will land -- and letting the agent say
+"that one failed, give me my budget back" would let a misbehaving agent raise its own limit.
 
 > **Prečo:** Test 1 je skutočná (cvičná) platba: Rein ju povolil, agent zaplatil a platba je
 > verejne zapísaná na blockchaine -- overíš si ju na basescan.org bez toho, aby si musel veriť nám.
@@ -248,9 +251,17 @@ async function call(url) {
 }
 
 // Why an allowed call was not paid: the HTTP status and the vendor's own words.
+// A refused payment comes back as a fresh 402 quote with the reason in `error`
+// AFTER the quote, so pick the reason fields out rather than printing the body.
 async function whyUnpaid(res) {
-  const body = res ? (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160) : '';
-  return `HTTP ${res?.status ?? 'none'}${body ? `: ${body}` : ''}`;
+  const text = res ? await res.text().catch(() => '') : '';
+  let why = text;
+  try {
+    const j = JSON.parse(text);
+    why = [j.code, j.error, j.reason].filter((v) => typeof v === 'string').join(' -- ') || text;
+  } catch {}
+  why = why.replace(/\s+/g, ' ').slice(0, 300);
+  return `HTTP ${res?.status ?? 'none'}${why ? `: ${why}` : ''}`;
 }
 
 // Rein's own record of a decision, read back from the engine's signed log.
@@ -407,9 +418,10 @@ test 2: REFUSED after 7 paid call(s) -- denied by: hour-budget
 refusal in Rein's log: dec_... deny "denied by: hour-budget" ...
 ```
 
-($0.001 + 7 x $0.005 = $0.036 fits the $0.04 limit; the 8th call is refused. The count can be lower if
-a call shows `NOT paid -- HTTP ...: settle_failed` -- a busy public testnet facilitator, not the
-wallet. What matters is PAID on test 1 and a `hour-budget` refusal on test 2.)
+($0.001 + 7 x $0.005 = $0.036 fits the $0.04 limit; the 8th call is refused. The paid count can be lower
+if a call shows `NOT paid -- HTTP 402: settle_failed` -- a busy public testnet facilitator, not the
+wallet; an unpaid call still counts toward the limit. What matters is a `hour-budget` refusal on test 2
+and at least one PAID call.)
 
 ## B8. Hand-off
 

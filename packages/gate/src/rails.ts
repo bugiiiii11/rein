@@ -51,6 +51,14 @@ function isNeverSent(err: unknown): boolean {
 }
 
 /** Re-throw a transport error, tagged when it provably never reached the rails. */
+/**
+ * The RPC refused the FACILITATOR's transaction at broadcast because its own
+ * nonce collided -- nothing about the payment itself. Deliberately NOT
+ * `already known`: that is our transaction already in the mempool, which may
+ * still land, so it stays an ordinary failure.
+ */
+const BROADCAST_RACE = /replacement transaction underpriced|nonce too low/i;
+
 function classifyTransport(err: unknown): never {
   if (isNeverSent(err)) {
     throw new RailsUnreachableError(messageOf(err), { cause: err });
@@ -136,7 +144,11 @@ export interface FacilitatorClientLike {
  * dialect the payment arrived in — a v2 envelope is verified against
  * v2-shaped (amount/CAIP-2) requirements.
  */
-export function facilitatorClientRails(client: FacilitatorClientLike): GateRails {
+export function facilitatorClientRails(
+  client: FacilitatorClientLike,
+  options: { retryDelayMs?: number } = {},
+): GateRails {
+  const retryDelayMs = options.retryDelayMs ?? 1_500;
   const dialectRequirements = (paymentHeader: string, requirement: PaymentRequirement) => {
     const { envelope, version } = inspectPaymentHeader(paymentHeader);
     return { envelope, requirements: version === 2 ? v2Requirements(requirement) : requirement };
@@ -156,11 +168,22 @@ export function facilitatorClientRails(client: FacilitatorClientLike): GateRails
     },
     async settle(paymentHeader, requirement) {
       const { envelope, requirements } = dialectRequirements(paymentHeader, requirement);
-      let settled;
-      try {
-        settled = await client.settle(envelope, requirements);
-      } catch (err) {
-        classifyTransport(err);
+      const attempt = async () => {
+        try {
+          return await client.settle(envelope, requirements);
+        } catch (err) {
+          return classifyTransport(err);
+        }
+      };
+      let settled = await attempt();
+      // A facilitator whose hot wallet raced its OWN nonce (S80: x402.org,
+      // 2 of 8 calls in one tester run) had its transaction refused at
+      // broadcast, so the payer's authorization was never used. Retry ONCE.
+      // At-most-once still holds on-chain: EIP-3009 burns the authorization
+      // nonce, so a second execution of the same authorization reverts.
+      if (!settled.success && BROADCAST_RACE.test(settled.errorReason ?? '')) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        settled = await attempt();
       }
       if (!settled.success) {
         throw new GateError('settle_failed', settled.errorReason ?? 'payment settlement failed', {
