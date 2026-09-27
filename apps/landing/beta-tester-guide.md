@@ -103,7 +103,13 @@ async function call(url) {
   }
 }
 
-console.log('--- Test 1: can you buy something? ---');
+// Why an allowed call was not paid: the HTTP status and the vendor's own words.
+async function whyUnpaid(res) {
+  const body = res ? (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160) : '';
+  return `HTTP ${res?.status ?? 'none'}${body ? `: ${body}` : ''}`;
+}
+
+console.log('--- Test 1: can you buy something? ($0.001) ---');
 const one = await call(PING);
 const r1 = guard.receipts().at(-1);
 if (one.blocked) {
@@ -115,11 +121,12 @@ if (one.blocked) {
   console.log(`  Decision ${r1.decisionId ?? '(no id)'} was recorded. Send us that id.`);
 } else if (paid && one.res?.status === 200 && r1?.settlement?.txHash) {
   console.log('  Answer: PAID AND SETTLED. Practice money actually moved.');
-  console.log(`  Proof: https://sepolia.basescan.org/tx/${r1.settlement.txHash}`);
-} else if (paid && one.res?.status === 402 && r1?.outcome === 'allow') {
+  console.log(`  Proof -- YOUR payment of $0.001, money leaving your wallet: https://sepolia.basescan.org/tx/${r1.settlement.txHash}`);
+} else if (paid && r1?.outcome === 'allow') {
   console.log('  Answer: ALLOWED, BUT THE PAYMENT DID NOT GO THROUGH.');
-  console.log('  Permission was granted and your wallet was used, but nothing settled. Almost');
-  console.log('  always this means the wallet has no practice money in it yet:');
+  console.log(`  What came back: ${await whyUnpaid(one.res)}`);
+  console.log('  If that mentions settle_failed, the public practice network was busy -- run again');
+  console.log('  in a minute. Otherwise the usual cause is a wallet with no practice money yet:');
   console.log('    - the faucet has not arrived (give it a minute and run again), or');
   console.log('    - the faucet sent to a different network -- it must be Base Sepolia, token USDC, or');
   console.log('    - the address you funded is not the one this private key belongs to.');
@@ -144,15 +151,15 @@ if (paid) {
       // empty wallet look like a successful run.
       const tx = guard.receipts().at(-1)?.settlement?.txHash;
       if (tx) settledAny = true;
-      console.log(`  call ${i}: allowed, ${tx ? `PAID (${tx.slice(0, 10)}...)` : 'but NOT paid -- wallet is empty'}`);
+      console.log(`  call ${i}: allowed, ${tx ? `PAID (${tx.slice(0, 10)}...)` : `but NOT paid -- ${await whyUnpaid(c.res)}`}`);
     }
   }
   console.log(denied
     ? '\n  Answer: REFUSED, as designed. No payment was even prepared.'
     : '\n  Answer: 12 calls and nothing was refused. Send this output back -- that is a bug.');
   if (denied && !settledAny) {
-    console.log('  But note: none of the calls above actually paid, so your wallet is still empty.');
-    console.log('  The refusal is real; the purchases were not. Fund the wallet and run again.');
+    console.log('  But note: none of the calls above actually paid -- the reason is on each call line.');
+    console.log('  The refusal is real; the purchases were not. Usually: fund the wallet and run again.');
   }
 }
 
@@ -230,7 +237,7 @@ This time you should see two things:
 ## Step 6 -- check the payment really happened
 
 Click the `https://sepolia.basescan.org/tx/...` link the script printed in step 5. That is a public
-record of your payment, written by the network rather than by us: the amount, the two wallets, the
+record of **your** payment -- money leaving your practice wallet, not the faucet funding it -- written by the network rather than by us: the amount, the two wallets, the
 timestamp. Nothing we run can change or remove it.
 
 That is the point worth taking away. You do not have to trust our dashboard that the payment

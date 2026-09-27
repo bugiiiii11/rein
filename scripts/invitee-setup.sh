@@ -125,6 +125,9 @@ Sepolia; this is what stops a testnet key ever paying a mainnet 402.
 No approver is registered: POST /v1/approvers is only needed if you add an
 \`escalate\` rule, and the starter policy above has none.
 
+The one-file Claude Code kit (S80) is the easier thing to send:
+  node scripts/render-kit.mjs $SLUG <Name>     # writes ../rein-kit-$SLUG.md, outside the repo
+
 Verify their progress from here, any time:
   curl -sS -H "Authorization: Bearer \$REIN_INVITEE_ADMIN_KEY" \
     "$E/v1/reconciliation" | node -e "..."
