@@ -2,9 +2,11 @@
 
 Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate`, `policy-engine`, `graph`, `erc8004`, `mock-rails`, `x402-rails`, `mcp`, `signer` and `store`. All eleven are versioned and released together. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-`0.3.0-rc.1` is a release candidate published under the npm `next` dist-tag (`npm i @reinconsole/sdk@next`). `latest` stays on `0.2.0` until 0.3.0 ships.
-
 ## [Unreleased]
+
+## [0.3.0] - 2026-09-29
+
+0.3.0 is `0.3.0-rc.1` plus the additions below. Every breaking change, addition and fix listed under `0.3.0-rc.1` also applies to an upgrade from `0.2.0`, so read both sections before upgrading.
 
 ### Added
 

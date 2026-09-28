@@ -35,7 +35,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.2.0`; the `0.3.0-rc.1` release candidate — network profiles, org-scoped keys, decision paging, overspend detection — is under `next` (`npm install @reinconsole/sdk@next`). It has breaking changes; read [CHANGELOG.md](CHANGELOG.md) before upgrading:
+The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.3.0` — network profiles, org-scoped keys, decision paging, overspend detection, and Gate surge pricing. It has breaking changes from `0.2.0`; read [CHANGELOG.md](CHANGELOG.md) before upgrading:
 
 ```bash
 npx -y @reinconsole/mcp          # the guard as an MCP server — a governed fetch for any MCP harness
