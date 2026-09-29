@@ -32,6 +32,7 @@ Four things are load-bearing and worth knowing before you integrate:
 - [How do I cap what my AI agent spends?](https://www.reinconsole.com/cap-ai-agent-spending): A per-payment cap, a rolling budget and a per-task budget, enforced outside the model before any payment is built.
 - [How do I set spend limits on x402 payments?](https://www.reinconsole.com/x402-spend-limits): Where the limit sits in an x402 payment, a vendor allowlist policy, and the network, token and price checks x402 itself does not make.
 - [How do I stop an AI agent from spending, instantly?](https://www.reinconsole.com/ai-agent-kill-switch): Freeze the agent with one admin call; every later payment is refused before signing and recorded. Breakers escalate on their own.
+- [Can I run Rein without trusting your servers?](https://www.reinconsole.com/run-rein-locally): No account. Check npm provenance, run the persistent engine on your own disk, and verify its signed decision log with node:crypto alone; the engine makes no outbound call unless Telegram approvals are configured.
 
 ## Packages
 

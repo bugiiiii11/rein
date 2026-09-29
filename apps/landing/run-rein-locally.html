@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>Run Rein locally, no account — Rein</title>
+    <meta name="description" content="Yes. Install from npm, check the provenance, run the same engine the hosted service runs on your own disk, and verify its signed decision log with Node's crypto module alone. No account, nothing sent anywhere." />
+    <meta property="og:title" content="Can I run Rein without trusting your servers?" />
+    <meta property="og:description" content="Yes. Install from npm, check the provenance, run the same engine the hosted service runs on your own disk, and verify its signed decision log with Node's crypto module alone. No account, nothing sent anywhere." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.reinconsole.com/run-rein-locally" />
+    <meta property="og:image" content="https://reinconsole.com/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://reinconsole.com/og-card.png" />
+    <link rel="canonical" href="https://www.reinconsole.com/run-rein-locally" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "headline": "Can I run Rein without trusting your servers?",
+            "description": "Yes. Install from npm, check the provenance, run the same engine the hosted service runs on your own disk, and verify its signed decision log with Node's crypto module alone. No account, nothing sent anywhere.",
+            "url": "https://www.reinconsole.com/run-rein-locally",
+            "dateModified": "2026-09-29",
+            "about": {
+              "@type": "SoftwareApplication",
+              "name": "Rein",
+              "url": "https://www.reinconsole.com/"
+            },
+            "publisher": {
+              "@id": "https://www.reinconsole.com/#org"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Can I run Rein without trusting your servers?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Rein is MIT-licensed and needs no account. Install the packages from npm and check their provenance with npm audit signatures, run the persistent policy engine on your own machine, and verify its ed25519-signed, sha256-chained decision log with a short script that imports nothing from Rein. The engine makes no outbound request unless you configure Telegram approvals."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does the Rein policy engine phone home?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The engine makes no outbound request of its own. The only one it can make is to the Telegram Bot API, and only when you set REIN_TELEGRAM_BOT_TOKEN and REIN_TELEGRAM_CHAT_ID for approvals."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How do I know the npm packages were built from the public repo?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Every @reinconsole package is published by the repository's release workflow with npm provenance. npm audit signatures checks the registry signature and the provenance attestation of every package you installed."
+                }
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Rein",
+                "item": "https://www.reinconsole.com/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Can I run Rein without trusting your servers?",
+                "item": "https://www.reinconsole.com/run-rein-locally"
+              }
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/"
+          }
+        ]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <article class="qa">
+        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Questions</nav>
+        <h1>Can I run Rein without trusting your servers?</h1>
+        <div class="qa-answer">
+          <span class="proof-label">SHORT ANSWER</span>
+          <b>Yes, and you should be able to.</b> Rein is MIT-licensed and needs no account. Install it from npm and check
+    the provenance, run the same persistent engine the hosted service runs on your own disk, and verify its signed
+    decision log with a script that imports nothing from Rein. About ten minutes, Node 22+, nothing leaves your machine.
+        </div>
+
+        <h2>1. Install, and check what you installed</h2>
+        <p>In an empty folder:</p>
+        <div class="code-card">
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>npm init -y
+npm install @reinconsole/sdk @reinconsole/store @reinconsole/mock-rails @reinconsole/core
+npm audit signatures</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span class="ok-dot"></span><span>what you'll see — from our run</span></div>
+          <pre class="code output"><code>audited 73 packages in 7s
+
+73 packages have verified <span class="out-ok">registry signatures</span>
+26 packages have verified <span class="out-ok">attestations</span></code></pre>
+        </div>
+        <p>
+          The attestations are npm provenance: each <code class="inline-code">@reinconsole</code> package was built and
+          published by the <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/.github/workflows/release.yml" target="_blank" rel="noopener">release workflow</a>
+          in the public repo, from a tagged commit, with no npm token in the loop. Each package's npm page links the
+          exact commit.
+        </p>
+
+        <h2>2. Run the engine on your own disk</h2>
+        <p>
+          In a second terminal, in the same folder. This is <code class="inline-code">rein-engine</code> from
+          <code class="inline-code">@reinconsole/store</code>, the persistent engine the hosted service runs. It keeps
+          agents, policies, its signing key and the decision log in <code class="inline-code">./rein-data</code>.
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>terminal 2 — leave this running</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>REIN_DATA_DIR=./rein-data npx -p @reinconsole/store rein-engine
+# PowerShell: $env:REIN_DATA_DIR = './rein-data'; npx -p @reinconsole/store rein-engine</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span class="ok-dot"></span><span>what you'll see — from our run</span></div>
+          <pre class="code output"><code>[rein] no REIN_ENGINE_API_KEY set — binding 127.0.0.1 only. Set one before exposing this engine.
+[rein] persistent policy-engine listening on http://127.0.0.1:8787 (auth: none)
+[rein] data dir ./rein-data — fresh store; signing key stored</code></pre>
+        </div>
+        <p>
+          With no API key set it binds to localhost only, so nothing else on the network can reach it. The ed25519
+          signing key is generated here and stays in that folder.
+        </p>
+
+        <h2>3. Govern five payments</h2>
+        <p>
+          One agent, a $1.00 per-payment cap and the kill switch, on simulated x402 rails, so no money and no chain are
+          involved. Save as <code class="inline-code">govern.mjs</code> in the same folder:
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>govern.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>// govern.mjs — five payment attempts against YOUR engine, on simulated rails.
+// Prereq: the engine from step 03 is running on 127.0.0.1:8787.
+import { newId } from '@reinconsole/core';
+import { createGuard, EngineClient, PaymentBlockedError } from '@reinconsole/sdk';
+import { MockLedger, MockFacilitator, createMockVendor } from '@reinconsole/mock-rails';
+
+const engineUrl = 'http://127.0.0.1:8787';
+const wallet = '0xLocalAgent01';
+const ledger = new MockLedger();
+const facilitator = new MockFacilitator({ ledger, name: 'mock-facilitator' });
+const cheap = createMockVendor({ facilitator, atomicPrice: '10000', payTo: '0xVendor' }); // $0.01
+const pricey = createMockVendor({ facilitator, atomicPrice: '5000000', payTo: '0xVendor' }); // $5.00
+
+const client = new EngineClient({ baseUrl: engineUrl });
+const agent = await client.registerAgent({
+  orgId: newId('org'),
+  name: 'local-agent',
+  wallets: [{ chain: 'base', address: wallet, mode: 'sdk' }],
+});
+await client.addPolicy({
+  policyId: `local-${agent.id}`,
+  appliesTo: { agents: [agent.id] },
+  rules: [{ id: 'tx-cap', deny: { amountGt: '1.00' } }],
+  default: 'allow',
+});
+
+const pay = (vendor) =&gt;
+  createGuard({ engineUrl, agentId: agent.id, fetch: vendor.fetch, payer: facilitator.payerFor(wallet) }).wrap();
+
+async function attempt(label, vendor) {
+  try {
+    await pay(vendor)('https://api.data.test/v1/query');
+    console.log(`${label}  ALLOW`);
+  } catch (e) {
+    if (!(e instanceof PaymentBlockedError)) throw e;
+    console.log(`${label}  DENY   ${e.decision.reason}`);
+  }
+}
+
+await attempt('$0.01', cheap);
+await attempt('$0.01', cheap);
+await attempt('$5.00', pricey);           // over the $1.00 per-tx cap
+await client.freeze(agent.id);            // the kill switch
+await attempt('$0.01', cheap);
+await client.unfreeze(agent.id);
+await attempt('$0.01', cheap);
+console.log(`ledger: ${ledger.entries().length} payments settled, 2 never constructed`);</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>node govern.mjs</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span class="ok-dot"></span><span>what you'll see — from our run</span></div>
+          <pre class="code output"><code>$0.01  <span class="out-ok">ALLOW</span>
+$0.01  <span class="out-ok">ALLOW</span>
+$5.00  <span class="out-bad">DENY</span>   denied by: tx-cap
+$0.01  <span class="out-bad">DENY</span>   agent is frozen (kill switch)
+$0.01  <span class="out-ok">ALLOW</span>
+ledger: 3 payments settled, 2 never constructed</code></pre>
+        </div>
+
+        <h2>4. Verify the log without our code</h2>
+        <p>
+          Every decision is sha256-hashed over its content plus the previous hash, then ed25519-signed. This script
+          fetches the engine's public key and the whole log and checks both, with <code class="inline-code">node:crypto</code>
+          and nothing else. Save as <code class="inline-code">verify.mjs</code>:
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>verify.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>// verify.mjs — check the engine's decision log with node:crypto alone.
+// No Rein package is imported: this file trusts nothing we wrote.
+import { createHash, createPublicKey, verify } from 'node:crypto';
+
+const engine = process.env.REIN_ENGINE_URL ?? 'http://127.0.0.1:8787';
+const { publicKey } = await (await fetch(`${engine}/health`)).json();
+const key = createPublicKey(publicKey);
+
+const log = [];
+for (let after; ; ) {
+  const res = await fetch(`${engine}/v1/decisions?limit=500${after === undefined ? '' : `&amp;after=${after}`}`);
+  log.push(...(await res.json()));
+  after = res.headers.get('rein-next-after') ?? undefined;
+  if (after === undefined) break;
+}
+
+// --tamper rewrites the $5.00 deny as an allow, the edit an attacker would want.
+if (process.argv.includes('--tamper')) log.find((d) =&gt; d.outcome === 'deny').outcome = 'allow';
+
+let prev = 'genesis';
+for (const [i, d] of log.entries()) {
+  // The exact bytes the engine hashed: these eight fields, in this order.
+  const canonical = JSON.stringify({
+    intentId: d.intentId, intentHash: d.intentHash, outcome: d.outcome,
+    matchedRules: d.matchedRules, policyId: d.policyId, policyVersion: d.policyVersion,
+    prevHash: d.prevHash, decidedAt: new Date(d.decidedAt).toISOString(),
+  });
+  const hash = createHash('sha256').update(canonical).digest('hex');
+  const signed = verify(null, Buffer.from(d.hash), key, Buffer.from(d.signature, 'base64'));
+  if (d.prevHash !== prev || hash !== d.hash || !signed) {
+    console.log(`BROKEN at #${i} (${d.id}): ${d.prevHash !== prev ? 'chain' : hash !== d.hash ? 'hash' : 'signature'}`);
+    process.exit(1);
+  }
+  prev = d.hash;
+}
+console.log(`${log.length} decisions · chain intact · every signature valid · head ${prev.slice(0, 12)}…`);</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>node verify.mjs
+node verify.mjs --tamper</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-head"><span class="ok-dot"></span><span>what you'll see — from our run</span></div>
+          <pre class="code output"><code>5 decisions · chain intact · <span class="out-ok">every signature valid</span> · head 3376c09a8532…
+<span class="out-bad">BROKEN</span> at #2 (dec_01M3QBKVRHSWBNMZM36S66W4AP): hash</code></pre>
+        </div>
+        <p>
+          The second run rewrites the $5.00 refusal as an allow before checking, and the check fails at that entry. An
+          edit that also recomputed the hash would fail the signature instead, and a dropped entry breaks the chain.
+        </p>
+
+        <h2>5. Restart it: the record stays</h2>
+        <p>
+          Stop the engine (Ctrl+C), start it again with the same command, and run both scripts once more. The engine
+          resumes from disk and the new decisions extend the same chain:
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span class="ok-dot"></span><span>what you'll see — from our run</span></div>
+          <pre class="code output"><code>[rein] data dir ./rein-data — resumed 5 decisions, 1 agents, 1 policies, 0 api keys; signing key stored
+...
+10 decisions · chain intact · <span class="out-ok">every signature valid</span> · head 29403df62d6a…</code></pre>
+        </div>
+
+        <h2>What leaves your machine</h2>
+        <ul>
+          <li><b>The install:</b> npm downloads the packages. That is the only network traffic on this page.</li>
+          <li><b>The engine:</b> nothing. Its only outbound call is to the Telegram Bot API, and only if you set
+            <code class="inline-code">REIN_TELEGRAM_BOT_TOKEN</code> and <code class="inline-code">REIN_TELEGRAM_CHAT_ID</code>
+            for approvals.</li>
+          <li><b>Your keys:</b> Rein never asks for a wallet key. The guard decides before a payment is signed; your own
+            payer signs it.</li>
+        </ul>
+
+        <h2>From here to real payments</h2>
+        <p>
+          Swap the mock vendor's fetch for <code class="inline-code">globalThis.fetch</code> and the mock payer for your
+          own, and the same engine governs real x402 payments. The
+          <a class="inline-link" href="get-started">runbook</a> has a Base Sepolia track with free testnet USDC. Before
+          exposing the engine beyond localhost, set <code class="inline-code">REIN_ENGINE_API_KEY</code>; the
+          <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/DEPLOY.md" target="_blank" rel="noopener">deploy guide</a>
+          covers the rest.
+        </p>
+
+        <h2>Related questions</h2>
+        <div class="qa-next">
+          <a href="cap-ai-agent-spending">How do I cap what my AI agent spends?<span>read →</span></a>
+          <a href="ai-agent-kill-switch">How do I stop an AI agent from spending, instantly?<span>read →</span></a>
+          <a href="x402-spend-limits">How do I set spend limits on x402 payments?<span>read →</span></a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>
