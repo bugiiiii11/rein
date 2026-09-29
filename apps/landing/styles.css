@@ -807,6 +807,81 @@ h2 {
   transition: color 0.15s ease;
 }
 
+/* ── Trust ──────────────────────────────────────────────────────────────── */
+.proof-value.is-ok {
+  color: var(--ok);
+}
+.proof-value.is-bad {
+  color: var(--bad);
+}
+.trust-provenance {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+  padding: 24px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-top: 16px;
+}
+.trust-provenance p {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  max-width: 56ch;
+  text-wrap: pretty;
+}
+.trust-provenance code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+.trust-pkgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+}
+.trust-pkgs a {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.trust-pkgs a:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.quotes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.quote {
+  padding: 22px;
+  border-left: 2px solid var(--accent-line);
+  background: var(--bg-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.quote blockquote {
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.quote figcaption {
+  margin-top: 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
 /* ── Architecture ─────────────────────────────────────────────────────────── */
 .arch {
   display: flex;
@@ -1316,6 +1391,10 @@ h2 {
     padding: 72px 20px;
   }
   .proof-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trust-provenance,
+  .quotes {
     grid-template-columns: minmax(0, 1fr);
   }
   .install {

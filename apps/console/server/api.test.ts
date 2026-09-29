@@ -287,6 +287,16 @@ describe('GET /api/status on a remote-engine console', () => {
     expect(body.state).toBe('unreachable');
   });
 
+  it('is readable cross-origin, for the landing trust section', async () => {
+    const res = await fetch(`${statusBase}/api/status`, {
+      headers: { Origin: 'https://www.reinconsole.com' },
+    });
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    // Only the status route: the rest of the read surface stays same-origin.
+    const state = await fetch(`${statusBase}/api/state`);
+    expect(state.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
   it('needs no credential — none of it is a secret', async () => {
     const res = await fetch(`${statusBase}/api/status`, { headers: {} });
     expect(res.status).toBe(200);

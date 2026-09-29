@@ -83,6 +83,7 @@
       <nav class="nav-links">
         <a href="#planes">Guard · Gate · Graph</a>
         <a href="#proof">Proof</a>
+        <a href="#trust">Trust</a>
         <a href="get-started.html">Get started</a>
         <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
         <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
@@ -299,6 +300,66 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
             <span class="proof-value mono">0x12d2…0f13</span>
             <span class="proof-sub">guarded agent → Rein's Gate, real USDC on Base →</span>
           </a>
+        </div>
+      </section>
+
+      <!-- ── Trust ─────────────────────────────────────────────────────── -->
+      <section class="section" id="trust">
+        <div class="eyebrow reveal"><span class="tick"></span>TRUST, CHECKED</div>
+        <h2 class="reveal d1">Don't take our word for it.<br class="wide-only" /> Every claim here has a link.</h2>
+        <p class="section-lede reveal d2">
+          Rein never asks for a private key and never sees one. Your agent signs its own payments; Rein signs only the
+          decision to allow them. The getting-started path runs on Base Sepolia testnet. Mainnet is a choice you make.
+        </p>
+        <div class="proof-grid">
+          <a class="proof reveal d1" id="ledgerCard" href="https://app.reinconsole.com/api/status" target="_blank" rel="noopener">
+            <span class="proof-label">OVERSPENT · <span id="ledgerWindow">LIVE LEDGER</span></span>
+            <span class="proof-value" id="ledgerValue">—</span>
+            <span class="proof-sub" id="ledgerSub">read live from the hosted engine →</span>
+          </a>
+          <a class="proof reveal d2" href="https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913?a=0x23dd13f6C680FE6Ab0ee86512a3D168D1fe83f40" target="_blank" rel="noopener">
+            <span class="proof-label">MAINNET SETTLEMENTS</span>
+            <span class="proof-value mono">0x23dd…3f40</span>
+            <span class="proof-sub">every USDC payment into Rein's vendor, on BaseScan →</span>
+          </a>
+          <a class="proof reveal d3" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md#review-history" target="_blank" rel="noopener">
+            <span class="proof-label">PRE-MAINNET SECURITY REVIEW</span>
+            <span class="proof-value">5<span class="proof-denominator"> found · 5 fixed</span></span>
+            <span class="proof-sub">none accepted unfixed · each pinned by a test →</span>
+          </a>
+        </div>
+        <div class="trust-provenance reveal d1">
+          <div class="trust-provenance-text">
+            <span class="proof-label">BUILT IN PUBLIC CI · SIGNED ON NPM</span>
+            <p>
+              Every <code>@reinconsole/*</code> package is published by GitHub Actions through npm Trusted Publishing,
+              with a provenance attestation linking it to the commit it was built from. No npm token exists that could
+              publish one by hand. Check it yourself with <code>npm audit signatures</code>.
+            </p>
+          </div>
+          <ul class="trust-pkgs">
+            <li><a href="https://www.npmjs.com/package/@reinconsole/sdk" target="_blank" rel="noopener">sdk</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/core" target="_blank" rel="noopener">core</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/mcp" target="_blank" rel="noopener">mcp</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/gate" target="_blank" rel="noopener">gate</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/graph" target="_blank" rel="noopener">graph</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/signer" target="_blank" rel="noopener">signer</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/policy-engine" target="_blank" rel="noopener">policy-engine</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/store" target="_blank" rel="noopener">store</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/x402-rails" target="_blank" rel="noopener">x402-rails</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/erc8004" target="_blank" rel="noopener">erc8004</a></li>
+            <li><a href="https://www.npmjs.com/package/@reinconsole/mock-rails" target="_blank" rel="noopener">mock-rails</a></li>
+          </ul>
+        </div>
+        <div class="quotes">
+          <figure class="quote reveal d1">
+            <blockquote>“Installation was easy and every test passed.”</blockquote>
+            <figcaption>Packa · beta tester, Base Sepolia</figcaption>
+          </figure>
+          <figure class="quote reveal d2">
+            <blockquote>“Everything ran smoothly. The bugs we found during testing were fixed.”</blockquote>
+            <figcaption>Matt · beta tester, Base Sepolia</figcaption>
+          </figure>
         </div>
       </section>
 

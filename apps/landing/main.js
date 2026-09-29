@@ -78,6 +78,34 @@
     document.body.removeChild(ta);
   }
 
+  /* ── Live ledger ───────────────────────────────────────────────────────────
+     The trust section's overspent figure is read from the hosted console on
+     every visit, never typed into this page. Unreachable means we say so. */
+  (function ledger() {
+    var value = document.getElementById('ledgerValue');
+    var sub = document.getElementById('ledgerSub');
+    var win = document.getElementById('ledgerWindow');
+    if (!value || !sub || !window.fetch) return;
+    function unavailable() {
+      value.textContent = '?';
+      sub.textContent = 'live figure unavailable right now, read it at the source →';
+    }
+    fetch('https://app.reinconsole.com/api/status', { cache: 'no-store' })
+      .then(function (res) {
+        return res.ok ? res.json() : null;
+      })
+      .then(function (s) {
+        var l = s && s.ledger;
+        if (!l || typeof l.overspent !== 'number') return unavailable();
+        value.textContent = String(l.overspent);
+        value.classList.add(l.overspent === 0 ? 'is-ok' : 'is-bad');
+        if (win) win.textContent = 'LAST ' + String(l.window).toUpperCase();
+        sub.textContent =
+          l.allowed + ' allowed · ' + l.settled + ' settled · live from our own agents →';
+      })
+      .catch(unavailable);
+  })();
+
   /* ── Live feed loop ────────────────────────────────────────────────────── */
   var feed = document.getElementById('feed');
   var panel = document.getElementById('feedPanel');

@@ -83,7 +83,8 @@ function fakeFetch(engine: FakeEngine): { impl: typeof fetch; calls: string[] } 
     const path = url.pathname + url.search;
     calls.push(path);
 
-    const failure = engine.fail.get(url.pathname);
+    // A key with a query string fails only that exact read.
+    const failure = engine.fail.get(path) ?? engine.fail.get(url.pathname);
     if (failure !== undefined) {
       return new Response('nope', { status: failure });
     }
@@ -132,7 +133,10 @@ function fakeFetch(engine: FakeEngine): { impl: typeof fetch; calls: string[] } 
   return { impl, calls };
 }
 
-async function world(engine: FakeEngine, extra: { pollMs?: number } = {}) {
+async function world(
+  engine: FakeEngine,
+  extra: { pollMs?: number; now?: () => number } = {},
+) {
   const { impl, calls } = fakeFetch(engine);
   const w = await createRemoteWorld({
     engineUrl: ENGINE,
@@ -140,6 +144,7 @@ async function world(engine: FakeEngine, extra: { pollMs?: number } = {}) {
     fetchImpl: impl,
     // Long enough that no test races the timer; every test drives `refresh()`.
     pollMs: extra.pollMs ?? 3_600_000,
+    ...(extra.now !== undefined ? { now: extra.now } : {}),
   });
   return { w, calls };
 }
@@ -500,6 +505,60 @@ describe('createRemoteWorld — when the engine is unreachable', () => {
     expect(w.status().state).toBe('unreachable');
     // The agent did not go away just because one poll failed.
     expect(w.getState().agents).toHaveLength(1);
+    await w.close();
+  });
+
+  it('publishes a 30d ledger on the status, re-read at most once a minute', async () => {
+    const engine = emptyEngine();
+    Object.assign(engine.reconciliation as Record<string, unknown>, {
+      allowed: 24,
+      settled: 21,
+      unsettled: 3,
+      overspent: 0,
+      overspentValue: '0',
+      settlementsSeen: 95,
+    });
+    let clock = 1_700_000_000_000;
+    const ledgerReads = (calls: string[]) =>
+      calls.filter((c) => c === '/v1/reconciliation?window=30d&limit=1').length;
+    const { w, calls } = await world(engine, { now: () => clock });
+
+    expect(w.status().ledger).toMatchObject({
+      allowed: 24,
+      settled: 21,
+      unsettled: 3,
+      overspent: 0,
+      overspentValue: '0',
+      settlementsSeen: 95,
+    });
+    // Counts only -- the public status must never carry gap rows or intent ids.
+    expect(w.status().ledger).not.toHaveProperty('gaps');
+    expect(ledgerReads(calls)).toBe(1);
+
+    clock += 5_000;
+    await w.refresh();
+    expect(ledgerReads(calls)).toBe(1);
+
+    clock += 60_000;
+    await w.refresh();
+    expect(ledgerReads(calls)).toBe(2);
+    await w.close();
+  });
+
+  it('keeps the last ledger, and the link ok, when only the ledger read fails', async () => {
+    const engine = emptyEngine();
+    let clock = 1_700_000_000_000;
+    const { w } = await world(engine, { now: () => clock });
+    expect(w.status().ledger?.overspent).toBe(0);
+
+    engine.fail.set('/v1/reconciliation?window=30d&limit=1', 500);
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    clock += 60_000;
+    await w.refresh();
+    quiet.mockRestore();
+
+    expect(w.status().state).toBe('ok');
+    expect(w.status().ledger?.overspent).toBe(0);
     await w.close();
   });
 

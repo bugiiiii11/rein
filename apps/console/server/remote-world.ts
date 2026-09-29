@@ -65,6 +65,12 @@ const FEED_CAP = 300;
 const FEED_SEED = 50;
 /** Per-request ceiling. A hung engine must not wedge the poll loop forever. */
 const REQUEST_TIMEOUT_MS = 10_000;
+/**
+ * The ledger `/api/status` publishes: a longer window than the dashboard's
+ * 24 h, re-read at most once a minute rather than on every 5 s poll.
+ */
+const LEDGER_WINDOW = '30d';
+const LEDGER_REFRESH_MS = 60_000;
 /** How many decision pages one poll will chase before leaving the rest for the next. */
 const MAX_PAGES_PER_POLL = 5;
 /** Lately-resolved escalations kept for the panel, matching the local world. */
@@ -99,6 +105,25 @@ export interface RemoteStatus {
   /** Why the last poll failed, when it did. */
   error?: string;
   lastPollAt?: string;
+  /**
+   * The reconciliation totals over `LEDGER_WINDOW` for this console's key --
+   * what the landing's trust section shows, read live so the overspent
+   * figure is never hand-typed (Sprint 10.2). Absent until one read succeeds.
+   */
+  ledger?: LedgerSummary;
+}
+
+/** Counts only: no gap rows, no intent ids, nothing a public page should not carry. */
+export interface LedgerSummary {
+  window: string;
+  allowed: number;
+  settled: number;
+  unsettled: number;
+  overspent: number;
+  overspentValue: string;
+  settlementsSeen: number;
+  /** When the engine computed it. */
+  at: string;
 }
 
 /** A `World` that also answers the status route. */
@@ -309,7 +334,11 @@ function summarizeRule(rule: {
   deny?: unknown;
   escalate?: unknown;
 }): PolicyRuleView {
-  const action: PolicyRuleView['action'] = rule.deny ? 'deny' : rule.escalate ? 'escalate' : 'allow';
+  const action: PolicyRuleView['action'] = rule.deny
+    ? 'deny'
+    : rule.escalate
+      ? 'escalate'
+      : 'allow';
   const cond = (rule.deny ?? rule.escalate ?? rule.allow) as Record<string, unknown> | undefined;
   return { id: rule.id, action, summary: summarizeCondition(cond) };
 }
@@ -346,6 +375,8 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
   let stats: Stats = emptyStats();
   let publicKey = '';
   let status: RemoteStatus = { engine: base, state: 'unreachable' };
+  let ledger: LedgerSummary | undefined;
+  let ledgerReadAt = -Infinity;
 
   /**
    * Where the decision chain was last read to. `after` is a POSITION in this
@@ -746,12 +777,36 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
       emitChanged(stats, nextStats, (v) => ({ type: 'stats', stats: v }));
       stats = nextStats;
 
+      // A failed ledger read keeps the last good one: it is a published
+      // summary, not the engine link, so it must not flip `state`.
+      if (at - ledgerReadAt >= LEDGER_REFRESH_MS) {
+        ledgerReadAt = at;
+        try {
+          const r = (
+            await get<RemoteReconciliation>(`/v1/reconciliation?window=${LEDGER_WINDOW}&limit=1`)
+          ).body;
+          ledger = {
+            window: r.window,
+            allowed: r.allowed,
+            settled: r.settled,
+            unsettled: r.unsettled,
+            overspent: r.overspent,
+            overspentValue: r.overspentValue,
+            settlementsSeen: r.settlementsSeen,
+            at: atIso,
+          };
+        } catch (err) {
+          console.error('[console] ledger read failed:', err);
+        }
+      }
+
       status = {
         engine: base,
         state: 'ok',
         ...(publicKey ? { publicKeyFingerprint: fingerprintPem(publicKey) } : {}),
         ...(lastDecisionAt !== undefined ? { lastDecisionAt } : {}),
         lastPollAt: atIso,
+        ...(ledger !== undefined ? { ledger } : {}),
       };
     } catch (err) {
       // A poll failure leaves the LAST GOOD state standing rather than
@@ -765,6 +820,7 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
         ...(lastDecisionAt !== undefined ? { lastDecisionAt } : {}),
         error: err instanceof Error ? err.message : String(err),
         lastPollAt: atIso,
+        ...(ledger !== undefined ? { ledger } : {}),
       };
     }
   }

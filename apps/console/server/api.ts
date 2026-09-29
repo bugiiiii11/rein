@@ -8,9 +8,18 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { World } from './world';
 
-function sendJson(res: ServerResponse, status: number, data: unknown): void {
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  data: unknown,
+  extraHeaders: Record<string, string> = {},
+): void {
   const body = JSON.stringify(data);
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    ...extraHeaders,
+  });
   res.end(body);
 }
 
@@ -163,7 +172,10 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
         });
         return true;
       }
-      sendJson(res, 200, options.status());
+      // Readable cross-origin: the landing's trust section fetches the
+      // ledger from here (Sprint 10.2). Safe for the same reason the route
+      // is unauthenticated -- no credential is sent or returned.
+      sendJson(res, 200, options.status(), { 'Access-Control-Allow-Origin': '*' });
       return true;
     }
 
