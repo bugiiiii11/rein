@@ -10,15 +10,49 @@
     <title>Rein — the control plane for AI agent payments</title>
     <meta
       name="description"
-      content="Set the rules, watch every payment, score every counterparty. Rein governs your agent's authority to spend, whatever wallet it uses — non-custodial, wallet-agnostic, open source, live on testnet."
+      content="Set the rules, watch every payment, score every counterparty. Rein governs your agent's authority to spend, whatever wallet it uses — non-custodial, wallet-agnostic, open source, live on Base mainnet."
     />
     <meta property="og:title" content="Rein — the control plane for AI agent payments" />
     <meta
       property="og:description"
-      content="Set the rules, watch every payment, score every counterparty. Non-custodial, wallet-agnostic, open source, live on testnet."
+      content="Set the rules, watch every payment, score every counterparty. Non-custodial, wallet-agnostic, open source, live on Base mainnet."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://reinconsole.com" />
+    <meta property="og:url" content="https://www.reinconsole.com/" />
+    <link rel="canonical" href="https://www.reinconsole.com/" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "name": "Rein",
+            "description": "The control plane for AI agent payments: spend policy, audit and reputation for agents paying over x402. Non-custodial: Rein governs an agent's authority to spend and never holds the funds.",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Node.js 22+",
+            "url": "https://www.reinconsole.com/",
+            "softwareVersion": "0.3.0",
+            "license": "https://opensource.org/licenses/MIT",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "sameAs": ["https://github.com/bugiiiii11/rein", "https://www.npmjs.com/org/reinconsole"],
+            "publisher": { "@id": "https://www.reinconsole.com/#org" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Al Shmookh Business Center, One UAQ, UAQ Free Trade Zone",
+              "addressLocality": "Umm Al Quwain",
+              "addressCountry": "AE"
+            }
+          }
+        ]
+      }
+    </script>
     <meta property="og:image" content="https://reinconsole.com/og-card.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -63,8 +97,8 @@
       <section class="hero">
         <div class="hero-copy">
           <div class="hero-pills reveal">
-            <span class="pill"><span class="dot live"></span>LIVE ON BASE SEPOLIA</span>
-            <span class="pill">v0.2 · OPEN SOURCE</span>
+            <span class="pill"><span class="dot live"></span>LIVE ON BASE MAINNET</span>
+            <span class="pill">v0.3 · OPEN SOURCE</span>
           </div>
           <h1 class="reveal d1">
             The control plane for<br class="wide-only" /> AI&nbsp;agent payments.
@@ -78,6 +112,7 @@
             <code class="install-cmd" id="installCmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
             <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
           </div>
+          <p class="hero-fine reveal d4">Using Claude Code or Cursor? <code>npx -y @reinconsole/mcp</code> gives your agent a spend-governed fetch — <a class="inline-link" href="agent-quickstart.md">MCP setup</a>.</p>
           <div class="hero-actions reveal d4">
             <a class="btn btn-primary" href="https://app.reinconsole.com" target="_blank" rel="noopener">
               See it live <span class="btn-arrow">→</span>
@@ -232,7 +267,7 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
       <!-- ── Proof ─────────────────────────────────────────────────────── -->
       <section class="section" id="proof">
         <div class="eyebrow reveal"><span class="tick"></span>RECEIPTS</div>
-        <h2 class="reveal d1">“Live on testnet” — with links,<br class="wide-only" /> not adjectives.</h2>
+        <h2 class="reveal d1">“Live on mainnet” — with links,<br class="wide-only" /> not adjectives.</h2>
         <div class="proof-grid">
           <a class="proof reveal d1" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">
             <span class="proof-label">OFFLINE TEST SUITE</span>
@@ -242,7 +277,7 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
           <a class="proof reveal d2" href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">
             <span class="proof-label">PUBLIC PACKAGES</span>
             <span class="proof-value">11</span>
-            <span class="proof-sub">@reinconsole/* on npm · 0.2.0 →</span>
+            <span class="proof-sub">@reinconsole/* on npm · 0.3.0 →</span>
           </a>
           <a class="proof reveal d3" href="https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/7393" target="_blank" rel="noopener">
             <span class="proof-label">ERC-8004 AGENT #7393</span>
@@ -259,10 +294,10 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
             <span class="proof-value mono">0x1352…b97f1</span>
             <span class="proof-sub">unguarded transfer, flagged →</span>
           </a>
-          <a class="proof reveal d3" href="https://sepolia.basescan.org/tx/0x30eb018d1e6cacdb4e7479e0370a2ec43136c414808a2124712f0c46c975ab8e" target="_blank" rel="noopener">
-            <span class="proof-label">VENDOR GATE SETTLEMENT</span>
-            <span class="proof-value mono">0x30eb…5ab8e</span>
-            <span class="proof-sub">via the hosted x402 facilitator →</span>
+          <a class="proof reveal d3" href="https://basescan.org/tx/0x12d2bebb82bbf56da2b2e80f828840182e02e27d0ed3c855457d8828c0090f13" target="_blank" rel="noopener">
+            <span class="proof-label">FIRST MAINNET REVENUE</span>
+            <span class="proof-value mono">0x12d2…0f13</span>
+            <span class="proof-sub">guarded agent → Rein's Gate, real USDC on Base →</span>
           </a>
         </div>
       </section>
@@ -314,7 +349,7 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
           <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
         </div>
         <p class="outro-fine reveal d3">
-          v0.2 — early open-source infrastructure, live on testnet. APIs may change before 1.0.<br />
+          v0.3 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
           No waitlist. No email capture. The code is public.
         </p>
       </section>

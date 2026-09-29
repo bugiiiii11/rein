@@ -18,7 +18,41 @@
       content="From npm install to a governed agent payment, step by step. 100% offline quickstart; live Base Sepolia track included."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://reinconsole.com/get-started.html" />
+    <meta property="og:url" content="https://www.reinconsole.com/get-started" />
+    <link rel="canonical" href="https://www.reinconsole.com/get-started" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "name": "Rein",
+            "description": "The control plane for AI agent payments: spend policy, audit and reputation for agents paying over x402. Non-custodial: Rein governs an agent's authority to spend and never holds the funds.",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Node.js 22+",
+            "url": "https://www.reinconsole.com/",
+            "softwareVersion": "0.3.0",
+            "license": "https://opensource.org/licenses/MIT",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "sameAs": ["https://github.com/bugiiiii11/rein", "https://www.npmjs.com/org/reinconsole"],
+            "publisher": { "@id": "https://www.reinconsole.com/#org" }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "Al Shmookh Business Center, One UAQ, UAQ Free Trade Zone",
+              "addressLocality": "Umm Al Quwain",
+              "addressCountry": "AE"
+            }
+          }
+        ]
+      }
+    </script>
     <meta property="og:image" content="https://reinconsole.com/og-card-get-started.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -62,7 +96,7 @@
       <section class="section guide-hero">
         <div class="hero-pills reveal">
           <span class="pill"><span class="dot live"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
-          <span class="pill">NODE ≥22 · v0.2 · MIT</span>
+          <span class="pill">NODE ≥22 · v0.3 · MIT</span>
         </div>
         <h1 class="reveal d1">From npm install to a<br class="wide-only" /> governed agent payment.</h1>
         <p class="hero-sub reveal d2">
@@ -76,7 +110,7 @@
           <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
         </div>
         <p class="hero-fine reveal d4">
-          The quickstart runs 100% offline — no accounts, no chain, no funds. The live track at the end settles real testnet USDC.
+          The quickstart runs 100% offline — no accounts, no chain, no funds. The live track at the end settles real testnet USDC. Prefer MCP? <code>npx -y @reinconsole/mcp</code> — see the <a class="inline-link" href="agent-quickstart.md">agent quickstart</a>.
         </p>
       </section>
 
@@ -115,7 +149,7 @@
               <li>Fail-closed: engine unreachable → payments deny, not allow</li>
               <li>Denies happen <b>before</b> a payment is constructed</li>
               <li>Offline dev loop: the whole stack runs with zero setup</li>
-              <li>MIT, 11 packages on npm, live on Base Sepolia — <a class="inline-link" href="index.html#proof">with links, not adjectives</a></li>
+              <li>MIT, 11 packages on npm, live on Base mainnet — <a class="inline-link" href="index.html#proof">with links, not adjectives</a></li>
             </ul>
           </article>
         </div>
@@ -598,7 +632,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             <ul class="fact-list is">
               <li>Non-custodial by architecture — funds never pass through Rein</li>
               <li>Fail-closed — an unreachable engine denies, it doesn't shrug</li>
-              <li>Open source, MIT, 1040 offline tests, live on Base Sepolia</li>
+              <li>Open source, MIT, 1040 offline tests, live on Base mainnet</li>
               <li>Two-sided: the same stack guards buyers and gates sellers</li>
               <li>Auditable — every decision ed25519-signed and hash-chained</li>
             </ul>
@@ -608,8 +642,8 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             <ul class="fact-list isnt">
               <li>A wallet or custodian — it never holds keys to your funds</li>
               <li>Hard enforcement in SDK mode — an agent holding its own key can bypass the guard; Rein <b>catches</b> that (shadow spend). Key-less enforcement is the session-signer tier, in the repo today, published at GA</li>
-              <li>1.0 — this is v0.2; APIs may change</li>
-              <li>Mainnet-proven — everything on-chain so far is Base Sepolia testnet</li>
+              <li>1.0 — this is v0.3; APIs may change</li>
+              <li>Self-serve on the hosted engine — it is invite-only today; self-hosting is open to everyone</li>
             </ul>
           </div>
         </div>
@@ -630,7 +664,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
           <a class="btn btn-ghost" href="index.html">Overview</a>
         </div>
         <p class="outro-fine reveal d3">
-          v0.2 — early open-source infrastructure, live on testnet. APIs may change before 1.0.<br />
+          v0.3 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
           No waitlist. No email capture. The code is public.
         </p>
       </section>

@@ -4,10 +4,23 @@
   "installCommand": "echo 'zero dependencies — skipping install'",
   "buildCommand": "echo 'static site — no build step'",
   "outputDirectory": ".",
+  "cleanUrls": true,
   "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    },
     {
       "source": "/(.*).md",
       "headers": [{ "key": "content-type", "value": "text/plain; charset=utf-8" }]
+    },
+    {
+      "source": "/og",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
     }
   ]
 }
