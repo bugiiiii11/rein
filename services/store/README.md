@@ -44,6 +44,8 @@ npx -p @reinconsole/store rein-graph    # durable reputation graph
 | `rein-engine` | No key set → loopback only. A public bind without a key is a **startup error** | `REIN_ENGINE_API_KEY=<secret>` (or `REIN_ENGINE_AUTH=off` to accept an open engine deliberately) |
 | `rein-graph` | No key set → loopback only. A public bind without a key is a **startup error**. With a key, the **write** routes demand the `report` scope and reads stay open | `REIN_GRAPH_API_KEY=<secret>` (comma-separated for several), or `REIN_GRAPH_PUBLIC=1` (the literal string) to expose an open graph deliberately |
 
+**A network Postgres instead of a data directory.** Set `DATABASE_URL` (and optionally `REIN_DB_SCHEMA`) on `rein-engine`, or pass `openReinStore({ databaseUrl, schema })`: the same schema and stores, on one serialized connection so every statement lands in the order it was issued, exactly as on PGlite (a pool would let two policy upserts tie on evaluation order). It **requires** an external signing key -- the engine will not keep its private key in a database someone else runs. `REIN_MIGRATE_FROM=<data dir>` beside it copies an existing PGlite directory in at boot and verifies the copy (row counts, byte-identical decision docs, the chain, reconciliation) before serving; the directory is only read. PGlite stays the default and needs nothing.
+
 Data directories: `REIN_DATA_DIR` / `REIN_GRAPH_DATA_DIR`. Directories this package creates are made `0700` on POSIX — `engine_keys.private_pem` lives in one, and the default umask would leave it world-readable. Existing directories are **not** re-chmodded; tighten those by hand.
 
 ## How it behaves

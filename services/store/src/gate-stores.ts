@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from './pg-db.js';
 import { GateReceipt } from '@reinconsole/core';
 import { InMemoryGateStore, type GateStorePort } from '@reinconsole/gate';
 import { WriteTail } from './tail.js';
@@ -22,9 +22,9 @@ export class PgGateStore implements GateStorePort {
   private readonly mem = new InMemoryGateStore();
   private readonly tail = new WriteTail();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgGateStore> {
+  static async open(db: Db): Promise<PgGateStore> {
     const store = new PgGateStore(db);
     const receipts = await db.query<{ doc: unknown }>('SELECT doc FROM gate_receipts ORDER BY seq');
     for (const row of receipts.rows) store.mem.appendReceipt(GateReceipt.parse(row.doc));

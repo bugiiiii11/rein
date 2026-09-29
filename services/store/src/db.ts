@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
+import { PgNetworkDb, type Db, type NetworkDbOptions } from './pg-db.js';
 
 /**
  * Schema notes:
@@ -259,4 +260,23 @@ export async function openDb(dir?: string): Promise<PGlite> {
   await db.exec(SCHEMA);
   await db.exec(MIGRATIONS);
   return db;
+}
+
+/**
+ * Open a network Postgres (`DATABASE_URL`) and ensure the same schema. The
+ * DDL is identical on purpose: every statement is `IF NOT EXISTS`, so the
+ * embedded and network databases are one schema with one migration path, and
+ * a database the migration script filled opens exactly like one this call
+ * created.
+ */
+export async function openNetworkDb(options: NetworkDbOptions): Promise<Db> {
+  const db = await PgNetworkDb.open(options);
+  try {
+    await db.exec(SCHEMA);
+    await db.exec(MIGRATIONS);
+    return db;
+  } catch (err) {
+    await db.close().catch(() => undefined);
+    throw err;
+  }
 }

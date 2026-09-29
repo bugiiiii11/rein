@@ -4,6 +4,12 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Added
+
+- **`@reinconsole/store` runs on a network Postgres** as well as PGlite. Pass `openReinStore({ databaseUrl, schema })`, or set `DATABASE_URL` (plus optional `REIN_DB_SCHEMA`) for `rein-engine`. The driver keeps one serialized connection, so statements land in issue order as they do on PGlite. A network store requires an external signing key (`signingKey` / `REIN_ENGINE_SIGNING_KEY`) and stores only the public half. New exports: `openNetworkDb`, `PgNetworkDb`, `Db`, `Queryable`, `NetworkDbOptions`.
+- **PGlite to Postgres migration.** Set `REIN_MIGRATE_FROM=<data dir>` beside `DATABASE_URL` and `rein-engine` copies the directory at boot, carrying `seq` values over and blanking the private key. It then checks row counts, byte-identical decision docs, the chain and reconciliation, and refuses to serve if any check fails. The source directory is only read. On a re-run it copies nothing. A target that does not continue the source chain is refused.
+- `ReinStoreOptions.pruneOnOpen` (default `true`).
+
 ## [0.3.0] - 2026-09-29
 
 0.3.0 is `0.3.0-rc.1` plus the additions below. Every breaking change, addition and fix listed under `0.3.0-rc.1` also applies to an upgrade from `0.2.0`, so read both sections before upgrading.

@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from './pg-db.js';
 import { Session, sumDecimal } from '@reinconsole/core';
 import { InMemorySessionStore, type SessionStorePort } from '@reinconsole/signer';
 
@@ -19,9 +19,9 @@ import { InMemorySessionStore, type SessionStorePort } from '@reinconsole/signer
 export class PgSessionStore implements SessionStorePort {
   private readonly mem = new InMemorySessionStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgSessionStore> {
+  static async open(db: Db): Promise<PgSessionStore> {
     const store = new PgSessionStore(db);
     const sessions = await db.query<{ doc: unknown; spent: string }>(
       'SELECT doc, spent FROM signer_sessions ORDER BY seq',

@@ -1,5 +1,5 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, type KeyObject } from 'node:crypto';
-import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from './pg-db.js';
 import type { DecisionLogKeyPair } from '@reinconsole/policy-engine';
 
 /** Where the engine's signing key lives: in `engine_keys`, or outside the data dir. */
@@ -53,7 +53,7 @@ const spkiPem = (key: KeyObject): string => key.export({ type: 'spki', format: '
  * and starting a second chain nobody asked for.
  */
 export async function loadOrCreateKeyPair(
-  db: PGlite,
+  db: Db,
   signingKey?: SigningKeyInput,
 ): Promise<{ keyPair: DecisionLogKeyPair; created: boolean; source: KeySource }> {
   const existing = await db.query<{ private_pem: string; public_pem: string }>(
@@ -149,7 +149,7 @@ const WAL_ROLLS = 3;
  * was ever exposed while it held a stored key must be treated as compromised.
  * The remedy there is a new key, which starts a new chain — not a vacuum.
  */
-async function erasePrivateKeyBytes(db: PGlite): Promise<void> {
+async function erasePrivateKeyBytes(db: Db): Promise<void> {
   try {
     await db.query('VACUUM FULL engine_keys');
     await db.query('CHECKPOINT');

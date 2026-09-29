@@ -1,4 +1,6 @@
-import type { PGlite } from '@electric-sql/pglite';
+// Queryable: the slice both row writers need -- lets one body run on the root
+// connection or inside a transaction.
+import type { Db, Queryable } from './pg-db.js';
 import type { ReputationSubject } from '@reinconsole/core';
 import {
   DEFAULT_CORRELATION_LIMIT,
@@ -34,9 +36,9 @@ export class PgEvidenceLedger implements EvidenceLedgerPort {
   private readonly mem = new EvidenceLedger();
   private readonly tail = new WriteTail();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgEvidenceLedger> {
+  static async open(db: Db): Promise<PgEvidenceLedger> {
     const ledger = new PgEvidenceLedger(db);
     const subjects = await db.query<{
       kind: string;
@@ -263,13 +265,13 @@ export class PgIntentStore implements IntentCorrelationPort {
   private readonly tail = new WriteTail();
 
   private constructor(
-    private readonly db: PGlite,
+    private readonly db: Db,
     private readonly limit: number,
   ) {
     this.mem = new InMemoryIntentStore(limit);
   }
 
-  static async open(db: PGlite, limit: number = DEFAULT_CORRELATION_LIMIT): Promise<PgIntentStore> {
+  static async open(db: Db, limit: number = DEFAULT_CORRELATION_LIMIT): Promise<PgIntentStore> {
     const store = new PgIntentStore(db, limit);
     const rows = await db.query<{
       intent_id: string;
@@ -328,10 +330,4 @@ export class PgIntentStore implements IntentCorrelationPort {
   flush(): Promise<void> {
     return this.tail.flush();
   }
-}
-
-/** The slice of PGlite both row writers need — lets one body run on the root
- *  connection or inside a transaction. */
-interface Queryable {
-  query<T>(query: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }

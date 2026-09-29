@@ -879,6 +879,76 @@ Then the publicKey fingerprint recipe below, across a redeploy. The restart and
 drain cases in the e2e self-skip against a remote engine: they need a process
 to signal, and a hosted one is not ours to kill.
 
+## The engine on Supabase Postgres (Sprint 11, S84)
+
+The hosted engine moves from the `/data/engine` PGlite volume to a Supabase
+Postgres (Free plan, decision 3 of Stage 4). The code is in
+`@reinconsole/store`: `DATABASE_URL` selects the network driver, and
+`REIN_MIGRATE_FROM` copies the volume in at boot. PGlite stays the default for
+self-hosters and tests.
+
+**Facts the cutover rests on:**
+
+- **Schema `rein`, never `public`.** Supabase exposes `public` through its Data
+  API, and tables created over a direct connection have RLS off -- the decision
+  chain would be readable with the project's anon key. `REIN_DB_SCHEMA=rein`
+  keeps every table out of the API's reach; turning the Data API off entirely
+  (Project Settings -> Data API) is belt and braces.
+- **Session pooler, port 5432** (or the direct connection if Railway has IPv6
+  egress). NOT the transaction pooler (6543): the driver holds one session with
+  `search_path` set on it and runs `BEGIN ... COMMIT` across statements.
+- **One connection, on purpose.** See `services/store/src/pg-db.ts`: it gives
+  the network driver PGlite's statement ordering. Decision p95 measured S84 on
+  the dev box: PGlite 3.1 ms, Postgres over localhost 11.6 ms. Measure the real
+  number on Railway after cutover (`scripts/bench-decisions.mjs` with
+  `DATABASE_URL`, which writes only to a throwaway `rein_bench_*` schema).
+- **The key stays external.** A network store refuses to boot without
+  `REIN_ENGINE_SIGNING_KEY`, and the migration copies `engine_keys` with the
+  private half blanked whatever the source held.
+- **The volume is the rollback and is only READ.** The migration opens it with
+  pruning off and never erases a stored key from it. Do not detach or wipe it
+  (S59: never wipe the audit chain).
+
+**Cutover (founder + Claude, one sitting):**
+
+1. Create the Supabase project in Railway's region (EU West), Free plan. Copy
+   the **session pooler** connection string (Connect -> Session pooler).
+2. Pause the pilot: no runner runs, no `live.yml` dispatch, during the window.
+3. On the `rein-engine` service set `DATABASE_URL=<session pooler string>`,
+   `REIN_DB_SCHEMA=rein`, `REIN_MIGRATE_FROM=/data/engine`. Leave
+   `REIN_DATA_DIR` and the volume exactly as they are. Deploy.
+4. The boot log must show `[migrate] <table>: N rows` lines, then `[migrate]
+   verified: ... identical to the source`, then `[rein] database ... schema rein
+   -- resumed N decisions`. A failed verification exits non-zero and the
+   deploy fails; the old deployment stays on the volume.
+5. Check from outside: `/health` publicKey unchanged; `GET /v1/reconciliation?window=30d`
+   matches the pre-cutover numbers; run the pilot once (`pilot-checks.mjs
+   --advisory`, 2/2).
+6. `REIN_MIGRATE_FROM` can stay set: a later boot finds the chain already there
+   and copies nothing. Remove it once the first nightly dump is green.
+
+**Rollback:** unset `DATABASE_URL` and redeploy -- the engine boots from the
+untouched volume. Anything decided on Postgres after the cutover is NOT on the
+volume; a later re-migration refuses a target that no longer continues the
+volume's chain rather than overwrite it.
+
+**Nightly dump (11.4):** `backup.yml` job `postgres-dump`, dormant until the
+repo secret `REIN_BACKUP_DATABASE_URL` exists. It `pg_dump`s schema `rein`,
+restores it into a scratch Postgres 17, verifies the whole chain
+(`scripts/verify-dump.mjs`, `rooted: true`), and only then commits
+`postgres/rein.sql` + `postgres/latest.json` to the private backups repo. Give
+it a read-only role, not the owner -- created in the SQL editor AFTER the
+cutover (schema `rein` exists once the engine has booted on it). Through the
+session pooler its user name is `rein_backup.<project-ref>`:
+
+```sql
+CREATE ROLE rein_backup LOGIN PASSWORD '<generate>';
+GRANT USAGE ON SCHEMA rein TO rein_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA rein TO rein_backup;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA rein TO rein_backup;
+ALTER DEFAULT PRIVILEGES IN SCHEMA rein GRANT SELECT ON TABLES TO rein_backup;
+```
+
 ## The live workflow (S58)
 
 `.github/workflows/live.yml` runs the suites that spend real testnet money and

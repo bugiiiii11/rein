@@ -1,7 +1,7 @@
 {
   "name": "@reinconsole/store",
   "version": "0.3.0",
-  "description": "Rein persistence — Postgres-backed (PGlite) engine stores. Agents, policies, spend history, the signing key, and the hash-chained decision log survive restarts.",
+  "description": "Rein persistence — Postgres-backed (embedded PGlite, or a network Postgres via DATABASE_URL) engine stores. Agents, policies, spend history, the signing key, and the hash-chained decision log survive restarts.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",
   "repository": {
@@ -27,7 +27,10 @@
     "access": "public"
   },
   "type": "module",
-  "sideEffects": ["./dist/server.js", "./dist/graph-server.js"],
+  "sideEffects": [
+    "./dist/server.js",
+    "./dist/graph-server.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -36,7 +39,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "bin"],
+  "files": [
+    "dist",
+    "bin"
+  ],
   "bin": {
     "rein-engine": "./bin/rein-engine.mjs",
     "rein-graph": "./bin/rein-graph.mjs"
@@ -58,7 +64,8 @@
     "@reinconsole/graph": "workspace:^",
     "@reinconsole/policy-engine": "workspace:^",
     "@reinconsole/signer": "workspace:^",
-    "fastify": "^5.12.1"
+    "fastify": "^5.12.1",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@reinconsole/boot": "workspace:^",
@@ -67,6 +74,7 @@
     "@reinconsole/sdk": "workspace:^",
     "@reinconsole/x402-rails": "workspace:^",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

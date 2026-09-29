@@ -1,7 +1,8 @@
 import type { PGlite } from '@electric-sql/pglite';
 import { Decision } from '@reinconsole/core';
 import { DecisionLog } from '@reinconsole/policy-engine';
-import { openDb } from './db.js';
+import { openDb, openNetworkDb } from './db.js';
+import type { Db } from './pg-db.js';
 import { loadOrCreateKeyPair, type KeySource, type SigningKeyInput } from './keys.js';
 import {
   PgAgentRegistry,
@@ -28,7 +29,9 @@ export {
 export { PgEvidenceLedger, PgIntentStore } from './graph-stores.js';
 export { PgSessionStore } from './signer-stores.js';
 export { PgGateStore } from './gate-stores.js';
-export { openDb } from './db.js';
+export { openDb, openNetworkDb } from './db.js';
+export { PgNetworkDb } from './pg-db.js';
+export type { Db, NetworkDbOptions, Queryable } from './pg-db.js';
 export { loadOrCreateKeyPair, parseSigningKey } from './keys.js';
 export type { KeySource, SigningKeyInput } from './keys.js';
 // A self-hoster composing their own bin needs the same drain the shipped ones
@@ -44,8 +47,22 @@ export {
 } from './lifecycle.js';
 
 export interface ReinStoreOptions {
-  /** PGlite data directory. Omit for an ephemeral in-memory database (tests). */
+  /** PGlite data directory. Omit (with no `databaseUrl`) for an ephemeral in-memory database (tests). */
   dir?: string;
+  /**
+   * A network Postgres (`postgres://...`) instead of a PGlite directory --
+   * the hosted engine's Supabase database. Mutually exclusive with `dir`.
+   * Requires `signingKey`: see `openReinStore`.
+   */
+  databaseUrl?: string;
+  /** Postgres schema for Rein's tables with `databaseUrl` (default: the server's). */
+  schema?: string;
+  /**
+   * Run the TTL prune at open (default true). The migration turns it off: it
+   * opens the SOURCE data dir to compare against, and that volume is the
+   * rollback -- reading it must not delete rows from it.
+   */
+  pruneOnOpen?: boolean;
   /**
    * The engine's signing key, held OUTSIDE the data directory (D1(c)): a
    * PKCS#8 ed25519 PEM from a secret manager, or a parsed pair. Omit and the
@@ -150,7 +167,27 @@ const PRUNE_RESOLVED_APPROVALS_MS = 7 * 86_400_000;
  * append continues from the last persisted hash.
  */
 export async function openReinStore(options: ReinStoreOptions = {}): Promise<ReinStore> {
-  const db = await openDb(options.dir);
+  if (options.databaseUrl !== undefined && options.dir !== undefined) {
+    throw new TypeError('openReinStore: pass { dir } or { databaseUrl }, not both');
+  }
+  if (options.databaseUrl !== undefined && options.signingKey === undefined) {
+    // A generated key would be kept plaintext in `engine_keys` -- on a
+    // database run by someone else, copied into their backups and WAL where
+    // no VACUUM of ours can reach (see erasePrivateKeyBytes). On a data dir
+    // the operator at least owns every copy. So a network database only ever
+    // holds the PUBLIC half, and the key itself comes from outside.
+    throw new TypeError(
+      'openReinStore: a network database needs an external signing key ' +
+        '(REIN_ENGINE_SIGNING_KEY / `signingKey`); the engine will not keep its private key in it',
+    );
+  }
+  const db: Db =
+    options.databaseUrl !== undefined
+      ? await openNetworkDb({
+          url: options.databaseUrl,
+          ...(options.schema !== undefined ? { schema: options.schema } : {}),
+        })
+      : await openDb(options.dir);
   try {
     const { keyPair, created, source } = await loadOrCreateKeyPair(db, options.signingKey);
     const agents = await PgAgentRegistry.open(db);
@@ -213,7 +250,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     };
     // Boot-time sweep: restarts are when accretion actually bites (every boot
     // resumed the whole burn history until now).
-    await prune();
+    if (options.pruneOnOpen !== false) await prune();
 
     return {
       spend,

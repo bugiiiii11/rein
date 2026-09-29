@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import pg from 'pg';
 import { newId } from '@reinconsole/core';
 import { generateKeyPairSync } from 'node:crypto';
 import {
@@ -12,7 +13,29 @@ import {
   verifyDecisionChain,
 } from '@reinconsole/policy-engine';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
-import { loadOrCreateKeyPair, openDb, openReinStore, type ReinStore } from './index.js';
+import {
+  loadOrCreateKeyPair,
+  openDb,
+  openNetworkDb,
+  openReinStore,
+  type Db,
+  type ReinStore,
+} from './index.js';
+
+/**
+ * `REIN_TEST_DATABASE_URL` runs this whole suite against a network Postgres
+ * (CI's service container -- Sprint 11.1). A "data dir" then becomes a fresh
+ * SCHEMA, which isolates a test exactly the way a new temp dir does, and a
+ * store opened without a key is handed TEST_KEY, because a network database
+ * refuses to keep the private half (see `openReinStore`). The few tests that
+ * are ABOUT the PGlite directory -- its creation, the plaintext key kept in
+ * it, the bytes left on its disk -- are `dirOnly`.
+ */
+const PG_URL = process.env.REIN_TEST_DATABASE_URL || undefined;
+const dirOnly = it.skipIf(PG_URL !== undefined);
+const TEST_KEY = generateKeyPairSync('ed25519')
+  .privateKey.export({ type: 'pkcs8', format: 'pem' })
+  .toString();
 
 function intent(agentId: string, amount: string) {
   return {
@@ -58,6 +81,11 @@ function dirContains(dir: string, needle: string): boolean {
 }
 
 function tempDir(): string {
+  if (PG_URL) {
+    const schema = `rein_t_${newId('s').slice(2).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    dirs.push(schema);
+    return schema;
+  }
   const dir = mkdtempSync(join(tmpdir(), 'rein-store-'));
   dirs.push(dir);
   return dir;
@@ -65,9 +93,17 @@ function tempDir(): string {
 
 /** Track every store so afterEach can close stragglers (double-close is fine). */
 async function open(dir?: string, signingKey?: string): Promise<ReinStore> {
-  const store = await openReinStore({ ...(dir ? { dir } : {}), ...(signingKey ? { signingKey } : {}) });
+  const store =
+    PG_URL && dir
+      ? await openReinStore({ databaseUrl: PG_URL, schema: dir, signingKey: signingKey ?? TEST_KEY })
+      : await openReinStore({ ...(dir ? { dir } : {}), ...(signingKey ? { signingKey } : {}) });
   opened.push(store);
   return store;
+}
+
+/** The raw database behind a "data dir" -- for writing rows an older build would have. */
+function rawDb(dir: string): Promise<Db> {
+  return PG_URL ? openNetworkDb({ url: PG_URL, schema: dir }) : openDb(dir);
 }
 
 afterEach(async () => {
@@ -78,6 +114,13 @@ afterEach(async () => {
 // can flush a moment after close() resolves, and deleting the dir under a
 // straggler surfaces as an unhandled ENOENT pinned on the next test.
 afterAll(async () => {
+  if (PG_URL) {
+    const client = new pg.Client({ connectionString: PG_URL });
+    await client.connect();
+    for (const schema of dirs) await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await client.end();
+    return;
+  }
   await new Promise((resolve) => setTimeout(resolve, 250));
   for (const dir of dirs) {
     try {
@@ -89,7 +132,7 @@ afterAll(async () => {
 });
 
 describe('openReinStore', () => {
-  it('creates the data directory, parents included', async () => {
+  dirOnly('creates the data directory, parents included', async () => {
     // The deploy shape this guards: a data dir nested more than one level
     // below a mounted volume. PGlite's own mkdir is not recursive, so without
     // this the store throws ENOENT on boot — which under a container restart
@@ -444,7 +487,9 @@ describe('openReinStore', () => {
     expect(all.map((d) => d.outcome)).toEqual(['allow', 'deny', 'allow']);
   });
 
-  describe('an externally held signing key (D1(c))', () => {
+  // Directory-only: every case but one either needs a key STORED in the data
+  // dir or reopens with none, and a network database refuses both up front.
+  describe.skipIf(PG_URL !== undefined)('an externally held signing key (D1(c))', () => {
     const pkcs8 = () =>
       generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 
@@ -724,7 +769,7 @@ describe('durable tenant attribution', () => {
 
     // Exactly what a pre-tenancy row looks like: the doc is intact, the
     // sidecar is NULL. Nobody can prove it belongs to the org now asking.
-    const db = await openDb(dir);
+    const db = await rawDb(dir);
     await db.query('UPDATE decisions SET agent_id = NULL');
     await db.close();
 

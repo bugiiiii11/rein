@@ -11,6 +11,17 @@
  * spend ledger, the signing key — so it inherits the same rule rather than
  * quietly opting out of it. `REIN_ENGINE_API_KEY` is what turns it on.
  *
+ * Or, with `DATABASE_URL` set, in a network Postgres instead (the hosted
+ * engine's Supabase database); `REIN_DB_SCHEMA` optionally names the schema.
+ * That mode requires `REIN_ENGINE_SIGNING_KEY` -- see `openReinStore`.
+ * `REIN_MIGRATE_FROM=<pglite dir>` beside it copies that data dir into the
+ * database first and verifies the copy (migrate.ts); the boot fails rather
+ * than serve if the copy does not verify. It runs HERE, in the bin, because
+ * on Railway the volume is only mounted into this container and PGlite admits
+ * one process -- the engine being stopped for the redeploy is what makes the
+ * copy safe. Harmless to leave set: a later boot finds the chain already
+ * there and copies nothing.
+ *
  * Run:
  *   $env:REIN_DATA_DIR = ".rein-data"   # optional, this is the default
  *   $env:REIN_ENGINE_API_KEY = "<secret>"
@@ -36,6 +47,7 @@ import {
 } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 import { installShutdown, pruneIntervalFromEnv, startPeriodicPrune } from './lifecycle.js';
+import { migratePgliteToPostgres } from './migrate.js';
 
 export interface PersistentEngine {
   app: FastifyInstance;
@@ -150,6 +162,16 @@ export async function startPersistentEngine(options: {
   };
 }
 
+/** host[:port]/db of a connection string -- what a boot log may show. */
+export function redactUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.port ? `:${u.port}` : ''}${u.pathname}`;
+  } catch {
+    return '(unparseable DATABASE_URL)';
+  }
+}
+
 // Start the server when run directly (tsx/node), not when imported.
 function isMainModule(): boolean {
   if (!process.argv[1]) return false;
@@ -161,6 +183,8 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
+  const databaseUrl = process.env.DATABASE_URL || undefined;
+  const schema = process.env.REIN_DB_SCHEMA || undefined;
   const dir = process.env.REIN_DATA_DIR ?? '.rein-data';
   const port = Number(process.env.PORT ?? 8787);
   // The store opens FIRST so the keys can be durable: `/v1/keys` issues them
@@ -168,7 +192,29 @@ if (isMainModule()) {
   // restart while quietly resurrecting the ones an operator had revoked.
   // REIN_ENGINE_SIGNING_KEY moves the signing key out of the data dir (D1(c)).
   const signingKey = process.env.REIN_ENGINE_SIGNING_KEY;
-  const store = await openReinStore({ dir, ...(signingKey ? { signingKey } : {}) });
+  const migrateFrom = process.env.REIN_MIGRATE_FROM || undefined;
+  if (migrateFrom) {
+    if (!databaseUrl || !signingKey) {
+      console.error('[rein] REIN_MIGRATE_FROM needs DATABASE_URL and REIN_ENGINE_SIGNING_KEY');
+      process.exit(1);
+    }
+    try {
+      await migratePgliteToPostgres({
+        fromDir: migrateFrom,
+        databaseUrl,
+        signingKey,
+        ...(schema ? { schema } : {}),
+        log: (line) => console.log(line),
+      });
+    } catch (err) {
+      console.error(err);
+      process.exit(1);
+    }
+  }
+  const store = await openReinStore({
+    ...(databaseUrl ? { databaseUrl, ...(schema ? { schema } : {}) } : { dir }),
+    ...(signingKey ? { signingKey } : {}),
+  });
   try {
     const auth = await authFromEnv(process.env, store.apiKeys);
     // Throws rather than binding a public interface without a key — the same
@@ -215,7 +261,11 @@ if (isMainModule()) {
       `[rein] persistent policy-engine listening on http://${host}:${bound} ` +
         `(auth: ${auth ? 'api-key' : 'none'})`,
     );
-    console.log(`[rein] data dir ${dir} — ${resumed}; signing key ${store.keySource}`);
+    // Never the URL itself: it carries the database password.
+    const where = databaseUrl
+      ? `database ${redactUrl(databaseUrl)}${schema ? ` schema ${schema}` : ''}`
+      : `data dir ${dir}`;
+    console.log(`[rein] ${where} — ${resumed}; signing key ${store.keySource}`);
   } catch (err) {
     // The store is open by now, so a refused bind must not leak the handle.
     await store.close().catch(() => undefined);

@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from './pg-db.js';
 import {
   Agent,
   ApiKeyRecord,
@@ -40,9 +40,9 @@ import {
 export class PgAgentRegistry implements AgentRegistryPort {
   private readonly mem = new InMemoryAgentRegistry();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgAgentRegistry> {
+  static async open(db: Db): Promise<PgAgentRegistry> {
     const registry = new PgAgentRegistry(db);
     const agents = await db.query<{ doc: unknown }>('SELECT doc FROM agents ORDER BY seq');
     for (const row of agents.rows) registry.mem.register(Agent.parse(row.doc));
@@ -94,9 +94,9 @@ export class PgAgentRegistry implements AgentRegistryPort {
 export class PgPolicyStore implements PolicyStorePort {
   private readonly mem = new InMemoryPolicyStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgPolicyStore> {
+  static async open(db: Db): Promise<PgPolicyStore> {
     const store = new PgPolicyStore(db);
     const policies = await db.query<{ doc: unknown }>('SELECT doc FROM policies ORDER BY seq');
     for (const row of policies.rows) store.mem.add(Policy.parse(row.doc));
@@ -127,9 +127,9 @@ export class PgPolicyStore implements PolicyStorePort {
 export class PgSpendStore implements SpendStorePort {
   private readonly mem = new InMemorySpendStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgSpendStore> {
+  static async open(db: Db): Promise<PgSpendStore> {
     const store = new PgSpendStore(db);
     // The whole history hydrates: resourceMedian is all-time by design, so a
     // lookback cutoff would silently change evaluations. Revisit when spend
@@ -242,9 +242,9 @@ export class PgSpendStore implements SpendStorePort {
 export class PgSettlementStore implements SettlementStorePort {
   private readonly mem = new InMemorySettlementStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgSettlementStore> {
+  static async open(db: Db): Promise<PgSettlementStore> {
     const store = new PgSettlementStore(db);
     const rows = await db.query<{
       intent_id: string;
@@ -308,9 +308,9 @@ export class PgSettlementStore implements SettlementStorePort {
 export class PgLivenessStore implements LivenessStorePort {
   private readonly mem = new InMemoryLivenessStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgLivenessStore> {
+  static async open(db: Db): Promise<PgLivenessStore> {
     const store = new PgLivenessStore(db);
     const rows = await db.query<{
       agent_id: string;
@@ -418,9 +418,9 @@ export class PgLivenessStore implements LivenessStorePort {
 export class PgApprovalStore implements ApprovalStorePort {
   private readonly mem = new InMemoryApprovalStore();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgApprovalStore> {
+  static async open(db: Db): Promise<PgApprovalStore> {
     const store = new PgApprovalStore(db);
     const keys = await db.query<{ doc: unknown }>('SELECT doc FROM approvers');
     for (const row of keys.rows) store.mem.putApprover(ApproverKey.parse(row.doc));
@@ -520,9 +520,9 @@ export class PgApiKeyStore implements ApiKeyStorePort {
   private readonly mem = new InMemoryApiKeyStore();
   private readonly tail = new WriteTail();
 
-  private constructor(private readonly db: PGlite) {}
+  private constructor(private readonly db: Db) {}
 
-  static async open(db: PGlite): Promise<PgApiKeyStore> {
+  static async open(db: Db): Promise<PgApiKeyStore> {
     const store = new PgApiKeyStore(db);
     const rows = await db.query<{ doc: unknown }>('SELECT doc FROM api_keys');
     for (const row of rows.rows) store.mem.put(ApiKeyRecord.parse(row.doc));

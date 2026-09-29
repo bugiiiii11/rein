@@ -61,6 +61,46 @@ jobs:
       - name: Test
         run: pnpm test
 
+  # The store on a NETWORK Postgres (Sprint 11), the driver the hosted engine
+  # runs on Supabase. Every other job tests PGlite only. REIN_TEST_DATABASE_URL
+  # turns store.test.ts's data dirs into schemas and un-skips pg-db.test.ts and
+  # migrate.test.ts; only those files read it, so only those run here. Linux
+  # only: service containers are a Linux-runner feature. Major = Supabase's.
+  test-postgres:
+    name: test (store on postgres 17)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: rein
+          POSTGRES_DB: rein
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      REIN_TEST_DATABASE_URL: postgres://postgres:rein@127.0.0.1:5432/rein
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test the store against Postgres
+        run: pnpm --filter @reinconsole/store exec vitest run src/store.test.ts src/pg-db.test.ts src/migrate.test.ts
+
   # macOS bills at a 10x minute multiplier on private repos, so it does not run
   # per push -- trigger it manually (workflow_dispatch) when a release or a
   # platform-sensitive change warrants it.

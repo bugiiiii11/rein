@@ -103,3 +103,123 @@ jobs:
           sh scripts/notify-telegram.sh
           "Rein nightly backup FAILED -- the decision chain was NOT exported.
           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  # The WHOLE engine database (Sprint 11.4), once the engine runs on Supabase:
+  # every table, every org's decisions -- the export above sees only what the
+  # read key's org can (3 of 6 at S69, `rooted: false`). Supabase Free keeps
+  # no backups we can rely on, so this is the copy.
+  #
+  # A dump is only a backup if it RESTORES: each night it is loaded into a
+  # scratch Postgres 17 and the decision chain is verified under the key
+  # stored beside it (scripts/verify-dump.mjs) BEFORE anything is committed.
+  #
+  # Dormant until the secret exists: before the cutover there is no database
+  # to dump, and a missing secret must read as "not yet", not as a failure.
+  # After the HTTP export (`needs`), because both push to the same repo.
+  postgres-dump:
+    name: dump engine database
+    needs: backup
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      scratch:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: scratch
+          POSTGRES_DB: restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      REIN_BACKUP_DATABASE_URL: ${{ secrets.REIN_BACKUP_DATABASE_URL }}
+      # The schema the engine runs in (REIN_DB_SCHEMA on Railway). Never
+      # `public` on Supabase: that one is exposed through its Data API.
+      REIN_DB_SCHEMA: rein
+      REIN_TELEGRAM_BOT_TOKEN: ${{ secrets.REIN_TELEGRAM_BOT_TOKEN }}
+      REIN_TELEGRAM_CHAT_ID: ${{ secrets.REIN_TELEGRAM_CHAT_ID }}
+    steps:
+      - name: Enabled?
+        id: gate
+        run: |
+          if [ -n "$REIN_BACKUP_DATABASE_URL" ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'REIN_BACKUP_DATABASE_URL is not set -- the engine is not on Postgres yet; skipping.'
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.enabled == 'true'
+      - uses: pnpm/action-setup@v6
+        if: steps.gate.outputs.enabled == 'true'
+      - uses: actions/setup-node@v7
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        if: steps.gate.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+
+      # The verifier needs the chain check and the Decision schema, nothing else.
+      - name: Build the verifier's dependencies
+        if: steps.gate.outputs.enabled == 'true'
+        run: pnpm --filter @reinconsole/policy-engine... build
+
+      - name: Check out the backup repo
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ secrets.REIN_BACKUP_REPO }}
+          token: ${{ secrets.REIN_BACKUP_TOKEN }}
+          path: .backup-repo
+
+      # pg_dump from the postgres:17 image: the runner's own client is older
+      # than the server, and pg_dump refuses a newer server.
+      - name: Dump
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          mkdir -p .backup-repo/postgres
+          docker run --rm -e URL="$REIN_BACKUP_DATABASE_URL" -e SCHEMA="$REIN_DB_SCHEMA" postgres:17 \
+            sh -c 'pg_dump "$URL" --no-owner --no-privileges --schema="$SCHEMA"' > .backup-repo/postgres/rein.sql
+          test -s .backup-repo/postgres/rein.sql
+
+      - name: Restore into scratch and verify the chain
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          REIN_VERIFY_URL: postgres://postgres:scratch@127.0.0.1:5432/restore
+        run: |
+          docker run --rm -i --network host postgres:17 \
+            psql "$REIN_VERIFY_URL" -q -v ON_ERROR_STOP=1 < .backup-repo/postgres/rein.sql
+          node scripts/verify-dump.mjs --manifest .backup-repo/postgres/latest.json
+
+      - name: Commit and push
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: .backup-repo
+        run: |
+          git config user.name 'rein-backup'
+          git config user.email 'rein-backup@users.noreply.github.com'
+          git pull --ff-only
+          git add -A postgres
+          if git diff --cached --quiet; then
+            echo 'Dump unchanged since the last run.'
+            exit 0
+          fi
+          git commit -m "postgres: dump $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
+
+      - name: Manifest
+        if: steps.gate.outputs.enabled == 'true'
+        run: cat .backup-repo/postgres/latest.json
+
+      - name: Notify on failure
+        if: failure() && env.REIN_TELEGRAM_BOT_TOKEN != ''
+        run: >
+          sh scripts/notify-telegram.sh
+          "Rein nightly DATABASE dump FAILED -- no verified copy of the engine database tonight.
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
