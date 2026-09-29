@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>x402 spend limits for AI agents — Rein</title>
+    <meta name="description" content="x402 lets an agent pay any HTTP 402 paywall on its own, and the protocol has no budget. Rein adds one on the paying side: per payment, per window, per vendor, per task." />
+    <meta property="og:title" content="How do I set spend limits on x402 payments?" />
+    <meta property="og:description" content="x402 lets an agent pay any HTTP 402 paywall on its own, and the protocol has no budget. Rein adds one on the paying side: per payment, per window, per vendor, per task." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.reinconsole.com/x402-spend-limits" />
+    <meta property="og:image" content="https://reinconsole.com/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://reinconsole.com/og-card.png" />
+    <link rel="canonical" href="https://www.reinconsole.com/x402-spend-limits" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "headline": "How do I set spend limits on x402 payments?",
+            "description": "x402 lets an agent pay any HTTP 402 paywall on its own, and the protocol has no budget. Rein adds one on the paying side: per payment, per window, per vendor, per task.",
+            "url": "https://www.reinconsole.com/x402-spend-limits",
+            "dateModified": "2026-09-29",
+            "about": {
+              "@type": "SoftwareApplication",
+              "name": "Rein",
+              "url": "https://www.reinconsole.com/"
+            },
+            "publisher": {
+              "@id": "https://www.reinconsole.com/#org"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How do I set spend limits on x402 payments?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "x402 lets an agent pay any HTTP 402 paywall by itself, and the protocol carries no budget. Rein adds one on the paying side. It reads each 402, turns it into an intent, checks the intent against your policy, and lets the agent sign the payment only if it is allowed. You can limit per payment, per rolling window, per vendor host, per resource path and per task."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does x402 have built-in spend limits?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. x402 defines how a server asks for payment and how a client pays. How much a client may pay is left to the client, which is the gap Rein fills."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which networks does Rein support for x402?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Base and Base Sepolia, paying USDC. Any other network is refused rather than guessed at."
+                }
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Rein",
+                "item": "https://www.reinconsole.com/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "How do I set spend limits on x402 payments?",
+                "item": "https://www.reinconsole.com/x402-spend-limits"
+              }
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/"
+          }
+        ]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <article class="qa">
+        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Questions</nav>
+        <h1>How do I set spend limits on x402 payments?</h1>
+        <div class="qa-answer">
+          <span class="proof-label">SHORT ANSWER</span>
+          x402 lets an agent pay any HTTP 402 paywall by itself, and the protocol carries no budget. Rein adds one on the
+    paying side. It reads each 402, turns it into an <b>intent</b>, checks the intent against your policy, and lets the
+    agent sign the payment <b>only if it is allowed</b>. You can limit per payment, per rolling window, per vendor host,
+    per resource path and per task.
+        </div>
+
+        <h2>Where the limit sits in an x402 payment</h2>
+        <p>
+          An x402 payment has four steps: the agent requests a resource, the server answers <code class="inline-code">402</code>
+          with what it accepts, the agent signs a USDC transfer authorization (EIP-3009), and a facilitator settles it on
+          Base. Rein sits between the second step and the third. The decision is made after the price is known and
+          before anything is signed, so a refused payment leaves nothing on chain.
+        </p>
+
+        <h2>A policy for an x402 agent</h2>
+        <p>
+          Pay only the vendors you list, cap the price of a call, and budget the day. With
+          <code class="inline-code">"default": "deny"</code>, a host that no allow rule names is refused, and the deny rules
+          still win over the allow:
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>policy.json</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>{
+  "policyId": "x402-agent",
+  "appliesTo": { "agents": ["agt_01J..."] },
+  "rules": [
+    { "id": "known-vendors", "allow": { "vendorHostIn": ["api.example.com", "data.example.org"] } },
+    { "id": "tx-cap",        "deny":  { "amountGt": "0.25" } },
+    { "id": "day-budget",    "deny":  { "rollingSum": { "window": "24h", "gt": "10.00" } } },
+    { "id": "velocity",      "deny":  { "txCount": { "window": "1h", "gt": 100 } } }
+  ],
+  "default": "deny"
+}</code></pre>
+        </div>
+
+        <h2>Wire the agent</h2>
+        <p>
+          The guard wraps <code class="inline-code">fetch</code>. The payer signs with the agent's own key, inside the agent's
+          process; the policy engine only ever sees the intent, never the key.
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>agent.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>import { createGuard } from '@reinconsole/sdk';
+import { createX402Payer, TESTNET } from '@reinconsole/x402-rails';
+
+const guard = createGuard({
+  engineUrl: 'http://127.0.0.1:8787',
+  agentId: 'agt_01J...',
+  networks: ['base-sepolia'],
+  payer: createX402Payer({ privateKey: process.env.AGENT_KEY, profile: TESTNET }),
+});
+
+const res = await guard.wrap()('https://api.example.com/v1/report'); // paid only if allowed</code></pre>
+        </div>
+        <p>Leave out <code class="inline-code">payer</code> and the guard runs in <b>advisory mode</b>: every paywall is checked and logged, and nothing is paid. It is a safe way to watch what an agent would spend before it can.</p>
+
+        <h2>Checks x402 itself does not make</h2>
+        <ul>
+          <li><b>The network is pinned.</b> A testnet agent refuses a mainnet 402 before a signature exists, so a vendor cannot choose which chain your key spends on.</li>
+          <li><b>The token is pinned.</b> A token that only calls itself USDC is refused; only the network's real USDC contract is paid.</li>
+          <li><b>The price is read from the token, not the vendor.</b> A 402 cannot shrink its own price on paper by misstating decimals.</li>
+          <li><b>Settlements are reconciled.</b> Each payment carries a memo tied to the decision that allowed it, and a settlement for more than was allowed shows up as <code class="inline-code">overspent</code>.</li>
+        </ul>
+        <p>
+          Running an API instead of an agent? <a class="inline-link" href="https://www.npmjs.com/package/@reinconsole/gate" target="_blank" rel="noopener">@reinconsole/gate</a>
+          prices it per call over x402. Otherwise, start with the <a class="inline-link" href="get-started">runbook</a>.
+        </p>
+
+        <h2>Related questions</h2>
+        <div class="qa-next">
+          <a href="cap-ai-agent-spending">How do I cap what my AI agent spends?<span>read →</span></a>
+          <a href="ai-agent-kill-switch">How do I stop an AI agent from spending, instantly?<span>read →</span></a>
+          <a href="get-started">Try it in five minutes, offline<span>the runbook →</span></a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

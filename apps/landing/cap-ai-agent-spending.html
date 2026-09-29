@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>How to cap what an AI agent spends — Rein</title>
+    <meta name="description" content="Put a spend policy outside the model: a per-payment cap, a rolling budget and a per-task budget, checked before any payment is built. Non-custodial, open source." />
+    <meta property="og:title" content="How do I cap what my AI agent spends?" />
+    <meta property="og:description" content="Put a spend policy outside the model: a per-payment cap, a rolling budget and a per-task budget, checked before any payment is built. Non-custodial, open source." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.reinconsole.com/cap-ai-agent-spending" />
+    <meta property="og:image" content="https://reinconsole.com/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://reinconsole.com/og-card.png" />
+    <link rel="canonical" href="https://www.reinconsole.com/cap-ai-agent-spending" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "headline": "How do I cap what my AI agent spends?",
+            "description": "Put a spend policy outside the model: a per-payment cap, a rolling budget and a per-task budget, checked before any payment is built. Non-custodial, open source.",
+            "url": "https://www.reinconsole.com/cap-ai-agent-spending",
+            "dateModified": "2026-09-29",
+            "about": {
+              "@type": "SoftwareApplication",
+              "name": "Rein",
+              "url": "https://www.reinconsole.com/"
+            },
+            "publisher": {
+              "@id": "https://www.reinconsole.com/#org"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How do I cap what my AI agent spends?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Put the limit outside the model, between the agent and its wallet. With Rein, every payment an agent attempts is checked against a policy you write &mdash; a per-payment cap, a rolling budget, a per-task budget &mdash; before the payment is built. A payment over the limit is refused with nothing signed, sent or refunded. Rein never holds the agent's funds; it governs the agent's authority to spend them."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does Rein hold my agent's money?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Funds stay in the agent's own wallet and payments go straight to the vendor. Rein decides whether a payment may be made; it never holds or moves the funds."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What happens if the policy engine is down?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The payment is refused. Rein fails closed: an unreachable engine means no permission, not unlimited permission."
+                }
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Rein",
+                "item": "https://www.reinconsole.com/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "How do I cap what my AI agent spends?",
+                "item": "https://www.reinconsole.com/cap-ai-agent-spending"
+              }
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/"
+          }
+        ]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <article class="qa">
+        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Questions</nav>
+        <h1>How do I cap what my AI agent spends?</h1>
+        <div class="qa-answer">
+          <span class="proof-label">SHORT ANSWER</span>
+          Put the limit <b>outside the model</b>, between the agent and its wallet. With Rein, every payment an agent
+    attempts is checked against a policy you write &mdash; a per-payment cap, a rolling budget, a per-task budget &mdash;
+    <b>before the payment is built</b>. A payment over the limit is refused with nothing signed, sent or refunded.
+    Rein never holds the agent's funds; it governs the agent's authority to spend them.
+        </div>
+
+        <h2>Why a prompt is not a cap</h2>
+        <p>
+          "Never spend more than $5" in a system prompt is an instruction to the same model that a prompt injection,
+          a confused tool result or a retry loop can talk out of it. A cap only holds if the thing enforcing it is
+          something the agent cannot reach. In Rein that is a policy engine: the agent can ask it for permission,
+          and nothing else.
+        </p>
+
+        <h2>The limits that matter</h2>
+        <ul>
+          <li><b>Per payment</b> &mdash; <code class="inline-code">amountGt</code>: refuse any single payment above a price.</li>
+          <li><b>Rolling budget</b> &mdash; <code class="inline-code">rollingSum: { window, gt }</code>: refuse the payment that would take the last hour, day or week over a total.</li>
+          <li><b>Velocity</b> &mdash; <code class="inline-code">txCount: { window, gt }</code>: refuse the 51st call in an hour, whatever each one cost.</li>
+          <li><b>Per task</b> &mdash; <code class="inline-code">taskBudget: { gt }</code>: cap one unit of work, so one runaway job cannot spend the day's budget.</li>
+          <li><b>Breakers</b> &mdash; an envelope that <i>escalates</i> to a human instead of denying: the payment is parked until someone releases it with a signature.</li>
+        </ul>
+
+        <h2>Write the policy</h2>
+        <p>A policy is data. This one caps any single payment at $0.50, the hour at $2, and any one task at $1:</p>
+        <div class="code-card">
+          <div class="code-head"><span>policy.json</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>{
+  "policyId": "research-agent-limits",
+  "appliesTo": { "agents": ["agt_01J..."] },
+  "rules": [
+    { "id": "tx-cap",      "deny": { "amountGt": "0.50" } },
+    { "id": "hour-budget", "deny": { "rollingSum": { "window": "1h", "gt": "2.00" } } },
+    { "id": "task-budget", "deny": { "taskBudget": { "gt": "1.00" } } }
+  ],
+  "breakers": [{ "id": "velocity", "window": "24h", "txCount": 20, "valueCap": "5.00" }],
+  "default": "allow"
+}</code></pre>
+        </div>
+        <p>
+          Precedence is fixed: <b>deny &gt; escalate &gt; allow &gt; the policy default</b>. An explicit deny always wins.
+        </p>
+
+        <h2>Put the agent behind it</h2>
+        <p>If the agent runs in Claude Code, Cursor or any MCP harness, no code is needed. It gets a <code class="inline-code">rein_fetch</code> tool that pays only when policy allows:</p>
+        <div class="code-card">
+          <div class="code-head"><span>mcp config</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>{
+  "mcpServers": {
+    "rein": {
+      "command": "npx",
+      "args": ["-y", "@reinconsole/mcp"],
+      "env": {
+        "REIN_ENGINE_URL": "http://127.0.0.1:8787",
+        "REIN_AGENT_ID": "agt_01J..."
+      }
+    }
+  }
+}</code></pre>
+        </div>
+        <p>If the agent is your own program, wrap its <code class="inline-code">fetch</code> once:</p>
+        <div class="code-card">
+          <div class="code-head"><span>agent.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>import { createGuard } from '@reinconsole/sdk';
+
+const guard = createGuard({ engineUrl: 'http://127.0.0.1:8787', agentId: 'agt_01J...' });
+const fetch = guard.wrap(); // every x402 paywall now goes through the policy</code></pre>
+        </div>
+
+        <h2>What happens at the limit</h2>
+        <ul>
+          <li><b>Denied</b> payments never exist: the guard stops before a signature, so there is nothing to refund.</li>
+          <li><b>Escalated</b> payments wait for a human to sign the decision. The wait has a timeout, and a timeout is a deny.</li>
+          <li><b>Every decision is signed and hash-chained</b>, so the record of what was allowed cannot be quietly edited.</li>
+          <li><b>Fail-closed:</b> if the policy engine cannot be reached, the payment is refused, not waved through.</li>
+        </ul>
+        <p>
+          To watch a budget refuse its fifth payment on your own machine, with no account, chain or funds, follow the
+          <a class="inline-link" href="get-started">five-minute runbook</a>.
+        </p>
+
+        <h2>Related questions</h2>
+        <div class="qa-next">
+          <a href="x402-spend-limits">How do I set spend limits on x402 payments?<span>read →</span></a>
+          <a href="ai-agent-kill-switch">How do I stop an AI agent from spending, instantly?<span>read →</span></a>
+          <a href="get-started">Try it in five minutes, offline<span>the runbook →</span></a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

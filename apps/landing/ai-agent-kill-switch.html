@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>An AI agent kill switch for payments — Rein</title>
+    <meta name="description" content="Freeze the agent: one call, and every payment it attempts is refused before anything is signed. Reversible, audited, and out of the agent's reach." />
+    <meta property="og:title" content="How do I stop an AI agent from spending, instantly?" />
+    <meta property="og:description" content="Freeze the agent: one call, and every payment it attempts is refused before anything is signed. Reversible, audited, and out of the agent's reach." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.reinconsole.com/ai-agent-kill-switch" />
+    <meta property="og:image" content="https://reinconsole.com/og-card.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://reinconsole.com/og-card.png" />
+    <link rel="canonical" href="https://www.reinconsole.com/ai-agent-kill-switch" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "headline": "How do I stop an AI agent from spending, instantly?",
+            "description": "Freeze the agent: one call, and every payment it attempts is refused before anything is signed. Reversible, audited, and out of the agent's reach.",
+            "url": "https://www.reinconsole.com/ai-agent-kill-switch",
+            "dateModified": "2026-09-29",
+            "about": {
+              "@type": "SoftwareApplication",
+              "name": "Rein",
+              "url": "https://www.reinconsole.com/"
+            },
+            "publisher": {
+              "@id": "https://www.reinconsole.com/#org"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "How do I stop an AI agent from spending, instantly?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Freeze it. In Rein a freeze is one call to the policy engine. From that moment every payment the agent attempts is refused as agent-frozen before anything is signed, and each refusal is written to the signed decision log. It is reversible, keeps the audit trail, and does not need access to the agent's machine or wallet."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does freezing an agent cancel payments already settled?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. A settled x402 payment is final on chain. A freeze stops every payment from that moment on, before anything is signed."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I unfreeze an agent?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Unfreezing restores the agent under its existing policy. Freezes and unfreezes are admin actions, out of the agent's own reach."
+                }
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Rein",
+                "item": "https://www.reinconsole.com/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "How do I stop an AI agent from spending, instantly?",
+                "item": "https://www.reinconsole.com/ai-agent-kill-switch"
+              }
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/"
+          }
+        ]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <article class="qa">
+        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Questions</nav>
+        <h1>How do I stop an AI agent from spending, instantly?</h1>
+        <div class="qa-answer">
+          <span class="proof-label">SHORT ANSWER</span>
+          <b>Freeze it.</b> In Rein a freeze is one call to the policy engine. From that moment every payment the agent
+    attempts is refused as <code class="inline-code">agent-frozen</code> before anything is signed, and each refusal is
+    written to the signed decision log. It is reversible, keeps the audit trail, and does not need access to the
+    agent's machine or wallet.
+        </div>
+
+        <h2>Freeze</h2>
+        <p>With an admin key for your org:</p>
+        <div class="code-card">
+          <div class="code-head"><span>terminal</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>curl -X POST https://engine.example.com/v1/agents/agt_01J.../freeze \
+  -H "Authorization: Bearer $REIN_ADMIN_KEY"</code></pre>
+        </div>
+        <p>Or from code, with the SDK's engine client:</p>
+        <div class="code-card">
+          <div class="code-head"><span>freeze.mjs</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>import { EngineClient } from '@reinconsole/sdk';
+
+const client = new EngineClient({
+  baseUrl: 'https://engine.example.com',
+  apiKey: process.env.REIN_ADMIN_KEY,
+});
+await client.freeze('agt_01J...');   // every payment now: DENIED, agent-frozen
+// await client.unfreeze('agt_01J...');</code></pre>
+        </div>
+
+        <h2>Why the agent cannot undo it</h2>
+        <p>
+          The agent's own key can ask for permission to pay and report what settled. It cannot freeze, unfreeze,
+          change a policy or approve its own payment; those need an admin key or an approver's signature. A kill switch
+          the agent can reach is not a kill switch, which is also why "stop spending" in a prompt is not one.
+        </p>
+
+        <h2>Then, if you need to, revoke the key</h2>
+        <p>
+          A freeze is the first brake: instant and reversible. If the agent's key itself may be compromised, revoke it
+          as well, and the engine refuses that key outright. Freeze first, revoke second: the freeze keeps the record of
+          everything the agent tried.
+        </p>
+
+        <h2>Brakes that pull themselves</h2>
+        <p>
+          You will not always be watching. A <b>breaker</b> is an envelope such as "20 payments or $5 in 24 hours"; the
+          payment that would cross it is parked for a human instead of paid. Nothing is released until someone signs the
+          decision, and a parked payment that nobody signs expires into a refusal.
+        </p>
+        <div class="code-card">
+          <div class="code-head"><span>policy.json (excerpt)</span><button class="copy-btn" type="button" data-copy-code aria-label="Copy code">copy</button></div>
+          <pre class="code"><code>"breakers": [{ "id": "velocity", "window": "24h", "txCount": 20, "valueCap": "5.00" }]</code></pre>
+        </div>
+        <p>
+          The <a class="inline-link" href="https://app.reinconsole.com" target="_blank" rel="noopener">live console</a> shows
+          agents, breakers and every decision on Rein's own hosted engine. To try a freeze locally, follow the
+          <a class="inline-link" href="get-started">runbook</a>.
+        </p>
+
+        <h2>Related questions</h2>
+        <div class="qa-next">
+          <a href="cap-ai-agent-spending">How do I cap what my AI agent spends?<span>read →</span></a>
+          <a href="x402-spend-limits">How do I set spend limits on x402 payments?<span>read →</span></a>
+          <a href="get-started">Try it in five minutes, offline<span>the runbook →</span></a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

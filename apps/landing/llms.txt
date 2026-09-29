@@ -21,11 +21,17 @@ Four things are load-bearing and worth knowing before you integrate:
 
 ## Start here
 
-- [Agent quickstart](https://reinconsole.com/agent-quickstart.md): The complete integration, written for an agent to execute. Install, boot the engine, register an agent, write a policy, watch a budget deny fire. Runs offline with no accounts, chain, or funds.
-- [Agent Skill](https://reinconsole.com/skill/SKILL.md): An installable skill that teaches a coding agent how to wire Rein into a project correctly. Drop it in `~/.claude/skills/rein/SKILL.md`.
-- [Get started (for humans)](https://reinconsole.com/get-started.html): The same runbook as a page, with both the agent side and the vendor side.
+- [Agent quickstart](https://www.reinconsole.com/agent-quickstart.md): The complete integration, written for an agent to execute. Install, boot the engine, register an agent, write a policy, watch a budget deny fire. Runs offline with no accounts, chain, or funds.
+- [Agent Skill](https://www.reinconsole.com/skill/SKILL.md): An installable skill that teaches a coding agent how to wire Rein into a project correctly. Drop it in `~/.claude/skills/rein/SKILL.md`.
+- [Get started (for humans)](https://www.reinconsole.com/get-started): The same runbook as a page, with both the agent side and the vendor side.
 - [Live console](https://app.reinconsole.com): Read-only view of the hosted engine — agents, policies, decisions, breakers, reconciliation, escalations.
 - [Hosted engine](https://engine.reinconsole.com/health): `https://engine.reinconsole.com`, keyed, invited beta. An invitee's key is scoped to one org and one agent. `vendor.reinconsole.com` sells two testnet routes (`/testnet/v1/ping` $0.001, `/testnet/v1/scores/vendor/:host` $0.005) to try it against. Path 0 in the agent quickstart.
+
+## Questions
+
+- [How do I cap what my AI agent spends?](https://www.reinconsole.com/cap-ai-agent-spending): A per-payment cap, a rolling budget and a per-task budget, enforced outside the model before any payment is built.
+- [How do I set spend limits on x402 payments?](https://www.reinconsole.com/x402-spend-limits): Where the limit sits in an x402 payment, a vendor allowlist policy, and the network, token and price checks x402 itself does not make.
+- [How do I stop an AI agent from spending, instantly?](https://www.reinconsole.com/ai-agent-kill-switch): Freeze the agent with one admin call; every later payment is refused before signing and recorded. Breakers escalate on their own.
 
 ## Packages
 
@@ -38,7 +44,7 @@ All on npm under [@reinconsole](https://www.npmjs.com/org/reinconsole), Node >=2
 - [@reinconsole/gate](https://www.npmjs.com/package/@reinconsole/gate): The vendor side. Price an API per call over x402; an unpaid caller gets a quote, a paying one gets through, receipted.
 - [@reinconsole/graph](https://www.npmjs.com/package/@reinconsole/graph): Reputation. Scores are never stored — they are pure functions of an append-only evidence ledger.
 - [@reinconsole/mock-rails](https://www.npmjs.com/package/@reinconsole/mock-rails): A simulated x402 world (ledger, facilitator, paywalled vendor) so the whole stack runs offline.
-- [@reinconsole/x402-rails](https://www.npmjs.com/package/@reinconsole/x402-rails): The real rails on Base and Base Sepolia, each a `NetworkProfile`. EIP-3009 payer, facilitator clients (x402.org for testnet, CDP for mainnet), on-chain indexer.
+- [@reinconsole/x402-rails](https://www.npmjs.com/package/@reinconsole/x402-rails): The real rails on Base and Base Sepolia, each a `NetworkProfile`. EIP-3009 payer, facilitator clients (x402.org for testnet; PayAI, keyless, or Coinbase CDP for mainnet), on-chain indexer.
 - [@reinconsole/erc8004](https://www.npmjs.com/package/@reinconsole/erc8004): On-chain agent identity per ERC-8004.
 
 ## Concepts
@@ -53,5 +59,7 @@ All on npm under [@reinconsole](https://www.npmjs.com/org/reinconsole), Node >=2
 - **Network profile**: testnet or mainnet, enforced in the guard and the payer rather than in policy, because the engine maps Base and Base Sepolia onto one chain. A testnet-profile key never pays a mainnet 402.
 
 ## Optional
+
+- [Live ledger](https://app.reinconsole.com/api/status): The hosted console's link to the engine, including a 30-day reconciliation summary for Rein's own agents (`ledger.overspent` is the count of settlements above what was allowed).
 
 - [GitHub](https://github.com/bugiiiii11/rein): Source, issues, and the full README.
