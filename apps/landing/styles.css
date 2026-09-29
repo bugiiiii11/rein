@@ -1126,6 +1126,16 @@ h2 {
 .footer-links a:hover {
   color: var(--ink);
 }
+/* Small-type links still get a 24px tap target (WCAG 2.5.8). */
+.footer-links a,
+.pillar-link,
+.qa-crumbs a {
+  display: inline-block;
+  padding-block: 4px;
+}
+.footer-links {
+  row-gap: 6px;
+}
 
 /* ── Reveal on scroll ─────────────────────────────────────────────────────── */
 /* Enhancement only: content is visible by default. The inline <head> script
