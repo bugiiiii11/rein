@@ -131,6 +131,25 @@ describe('POST /v1/sandbox', () => {
     await app.close();
   });
 
+  it('caps the decisions a sandbox org makes per day -- denied ones count, they are chain rows too', async () => {
+    const { app, create, bearer, intent } = world({ maxDecisionsPerDay: 2 });
+    const { agentId, apiKey } = (await create()).json();
+    const evaluate = (amount: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/v1/evaluate',
+        headers: bearer(apiKey),
+        payload: intent(agentId, amount),
+      });
+    expect((await evaluate('0.001')).statusCode).toBe(200);
+    expect((await evaluate('0.005')).json().decision.outcome).toBe('deny');
+    const over = await evaluate('0.001');
+    expect(over.statusCode).toBe(429);
+    expect(over.json().error).toBe('sandbox_quota');
+    expect(over.headers['retry-after']).toBe('3600');
+    await app.close();
+  });
+
   it('limits per IP, then per day globally -- and the global count survives in the keys', async () => {
     const { app, create } = world({ perIpPerDay: 2, dailyCap: 3 });
     expect((await create({}, '10.0.0.1')).statusCode).toBe(201);

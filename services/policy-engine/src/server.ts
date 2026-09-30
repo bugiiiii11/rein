@@ -40,6 +40,7 @@ import { buildRateLimiters, rateLimitFromEnv, type RateLimitOptions } from './ra
 import type { ApprovalStorePort } from './approvals.js';
 import {
   DEFAULT_SANDBOX_MAX_AGENTS,
+  DEFAULT_SANDBOX_MAX_DECISIONS_PER_DAY,
   SANDBOX_KEY_NAME,
   SandboxError,
   SandboxService,
@@ -559,6 +560,22 @@ export function buildServer(
     // that this agent is not theirs is worth more than hiding whether the id
     // exists. A runtime key narrowed to one agent gets the same answer for
     // every other agent in its own org.
+    const caller = CALLERS.get(req);
+    if (scope && caller && SandboxService.isSandboxKey(caller)) {
+      // A denied intent still appends to the chain, and decisions are never
+      // pruned -- so a sandbox's budget cap bounds its money, not its rows.
+      const quota = sandbox?.decisionQuota ?? DEFAULT_SANDBOX_MAX_DECISIONS_PER_DAY;
+      const since = Date.now() - 86_400_000;
+      const today = engine.decisions(scope).filter((d) => d.decidedAt.getTime() >= since).length;
+      if (today >= quota) {
+        throw new SandboxError(
+          429,
+          'sandbox_quota',
+          `a sandbox org makes at most ${quota} decisions a day; claim it to lift the quota`,
+          3600,
+        );
+      }
+    }
     if (scope && !engine.ownsAgentId(input.agentId, scope)) {
       throw new AuthError(403, 'agent_not_in_scope', 'this API key cannot spend for that agent');
     }

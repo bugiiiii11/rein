@@ -30,6 +30,8 @@ export const DEFAULT_SANDBOX_DAILY_CAP = 200;
 export const DEFAULT_SANDBOX_PER_IP_PER_DAY = 5;
 /** Agents one sandbox org may register -- the starter one plus a couple. */
 export const DEFAULT_SANDBOX_MAX_AGENTS = 3;
+/** Decisions per sandbox org per rolling 24h -- the chain is append-only, so rows need a cap too. */
+export const DEFAULT_SANDBOX_MAX_DECISIONS_PER_DAY = 500;
 
 /**
  * The starter policy. Priced against the reference vendor's testnet lane:
@@ -58,6 +60,7 @@ export interface SandboxOptions {
   dailyCap?: number;
   perIpPerDay?: number;
   maxAgents?: number;
+  maxDecisionsPerDay?: number;
   drip?: SandboxDrip;
   now?: () => number;
 }
@@ -96,6 +99,7 @@ export class SandboxService {
   private readonly ttlMs: number;
   private readonly dailyCap: number;
   private readonly maxAgents: number;
+  private readonly maxDecisions: number;
   private readonly perIp: TokenBucketLimiter;
   private readonly now: () => number;
   /** Mints one at a time, so the global count cannot be raced past its cap. */
@@ -109,6 +113,7 @@ export class SandboxService {
     this.ttlMs = options.ttlMs ?? DEFAULT_SANDBOX_TTL_MS;
     this.dailyCap = options.dailyCap ?? DEFAULT_SANDBOX_DAILY_CAP;
     this.maxAgents = options.maxAgents ?? DEFAULT_SANDBOX_MAX_AGENTS;
+    this.maxDecisions = options.maxDecisionsPerDay ?? DEFAULT_SANDBOX_MAX_DECISIONS_PER_DAY;
     this.now = options.now ?? Date.now;
     const perDay = options.perIpPerDay ?? DEFAULT_SANDBOX_PER_IP_PER_DAY;
     this.perIp = new TokenBucketLimiter({ capacity: perDay, refillPerSec: perDay / 86_400 });
@@ -122,6 +127,11 @@ export class SandboxService {
   /** How many agents a sandbox org may hold (enforced by `POST /v1/agents`). */
   get agentQuota(): number {
     return this.maxAgents;
+  }
+
+  /** Decisions a sandbox org may make per rolling 24h (enforced by `POST /v1/evaluate`). */
+  get decisionQuota(): number {
+    return this.maxDecisions;
   }
 
   create(ip: string, body: unknown): Promise<SandboxCreated> {

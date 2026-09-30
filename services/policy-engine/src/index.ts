@@ -147,6 +147,7 @@ export {
   DEFAULT_SANDBOX_DAILY_CAP,
   DEFAULT_SANDBOX_PER_IP_PER_DAY,
   DEFAULT_SANDBOX_MAX_AGENTS,
+  DEFAULT_SANDBOX_MAX_DECISIONS_PER_DAY,
   type SandboxOptions,
   type SandboxDrip,
   type SandboxCreated,
