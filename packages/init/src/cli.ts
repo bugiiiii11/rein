@@ -1,4 +1,4 @@
-import { InitError, runInit, DEFAULT_ENGINE_URL } from './index.js';
+import { InitError, runClaim, runInit, DEFAULT_ENGINE_URL } from './index.js';
 
 const HELP = `npx @reinconsole/init [options]
 
@@ -9,10 +9,12 @@ rein-agent.json here, then makes one allowed payment and one refused one.
   --vendor <url>   x402 vendor for the demo calls (default https://vendor.reinconsole.com)
   --force          mint a new sandbox even if rein-agent.json exists
   --no-demo        write rein-agent.json and stop
+  --claim          keep this sandbox: sign in (GitHub or Ethereum) in the browser
   -h, --help       this text`;
 
 export async function main(argv: string[]): Promise<number> {
   const opts: Parameters<typeof runInit>[0] = {};
+  let claim = false;
   const envEngine = process.env['REIN_ENGINE_URL'];
   if (envEngine) opts.engineUrl = envEngine;
   for (let i = 0; i < argv.length; i++) {
@@ -29,13 +31,15 @@ export async function main(argv: string[]): Promise<number> {
     else if (arg === '--vendor') opts.vendorUrl = value();
     else if (arg === '--force') opts.force = true;
     else if (arg === '--no-demo') opts.noDemo = true;
+    else if (arg === '--claim') claim = true;
     else {
       console.error(`unknown option ${arg}\n\n${HELP}`);
       return 2;
     }
   }
   try {
-    await runInit(opts);
+    if (claim) await runClaim();
+    else await runInit(opts);
     return 0;
   } catch (err) {
     console.error(`\n[rein] ${err instanceof Error ? err.message : String(err)}`);

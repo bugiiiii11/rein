@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { buildServer, PolicyEngine } from '@reinconsole/policy-engine';
-import { AGENT_FILE, runInit, type InitChain } from './index.js';
+import { AGENT_FILE, runClaim, runInit, type InitChain } from './index.js';
 
 const VENDOR = 'https://vendor.test';
 const PRICES: Record<string, string> = {
@@ -143,5 +143,32 @@ describe('npx @reinconsole/init', () => {
     await expect(
       runInit({ dir, engineUrl, fetch: refusing, chain: chain(0n), log: quiet }),
     ).rejects.toThrow('(HTTP 503): try again tomorrow');
+  });
+});
+
+describe('init --claim', () => {
+  it('asks the engine for a code with the file key and opens the console on it', async () => {
+    const auth = new ApiKeyAuth();
+    const app = buildServer(new PolicyEngine(), { auth, sandbox: {} });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const engineUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+    try {
+      const sb = await (await fetch(`${engineUrl}/v1/sandbox`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).json() as { orgId: string; agentId: string; apiKey: string };
+      const dir = mkdtempSync(join(tmpdir(), 'rein-claim-'));
+      writeFileSync(join(dir, AGENT_FILE), JSON.stringify({ engineUrl, orgId: sb.orgId, agentId: sb.agentId, apiKey: sb.apiKey }));
+      const opened: string[] = [];
+      const out = await runClaim({ dir, consoleUrl: 'https://console.test', open: (u) => (opened.push(u), true), log: () => undefined });
+      expect(out.orgId).toBe(sb.orgId);
+      expect(opened).toEqual([out.url]);
+      expect(out.url).toMatch(/^https:\/\/console\.test\/claim\?code=[\w-]+$/);
+      expect(out.url).not.toContain(sb.apiKey);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('says what to do when there is no rein-agent.json', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rein-claim-'));
+    await expect(runClaim({ dir, open: () => true, log: () => undefined })).rejects.toThrow(/run `npx @reinconsole\/init` first/);
   });
 });

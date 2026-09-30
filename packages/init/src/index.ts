@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { createGuard, PaymentBlockedError, type Payer } from '@reinconsole/sdk';
 
@@ -264,4 +265,65 @@ async function realChain(): Promise<InitChain> {
       rails.createX402Payer({ privateKey, networks: [NETWORK], profile }),
     txUrl: (txHash) => profile.explorerTxUrl(txHash),
   };
+}
+
+export const DEFAULT_CONSOLE_URL = 'https://app.reinconsole.com';
+
+export interface ClaimOptions {
+  dir?: string;
+  consoleUrl?: string;
+  fetch?: typeof globalThis.fetch;
+  /** Opens the claim page; defaults to the platform's browser opener. Return false if it could not. */
+  open?: (url: string) => boolean;
+  log?: (line: string) => void;
+}
+
+/**
+ * `init --claim` (Sprint 13.2): ask the engine for a one-time claim code with
+ * the sandbox's own key, then send the browser to the console to sign in and
+ * keep the org. The key never leaves this machine -- only the code, which is
+ * good for ten minutes and one use, rides in the URL.
+ */
+export async function runClaim(options: ClaimOptions = {}): Promise<{ url: string; orgId: string }> {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const http = options.fetch ?? globalThis.fetch;
+  const file = join(resolve(options.dir ?? process.cwd()), AGENT_FILE);
+  if (!existsSync(file)) {
+    throw new InitError(`no ${AGENT_FILE} here -- run \`npx @reinconsole/init\` first, in the folder you want the agent in`);
+  }
+  const agent = JSON.parse(readFileSync(file, 'utf8')) as AgentFile;
+  const res = await http(`${agent.engineUrl.replace(/\/+$/, '')}/v1/claims`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${agent.apiKey}` },
+  });
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (res.status !== 201) {
+    throw new InitError(
+      `the engine refused the claim (HTTP ${res.status}): ${String(body['message'] ?? body['error'] ?? 'no reason given')}`,
+    );
+  }
+  const consoleUrl = (options.consoleUrl ?? DEFAULT_CONSOLE_URL).replace(/\/+$/, '');
+  const url = `${consoleUrl}/claim?code=${encodeURIComponent(String(body['code']))}`;
+  const opened = (options.open ?? openBrowser)(url);
+  log(`${opened ? 'Opened' : 'Open'} this link to sign in and keep org ${String(body['orgId'])} (valid 10 minutes, one use):`);
+  log(`  ${url}`);
+  return { url, orgId: String(body['orgId']) };
+}
+
+function openBrowser(url: string): boolean {
+  // Spawned with an argument vector, never a shell string: the URL is data.
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? ['rundll32', ['url.dll,FileProtocolHandler', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]];
+  try {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
+    child.on('error', () => undefined);
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
 }
