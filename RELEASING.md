@@ -55,11 +55,16 @@ hand from a machine logged in as the scope owner (`npm login`, 2FA), then set up
 above and let the workflow publish every real version:
 
 ```
-cd packages/<new> && npm publish --access public --tag bootstrap
+mkdir init-bootstrap && cd init-bootstrap
+# package.json: { "name": "@reinconsole/<new>", "version": "0.0.1", "publishConfig": { "access": "public" }, "files": ["README.md"] }
+npm login && npm publish --access public --tag bootstrap
 ```
 
-The `bootstrap` dist-tag keeps the placeholder off `latest`; the next release overwrites nothing (a
-version already on the registry is skipped), so bump past the placeholder's version first.
+Publish a two-file placeholder at `0.0.1`, not the real package: the real version then comes from
+the workflow with provenance like the other eleven. `--tag bootstrap` does NOT keep a first publish
+off `latest` -- npm points `latest` at the first version of a package whatever tag is given (seen
+2026-09-30 with `@reinconsole/init`), so do this in the same sitting as the release that replaces
+it. A version already on the registry is skipped, so the release must be above the placeholder's.
 
 ## Cutting a release
 

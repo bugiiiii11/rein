@@ -35,9 +35,10 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The eleven library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.3.0` — network profiles, org-scoped keys, decision paging, overspend detection, and Gate surge pricing. It has breaking changes from `0.2.0`; read [CHANGELOG.md](CHANGELOG.md) before upgrading:
+The twelve library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.4.0` — `npx @reinconsole/init` (a sandbox, a payment and a refusal in one command), expiring API keys, and the engine on Postgres. No breaking changes from `0.3.0`; `0.3.0` broke from `0.2.0`, so read [CHANGELOG.md](CHANGELOG.md) before upgrading from that:
 
 ```bash
+npx @reinconsole/init          # a sandbox on the hosted engine, one paid call, one refused — no account
 npx -y @reinconsole/mcp          # the guard as an MCP server — a governed fetch for any MCP harness
 npm install @reinconsole/sdk     # agent-side guard — wrap your fetch
 npm install @reinconsole/gate    # vendor-side x402 monetization middleware
@@ -49,6 +50,7 @@ npm install @reinconsole/graph   # explainable reputation scoring
 | [`@reinconsole/core`](https://www.npmjs.com/package/@reinconsole/core) | Canonical zod schemas — the single source of truth |
 | [`@reinconsole/sdk`](https://www.npmjs.com/package/@reinconsole/sdk) | Agent-side guard; wraps the x402 client |
 | [`@reinconsole/mcp`](https://www.npmjs.com/package/@reinconsole/mcp) | The guard as an MCP server: a spend-governed fetch for any MCP harness |
+| [`@reinconsole/init`](https://www.npmjs.com/package/@reinconsole/init) | `npx @reinconsole/init`: a sandbox, a paid call and a refused one, no account |
 | [`@reinconsole/policy-engine`](https://www.npmjs.com/package/@reinconsole/policy-engine) | Declarative rule engine + signed, hash-chained audit log |
 | [`@reinconsole/gate`](https://www.npmjs.com/package/@reinconsole/gate) | Vendor-side x402 monetization middleware |
 | [`@reinconsole/graph`](https://www.npmjs.com/package/@reinconsole/graph) | Reputation: evidence off every bus, explainable scores |
