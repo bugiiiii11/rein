@@ -1,11 +1,19 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
-import { buildServer, PolicyEngine } from '@reinconsole/policy-engine';
-import { AGENT_FILE, runClaim, runInit, type InitChain } from './index.js';
+import { ApprovalService, buildServer, PolicyEngine } from '@reinconsole/policy-engine';
+import {
+  AGENT_FILE,
+  ownerFilePath,
+  runApprove,
+  runClaim,
+  runInit,
+  runMainnet,
+  type InitChain,
+} from './index.js';
 
 const VENDOR = 'https://vendor.test';
 const PRICES: Record<string, string> = {
@@ -170,5 +178,149 @@ describe('init --claim', () => {
   it('says what to do when there is no rein-agent.json', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rein-claim-'));
     await expect(runClaim({ dir, open: () => true, log: () => undefined })).rejects.toThrow(/run `npx @reinconsole\/init` first/);
+  });
+});
+
+describe('init --mainnet and --approve', () => {
+  let url = '';
+  let stop: () => Promise<void>;
+  let identityKey = '';
+
+  beforeAll(async () => {
+    const auth = new ApiKeyAuth();
+    const app = buildServer(new PolicyEngine({ approvals: new ApprovalService({ ttlMs: 60_000 }) }), {
+      auth,
+      sandbox: {},
+    });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+    stop = () => app.close();
+    // What the console holds: an UNSCOPED key that may say who signed in.
+    identityKey = (await auth.issue({ name: 'console-identity', scopes: ['identity'] })).secret;
+  });
+  afterAll(() => stop());
+
+  const call = async (method: string, path: string, key: string, body?: unknown) => {
+    const res = await fetch(`${url}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${key}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: res.status, body: (await res.json()) as any };
+  };
+
+  async function sandbox() {
+    const dir = mkdtempSync(join(tmpdir(), 'rein-mainnet-'));
+    const ownerDir = mkdtempSync(join(tmpdir(), 'rein-owner-'));
+    const { agent } = await runInit({ dir, engineUrl: url, chain: chain(0n), noDemo: true, log: quiet });
+    return { dir, ownerDir, agent };
+  }
+
+  async function claimed(identity: string) {
+    const box = await sandbox();
+    const { url: link } = await runClaim({ dir: box.dir, open: () => true, log: quiet });
+    const code = new URL(link).searchParams.get('code');
+    const redeemed = await call('POST', '/v1/claims/redeem', identityKey, { code, identity });
+    expect(redeemed.status).toBe(200);
+    return box;
+  }
+
+  it('refuses an org nobody has claimed, and writes nothing', async () => {
+    const { dir, ownerDir, agent } = await sandbox();
+    await expect(runMainnet({ dir, ownerDir, log: quiet })).rejects.toThrow(/needs a claimed org/);
+    expect(existsSync(ownerFilePath(agent.orgId, ownerDir))).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8')).network).toBe('base-sepolia');
+  });
+
+  it('moves a claimed org to mainnet: owner keys out of the agent file, a narrowed key in', async () => {
+    const { dir, ownerDir, agent } = await claimed('github:101');
+    const result = await runMainnet({ dir, ownerDir, log: quiet });
+    expect(result.changed).toBe(true);
+
+    const written = JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8'));
+    expect(written.network).toBe('base');
+    expect(written.expiresAt).toBeUndefined();
+    expect(written.wallet).toEqual(agent.wallet);
+    expect(written.apiKey).not.toBe(agent.apiKey);
+
+    const owner = JSON.parse(readFileSync(result.ownerFile, 'utf8'));
+    expect(owner.adminKey).toBe(agent.apiKey);
+    expect(owner.approver.privateKeyPem).toMatch(/BEGIN PRIVATE KEY/);
+    const approvers = await call('GET', '/v1/approvers', owner.adminKey);
+    expect(approvers.body.map((a: { id: string }) => a.id)).toEqual([owner.approver.keyId]);
+
+    // The agent's new key spends and reads for this agent only: no policy
+    // writes, no keys, no approvals.
+    const runtime = (await call('GET', '/v1/keys', owner.adminKey)).body.find(
+      (k: { name: string }) => k.name === 'mainnet-runtime',
+    );
+    expect(runtime).toMatchObject({ scopes: ['evaluate', 'read'], agentIds: [agent.agentId] });
+    expect(runtime.expiresAt).toBeUndefined();
+    const policy = { policyId: 'pol_loosen', appliesTo: { agents: [agent.agentId] }, rules: [], default: 'allow' };
+    expect((await call('POST', '/v1/policies', written.apiKey, policy)).status).toBe(403);
+    expect((await call('POST', '/v1/keys', written.apiKey, { name: 'x', scopes: ['admin'], agentIds: [agent.agentId] })).status).toBe(403);
+
+    // Idempotent, and the testnet demo will not run against a mainnet file.
+    expect((await runMainnet({ dir, ownerDir, log: quiet })).changed).toBe(false);
+    expect((await runInit({ dir, engineUrl: url, chain: chain(0n), log: quiet })).allowed).toBeUndefined();
+    await expect(runInit({ dir, engineUrl: url, chain: chain(0n), force: true, log: quiet })).rejects.toThrow(
+      /wallet's only key/,
+    );
+  });
+
+  it('resumes with the approver key an interrupted run already wrote', async () => {
+    const { dir, ownerDir, agent } = await claimed('github:102');
+    const failOnce: typeof fetch = async (input, init) => {
+      const target = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (target.endsWith('/v1/keys') && init?.method === 'POST') return new Response('{"error":"boom"}', { status: 503 });
+      return fetch(input, init);
+    };
+    await expect(runMainnet({ dir, ownerDir, fetch: failOnce, log: quiet })).rejects.toThrow(/runtime key \(HTTP 503\)/);
+    const first = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
+    expect(first.approver.keyId).toMatch(/^apk_/);
+
+    await runMainnet({ dir, ownerDir, log: quiet });
+    const second = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
+    expect(second.approver).toEqual(first.approver);
+    expect((await call('GET', '/v1/approvers', first.adminKey)).body).toHaveLength(1);
+  });
+
+  it('answers an escalation with the approver key, only after --yes', async () => {
+    const { dir, ownerDir, agent } = await claimed('eth:0x00000000000000000000000000000000000000a1');
+    await runMainnet({ dir, ownerDir, log: quiet });
+    const owner = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
+    // The owner adds a review rule to the org's policy -- with the owner's key.
+    const [starter] = (await call('GET', '/v1/policies', owner.adminKey)).body;
+    const review = { ...starter, rules: [...starter.rules, { id: 'review', escalate: { amountGt: '0.002' } }] };
+    expect((await call('POST', '/v1/policies', owner.adminKey, review)).status).toBe(200);
+    const runtimeKey = JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8')).apiKey;
+    const parked = await call('POST', '/v1/evaluate', runtimeKey, {
+      agentId: agent.agentId,
+      vendor: { host: 'api.vendor.com', address: '0xabc' },
+      resource: '/v1/search',
+      amount: '0.003',
+      asset: 'USDC',
+      chain: 'base',
+    });
+    expect(parked.body.decision.outcome).toBe('escalate');
+    const decisionId = parked.body.decision.id;
+
+    const lines: string[] = [];
+    const shown = await runApprove({ dir, ownerDir, decisionId, verdict: 'approve', log: (l) => lines.push(l) });
+    expect(shown).toEqual({ status: 'pending', signed: false });
+    expect(lines.join('\n')).toMatch(/0\.003 USDC on base/);
+
+    const done = await runApprove({ dir, ownerDir, decisionId, verdict: 'approve', yes: true, log: quiet });
+    expect(done).toEqual({ status: 'approved', signed: true });
+    await expect(runApprove({ dir, ownerDir, decisionId, verdict: 'approve', yes: true, log: quiet })).rejects.toThrow(
+      /already approved/,
+    );
+  });
+
+  it('says where the approver comes from when there is no owner file', async () => {
+    const { dir, ownerDir } = await sandbox();
+    await expect(runApprove({ dir, ownerDir, decisionId: 'dec_x', verdict: 'reject', log: quiet })).rejects.toThrow(
+      /--mainnet` registers the approver/,
+    );
   });
 });

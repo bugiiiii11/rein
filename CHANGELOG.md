@@ -4,7 +4,21 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Claiming a sandbox** on `@reinconsole/policy-engine` (`ServerOptions.claims`, on whenever the sandbox is). `POST /v1/claims` with a sandbox's org-wide admin key returns a one-time code that is valid for 10 minutes. `POST /v1/claims/redeem` binds the org to a signed-in identity (`github:<id>` or `eth:<address>`) and lifts the expiry and quotas on the org's keys. `POST /v1/owners/session` returns a 12-hour org-scoped `read` key for the owner. Both of these calls need the new `identity` scope on an unscoped key. The binding is an `owner:<identity>` key whose secret is discarded. It is visible in `GET /v1/keys`, and revoking it releases the org. One org per identity. Key names starting `owner:` or `session:` are reserved.
+- `ApiKeyAuth.clearExpiry(keyId)` in `@reinconsole/core`.
+- **`init --claim`**: gets a claim code with the key in `rein-agent.json` and opens the console's `/claim` page in the browser. The key itself is never put in the URL.
+- **`init --mainnet`**: moves a claimed org's agent to Base mainnet. It refuses an org that has not been claimed. It writes the org admin key and a new ed25519 approver key to `~/.rein/owner-<orgId>.json` (mode 0600), registers the approver, and replaces the key in `rein-agent.json` with one that is narrowed to the agent and limited to `evaluate` + `read`. With that key the agent cannot change its policy, mint keys or sign approvals. The engine does not know which network a payment is on, so this gate is enforced by the client and backed by the 7-day expiry on unclaimed keys.
+- **`init --approve <decisionId>` / `--reject`**: shows a parked escalation, and with `--yes` signs it with the owner's approver key and submits it.
+
+### Fixed
+
+- `ApiKeyAuth`: a `lastUsedAt` update that raced a rotate or revoke could write back a stale record and un-revoke a key.
+
+### Changed
+
+- `init --force` refuses to overwrite a `rein-agent.json` that is on mainnet, because that file holds the only copy of the wallet key.
 
 ## [0.4.0] - 2026-09-30
 

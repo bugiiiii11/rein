@@ -272,6 +272,9 @@ importers:
 
   packages/init:
     dependencies:
+      '@reinconsole/core':
+        specifier: workspace:^
+        version: link:../core
       '@reinconsole/sdk':
         specifier: workspace:^
         version: link:../sdk
