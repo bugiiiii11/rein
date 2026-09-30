@@ -108,6 +108,8 @@ export type AuthFailureCode =
   | 'missing_credentials'
   | 'invalid_key'
   | 'key_revoked'
+  /** Past the key's `expiresAt` (a sandbox key nobody claimed). */
+  | 'key_expired'
   | 'secret_expired'
   | 'insufficient_scope'
   | 'unknown_key_id'
@@ -198,6 +200,8 @@ export class ApiKeyAuth {
     agentIds?: string[];
     /** Adopt a caller-supplied secret (env-seeded boot keys). */
     secret?: string;
+    /** Stop authenticating at this instant (sandbox keys). Omit for never. */
+    expiresAt?: Date;
   }): Promise<IssuedApiKey> {
     if (input.scopes.length === 0) throw new TypeError('an API key needs at least one scope');
     if (input.agentIds?.length && input.orgId === undefined) {
@@ -211,6 +215,7 @@ export class ApiKeyAuth {
       ...(input.orgId !== undefined ? { orgId: input.orgId } : {}),
       ...(input.agentIds?.length ? { agentIds: input.agentIds } : {}),
       createdAt: new Date(this.now()),
+      ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       secretHash: hashSecret(secret),
     });
     await this.store.put(record);
@@ -294,6 +299,9 @@ export class ApiKeyAuth {
     }
 
     if (record.revokedAt) throw new AuthError(401, 'key_revoked', 'API key has been revoked');
+    if (record.expiresAt && this.now() >= record.expiresAt.getTime()) {
+      throw new AuthError(401, 'key_expired', 'API key has expired');
+    }
 
     if (!record.scopes.includes('admin') && !record.scopes.includes(scope)) {
       throw new AuthError(403, 'insufficient_scope', `API key lacks the "${scope}" scope`);

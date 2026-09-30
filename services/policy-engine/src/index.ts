@@ -136,3 +136,18 @@ export {
   type TenantFailureCode,
   type TenantScope,
 } from './tenant.js';
+export {
+  SandboxService,
+  SandboxError,
+  SandboxInput,
+  sandboxOptionsFromEnv,
+  starterPolicy,
+  SANDBOX_KEY_NAME,
+  DEFAULT_SANDBOX_TTL_MS,
+  DEFAULT_SANDBOX_DAILY_CAP,
+  DEFAULT_SANDBOX_PER_IP_PER_DAY,
+  DEFAULT_SANDBOX_MAX_AGENTS,
+  type SandboxOptions,
+  type SandboxDrip,
+  type SandboxCreated,
+} from './sandbox.js';

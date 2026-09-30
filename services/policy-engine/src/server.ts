@@ -22,6 +22,7 @@ import {
   LivenessWatchInput,
   Window,
   newId,
+  type ApiKey,
   type Decision,
 } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
@@ -37,6 +38,13 @@ import { LoggingChannel, TelegramChannel } from './channels.js';
 import { TenantError, ownsOrg, scopeOf, type TenantScope } from './tenant.js';
 import { buildRateLimiters, rateLimitFromEnv, type RateLimitOptions } from './rate-limit.js';
 import type { ApprovalStorePort } from './approvals.js';
+import {
+  DEFAULT_SANDBOX_MAX_AGENTS,
+  SANDBOX_KEY_NAME,
+  SandboxError,
+  SandboxService,
+  type SandboxOptions,
+} from './sandbox.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
@@ -123,6 +131,12 @@ export interface ServerOptions {
    * noisy and obvious, where too much is silent. Off by default.
    */
   trustProxy?: boolean | string;
+  /**
+   * The anonymous sandbox (`POST /v1/sandbox`, see sandbox.ts). Needs `auth`:
+   * a sandbox is an org-scoped key, and an engine without keys has nothing to
+   * scope. Off unless given -- the hosted bin sets it from `REIN_SANDBOX=1`.
+   */
+  sandbox?: SandboxOptions;
 }
 
 /**
@@ -207,6 +221,8 @@ export function requiredScope(method: string, pathname: string): ApiKeyScope {
  */
 const TENANT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/health$/ },
+  // Unauthenticated, like /health: it mints its own org and returns only that.
+  { method: 'POST', path: /^\/v1\/sandbox$/ },
   { method: 'POST', path: /^\/v1\/agents$/ },
   { method: 'GET', path: /^\/v1\/agents$/ },
   { method: 'POST', path: /^\/v1\/agents\/[^/]+\/(freeze|unfreeze|heartbeat)$/ },
@@ -259,6 +275,8 @@ export function tenantRoute(method: string, pathname: string): boolean {
  * route can accidentally serialize the scope into a response body.
  */
 const SCOPES = new WeakMap<FastifyRequest, TenantScope>();
+/** The key a request authenticated with -- for what a scope cannot carry (its expiry). */
+const CALLERS = new WeakMap<FastifyRequest, ApiKey>();
 
 export function scopeFor(req: FastifyRequest): TenantScope | undefined {
   return SCOPES.get(req);
@@ -305,6 +323,9 @@ export function buildServer(
   });
   const auth = options.auth;
   const limiters = options.rateLimit ? buildRateLimiters(options.rateLimit) : undefined;
+  if (options.sandbox && !auth) throw new TypeError('the sandbox needs auth: it issues API keys');
+  const sandbox =
+    options.sandbox && auth ? new SandboxService(engine, auth, options.sandbox) : undefined;
 
   // Fastify's own view of what got registered, captured as it happens. It is
   // what `tenant.test.ts` walks to prove `TENANT_ROUTES` still mirrors the
@@ -326,6 +347,10 @@ export function buildServer(
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (err instanceof ApprovalError) {
+      return reply.status(err.status).send({ error: err.code, message: err.message });
+    }
+    if (err instanceof SandboxError) {
+      if (err.retryAfterSec !== undefined) reply.header('Retry-After', String(err.retryAfterSec));
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (TenantError.is(err)) {
@@ -370,6 +395,9 @@ export function buildServer(
         if (!verdict.allowed) return tooManyRequests(reply, verdict.retryAfterSec);
       }
       if (pathname === '/health') return;
+      // The sandbox is how a caller with no key GETS one; it rides the per-IP
+      // limiter above plus its own, much tighter, per-day limits.
+      if (sandbox && req.method === 'POST' && pathname === '/v1/sandbox') return;
       if (!auth) return;
       try {
         const key = auth.authenticate(req.headers, requiredScope(req.method, pathname));
@@ -380,6 +408,7 @@ export function buildServer(
           const verdict = limiters.perKey.take(key.id);
           if (!verdict.allowed) return tooManyRequests(reply, verdict.retryAfterSec);
         }
+        CALLERS.set(req, key);
         const scope = scopeOf(key);
         if (scope) {
           // Classify before routing, for the same reason authentication runs
@@ -414,10 +443,28 @@ export function buildServer(
     approvals: engine.approvals ? 'enabled' : 'disabled',
   }));
 
+  // --- The anonymous sandbox (see sandbox.ts) ---
+  if (sandbox) {
+    app.post('/v1/sandbox', async (req, reply) =>
+      reply.status(201).send(await sandbox.create(req.ip || 'unknown', req.body)),
+    );
+  }
+
   // --- Agents ---
   app.post('/v1/agents', (req) => {
     const input = AgentInput.parse(req.body);
     const scope = scopeFor(req);
+    const caller = CALLERS.get(req);
+    if (scope && caller && SandboxService.isSandboxKey(caller)) {
+      const quota = sandbox?.agentQuota ?? DEFAULT_SANDBOX_MAX_AGENTS;
+      if (engine.visibleAgents(scope).length >= quota) {
+        throw new SandboxError(
+          403,
+          'sandbox_quota',
+          `a sandbox org holds at most ${quota} agents; claim it to lift the quota`,
+        );
+      }
+    }
     return engine.registerAgent({
       id: newId('agt'),
       // The caller's org WINS over the body's. A scoped key that asks to
@@ -586,11 +633,20 @@ export function buildServer(
         }
       }
     }
+    // Reserved: the sandbox's daily cap counts keys by this name, so a caller
+    // minting its own "sandbox" keys could exhaust everybody's allowance.
+    if (input.name === SANDBOX_KEY_NAME) {
+      throw new SandboxError(400, 'reserved_key_name', `"${SANDBOX_KEY_NAME}" is reserved for the sandbox`);
+    }
+    // A key never outlives the key that minted it: without this, a 7-day
+    // sandbox key would be one call away from a permanent one.
+    const expiresAt = CALLERS.get(req)?.expiresAt;
     const issued = await a.issue({
       name: input.name,
       scopes: input.scopes,
       ...(scope ? { orgId: scope.orgId } : input.orgId !== undefined ? { orgId: input.orgId } : {}),
       ...(input.agentIds?.length ? { agentIds: input.agentIds } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
     });
     // 201 with the secret in the body: the only time it exists outside the
     // caller's hands. Nothing logs it, and no later read can recover it.

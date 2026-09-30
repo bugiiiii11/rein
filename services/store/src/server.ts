@@ -42,8 +42,10 @@ import {
   parseTrustProxy,
   rateLimitFromEnv,
   resolveHost,
+  sandboxOptionsFromEnv,
   type ApiKeyAuth,
   type RateLimitOptions,
+  type SandboxOptions,
 } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 import { installShutdown, pruneIntervalFromEnv, startPeriodicPrune } from './lifecycle.js';
@@ -107,6 +109,8 @@ export async function startPersistentEngine(options: {
    * the deployment this bin exists to be.
    */
   pruneIntervalMs?: number;
+  /** The anonymous sandbox, forwarded to `buildServer` (needs `auth`). */
+  sandbox?: SandboxOptions;
 }): Promise<PersistentEngine> {
   if ((options.dir === undefined) === (options.store === undefined)) {
     throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
@@ -138,6 +142,7 @@ export async function startPersistentEngine(options: {
     ...(options.auth ? { auth: options.auth } : {}),
     ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
     ...(options.trustProxy !== undefined ? { trustProxy: options.trustProxy } : {}),
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
   });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
@@ -159,6 +164,35 @@ export async function startPersistentEngine(options: {
         await store.close();
       }
     },
+  };
+}
+
+/**
+ * The sandbox from env, drip included. x402-rails (and viem with it) is loaded
+ * only when a faucet key is set: an engine that never drips never loads a
+ * chain client.
+ */
+export async function sandboxFromEnv(
+  env: NodeJS.ProcessEnv,
+): Promise<{ options: SandboxOptions; describe: string } | undefined> {
+  const options = sandboxOptionsFromEnv(env);
+  if (!options) return undefined;
+  const key = env['REIN_SANDBOX_FAUCET_KEY'];
+  if (!key) return { options, describe: 'no drip (advisory only)' };
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error('REIN_SANDBOX_FAUCET_KEY must be 0x + 64 hex characters');
+  }
+  const { createUsdcFaucet, faucetAddress } = await import('@reinconsole/x402-rails');
+  const amount = env['REIN_SANDBOX_DRIP_USDC'] || '0.05';
+  const rpcUrl = env['REIN_SANDBOX_RPC_URL'] || undefined;
+  const drip = createUsdcFaucet({
+    privateKey: key as `0x${string}`,
+    amount,
+    ...(rpcUrl ? { rpcUrl } : {}),
+  });
+  return {
+    options: { ...options, drip },
+    describe: `drips ${amount} test USDC from ${faucetAddress(key as `0x${string}`)} (Base Sepolia)`,
   };
 }
 
@@ -233,6 +267,10 @@ if (isMainModule()) {
     // things an embedded engine has no use for: a rate limiter, and a
     // maintenance sweep that is not just the one at open.
     const rateLimit = rateLimitFromEnv(process.env);
+    // The anonymous sandbox: REIN_SANDBOX=1. With REIN_SANDBOX_FAUCET_KEY it
+    // also drips test USDC (Base Sepolia only -- see x402-rails faucet.ts).
+    const sandbox = await sandboxFromEnv(process.env);
+    if (sandbox && !auth) throw new Error('REIN_SANDBOX=1 needs an API key (REIN_ENGINE_API_KEY)');
     const engine = await startPersistentEngine({
       store,
       port,
@@ -243,6 +281,7 @@ if (isMainModule()) {
       ...(rateLimit ? { rateLimit } : {}),
       trustProxy: parseTrustProxy(process.env['REIN_TRUST_PROXY']),
       pruneIntervalMs: pruneIntervalFromEnv(process.env),
+      ...(sandbox ? { sandbox: sandbox.options } : {}),
     });
     // Without this the process is SIGKILLed on every redeploy and the
     // write-behind tail dies with it — see lifecycle.ts. Installed only after
@@ -266,6 +305,7 @@ if (isMainModule()) {
       ? `database ${redactUrl(databaseUrl)}${schema ? ` schema ${schema}` : ''}`
       : `data dir ${dir}`;
     console.log(`[rein] ${where} — ${resumed}; signing key ${store.keySource}`);
+    if (sandbox) console.log(`[rein] sandbox on -- ${sandbox.describe}`);
   } catch (err) {
     // The store is open by now, so a refused bind must not leak the handle.
     await store.close().catch(() => undefined);

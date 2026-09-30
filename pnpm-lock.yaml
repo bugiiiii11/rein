@@ -501,6 +501,9 @@ importers:
       '@reinconsole/signer':
         specifier: workspace:^
         version: link:../signer
+      '@reinconsole/x402-rails':
+        specifier: workspace:^
+        version: link:../x402-rails
       fastify:
         specifier: ^5.12.1
         version: 5.12.5
@@ -520,9 +523,6 @@ importers:
       '@reinconsole/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
-      '@reinconsole/x402-rails':
-        specifier: workspace:^
-        version: link:../x402-rails
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.20

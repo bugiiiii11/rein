@@ -64,6 +64,7 @@
     "@reinconsole/graph": "workspace:^",
     "@reinconsole/policy-engine": "workspace:^",
     "@reinconsole/signer": "workspace:^",
+    "@reinconsole/x402-rails": "workspace:^",
     "fastify": "^5.12.1",
     "pg": "^8.23.0"
   },

@@ -88,3 +88,9 @@ export {
   type GeneratedWallet,
 } from './wallet.js';
 export { RailsError, FacilitatorHttpError, type RailsErrorCode } from './errors.js';
+export {
+  createUsdcFaucet,
+  faucetAddress,
+  type UsdcFaucet,
+  type UsdcFaucetOptions,
+} from './faucet.js';

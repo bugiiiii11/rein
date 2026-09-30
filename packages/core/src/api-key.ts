@@ -57,6 +57,14 @@ export const ApiKey = z.object({
   revokedAt: z.coerce.date().optional(),
   /** Set by rotate(); with `previousSecretExpiresAt` it dates the overlap. */
   rotatedAt: z.coerce.date().optional(),
+  /**
+   * Past this instant the key stops authenticating, like a revoked one.
+   * ABSENT means it never expires -- every key before the sandbox, and every
+   * key an operator mints. Only the anonymous sandbox sets it, and a key minted
+   * BY an expiring key inherits the deadline: a sandbox that could mint itself
+   * a permanent key would not be a 7-day sandbox.
+   */
+  expiresAt: z.coerce.date().optional(),
 });
 export type ApiKey = z.infer<typeof ApiKey>;
 
