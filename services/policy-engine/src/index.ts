@@ -152,3 +152,17 @@ export {
   type SandboxDrip,
   type SandboxCreated,
 } from './sandbox.js';
+export {
+  ClaimService,
+  ClaimError,
+  Identity,
+  OWNER_KEY_PREFIX,
+  SESSION_KEY_PREFIX,
+  DEFAULT_CLAIM_CODE_TTL_MS,
+  DEFAULT_OWNER_SESSION_TTL_MS,
+  reservedKeyName,
+  type ClaimOptions,
+  type ClaimStarted,
+  type ClaimRedeemed,
+  type OwnerSession,
+} from './claims.js';

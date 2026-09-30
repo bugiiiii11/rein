@@ -176,6 +176,13 @@ export interface ApiKeyAuthOptions {
 export class ApiKeyAuth {
   private readonly store: ApiKeyStorePort;
   private readonly now: () => number;
+  /**
+   * Keys with an authority write (rotate, revoke, lift) in flight. A usage
+   * touch writes back a WHOLE record snapshot, so one taken while such a write
+   * is on its way to disk would land after it and undo it -- re-open a revoked
+   * key, or give a claimed sandbox its expiry back. Touches skip these keys.
+   */
+  private readonly mutating = new Set<string>();
 
   constructor(options: ApiKeyAuthOptions = {}) {
     this.store = options.store ?? new InMemoryApiKeyStore();
@@ -243,7 +250,7 @@ export class ApiKeyAuth {
       rotated.previousSecretHash = record.secretHash;
       rotated.previousSecretExpiresAt = new Date(this.now() + graceMs);
     }
-    await this.store.put(rotated);
+    await this.write(rotated);
     return { key: toPublicApiKey(rotated), secret };
   }
 
@@ -251,8 +258,24 @@ export class ApiKeyAuth {
     const record = this.store.get(keyId);
     if (!record) return undefined;
     const revoked: ApiKeyRecord = { ...record, revokedAt: new Date(this.now()) };
-    await this.store.put(revoked);
+    await this.write(revoked);
     return toPublicApiKey(revoked);
+  }
+
+  /**
+   * Make an expiring key permanent -- what claiming a sandbox is (Sprint 13).
+   * Revoked keys stay revoked: lifting an expiry never resurrects anything.
+   * Answers undefined for an unknown key, the record unchanged when there was
+   * no expiry to lift.
+   */
+  async clearExpiry(keyId: string): Promise<ApiKey | undefined> {
+    const record = this.store.get(keyId);
+    if (!record) return undefined;
+    if (record.expiresAt === undefined) return toPublicApiKey(record);
+    const lifted: ApiKeyRecord = { ...record };
+    delete lifted.expiresAt;
+    await this.write(lifted);
+    return toPublicApiKey(lifted);
   }
 
   list(): ApiKey[] {
@@ -311,9 +334,20 @@ export class ApiKeyAuth {
     return toPublicApiKey(record);
   }
 
+  /** An authority write that usage touches must not overtake (see `mutating`). */
+  private async write(record: ApiKeyRecord): Promise<void> {
+    this.mutating.add(record.id);
+    try {
+      await this.store.put(record);
+    } finally {
+      this.mutating.delete(record.id);
+    }
+  }
+
   /** Throttled write-through of `lastUsedAt` — never on the critical path. */
   private async touch(record: ApiKeyRecord): Promise<void> {
     const at = this.now();
+    if (this.mutating.has(record.id)) return;
     if (record.lastUsedAt && at - record.lastUsedAt.getTime() < TOUCH_INTERVAL_MS) return;
     try {
       await this.store.put({ ...record, lastUsedAt: new Date(at) });

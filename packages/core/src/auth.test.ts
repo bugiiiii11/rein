@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ApiKeyAuth, AuthError, hashSecret, mintSecret, readCredential } from './auth.js';
+import { ApiKeyAuth, AuthError, InMemoryApiKeyStore, hashSecret, mintSecret, readCredential } from './auth.js';
+import type { ApiKeyRecord } from './api-key.js';
 
 function bearer(secret: string) {
   return { authorization: `Bearer ${secret}` };
@@ -118,6 +119,46 @@ describe('ApiKeyAuth', () => {
     expect(hashSecret(secret)).toBe(hashSecret(secret));
     expect(hashSecret(secret)).toHaveLength(64);
     expect(hashSecret(secret)).not.toContain(secret);
+  });
+
+  it('lifts an expiry so the key authenticates past its old deadline, and never un-revokes', async () => {
+    let now = 1_000;
+    const auth = new ApiKeyAuth({ now: () => now });
+    const live = await auth.issue({ name: 'sandbox', scopes: ['admin'], expiresAt: new Date(2_000) });
+    const dead = await auth.issue({ name: 'old', scopes: ['admin'], expiresAt: new Date(2_000) });
+    await auth.revoke(dead.key.id);
+
+    expect((await auth.clearExpiry(live.key.id))?.expiresAt).toBeUndefined();
+    expect((await auth.clearExpiry(dead.key.id))?.revokedAt).toBeDefined();
+    expect(await auth.clearExpiry('key_unknown')).toBeUndefined();
+    now = 10_000;
+    expect(auth.authenticate(bearer(live.secret), 'read').id).toBe(live.key.id);
+    expect(() => auth.authenticate(bearer(dead.secret), 'read')).toThrow(/revoked/);
+  });
+
+  it('does not let a usage touch taken mid-write undo that write', async () => {
+    // A store whose writes land only when released -- the durable store's shape.
+    const inner = new InMemoryApiKeyStore();
+    const held: (() => void)[] = [];
+    let hold = false;
+    const store = {
+      put: (r: ApiKeyRecord) =>
+        hold ? new Promise<void>((done) => held.push(() => (inner.put(r), done()))) : inner.put(r),
+      get: (id: string) => inner.get(id),
+      byHash: (h: string) => inner.byHash(h),
+      list: () => inner.list(),
+    };
+    const auth = new ApiKeyAuth({ store, now: () => 5_000 });
+    const { key, secret } = await auth.issue({ name: 'sandbox', scopes: ['admin'], expiresAt: new Date(9_000) });
+
+    hold = true;
+    const lifting = auth.clearExpiry(key.id);
+    auth.authenticate(bearer(secret), 'read'); // reads the stale record, wants to touch it
+    for (const release of held.splice(0)) release();
+    await lifting;
+    hold = false;
+    await new Promise((r) => setTimeout(r, 0));
+    expect(inner.get(key.id)?.expiresAt).toBeUndefined();
   });
 
   it('rejects a key with no scopes at all', async () => {

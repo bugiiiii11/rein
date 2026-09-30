@@ -46,6 +46,7 @@ import {
   SandboxService,
   type SandboxOptions,
 } from './sandbox.js';
+import { ClaimError, ClaimService, reservedKeyName, type ClaimOptions } from './claims.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
@@ -138,6 +139,12 @@ export interface ServerOptions {
    * scope. Off unless given -- the hosted bin sets it from `REIN_SANDBOX=1`.
    */
   sandbox?: SandboxOptions;
+  /**
+   * Claiming a sandbox (see claims.ts). On whenever the sandbox is -- a
+   * sandbox nobody can keep is a demo -- and tunable here; pass it without a
+   * sandbox to claim-enable an engine that mints its orgs some other way.
+   */
+  claims?: ClaimOptions;
 }
 
 /**
@@ -201,6 +208,11 @@ export function requiredScope(method: string, pathname: string): ApiKeyScope {
   // key that can spend can simply spend, which looks alive too.
   if (method === 'POST' && /^\/v1\/agents\/[^/]+\/heartbeat$/.test(pathname)) return 'evaluate';
   if (method === 'POST' && /^\/v1\/approvals\/[^/]+\/resolve$/.test(pathname)) return 'approve';
+  // The console's sign-in bridge (claims.ts). Neither route is a tenant
+  // route, so only an UNSCOPED key reaches them, whatever it holds.
+  if (method === 'POST' && (pathname === '/v1/claims/redeem' || pathname === '/v1/owners/session')) {
+    return 'identity';
+  }
   return 'admin';
 }
 
@@ -224,6 +236,10 @@ const TENANT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/health$/ },
   // Unauthenticated, like /health: it mints its own org and returns only that.
   { method: 'POST', path: /^\/v1\/sandbox$/ },
+  // A claim starts from the org's own admin key and names nothing but its org.
+  // Redeem and owner sessions are deliberately ABSENT: they cross orgs by
+  // design, so no org-scoped key may reach them.
+  { method: 'POST', path: /^\/v1\/claims$/ },
   { method: 'POST', path: /^\/v1\/agents$/ },
   { method: 'GET', path: /^\/v1\/agents$/ },
   { method: 'POST', path: /^\/v1\/agents\/[^/]+\/(freeze|unfreeze|heartbeat)$/ },
@@ -327,6 +343,10 @@ export function buildServer(
   if (options.sandbox && !auth) throw new TypeError('the sandbox needs auth: it issues API keys');
   const sandbox =
     options.sandbox && auth ? new SandboxService(engine, auth, options.sandbox) : undefined;
+  const claims =
+    auth && (options.sandbox || options.claims)
+      ? new ClaimService(auth, { ...(options.sandbox?.now ? { now: options.sandbox.now } : {}), ...options.claims })
+      : undefined;
 
   // Fastify's own view of what got registered, captured as it happens. It is
   // what `tenant.test.ts` walks to prove `TENANT_ROUTES` still mirrors the
@@ -352,6 +372,9 @@ export function buildServer(
     }
     if (err instanceof SandboxError) {
       if (err.retryAfterSec !== undefined) reply.header('Retry-After', String(err.retryAfterSec));
+      return reply.status(err.status).send({ error: err.code, message: err.message });
+    }
+    if (err instanceof ClaimError) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
     if (TenantError.is(err)) {
@@ -448,6 +471,19 @@ export function buildServer(
   if (sandbox) {
     app.post('/v1/sandbox', async (req, reply) =>
       reply.status(201).send(await sandbox.create(req.ip || 'unknown', req.body)),
+    );
+  }
+
+  // --- Claiming a sandbox (see claims.ts) ---
+  if (claims) {
+    app.post('/v1/claims', async (req, reply) => {
+      const caller = CALLERS.get(req);
+      if (!caller) throw new ClaimError(403, 'claim_needs_org_admin', 'a claim needs an API key');
+      return reply.status(201).send(claims.start(caller));
+    });
+    app.post('/v1/claims/redeem', async (req) => claims.redeem(req.body));
+    app.post('/v1/owners/session', async (req, reply) =>
+      reply.status(201).send(await claims.session(req.body)),
     );
   }
 
@@ -654,6 +690,12 @@ export function buildServer(
     // minting its own "sandbox" keys could exhaust everybody's allowance.
     if (input.name === SANDBOX_KEY_NAME) {
       throw new SandboxError(400, 'reserved_key_name', `"${SANDBOX_KEY_NAME}" is reserved for the sandbox`);
+    }
+    // Reserved too: an `owner:` key IS a claim (claims.ts), so minting one
+    // would be claiming an org without signing in -- or, for an operator,
+    // binding somebody else's identity to it.
+    if (reservedKeyName(input.name)) {
+      throw new SandboxError(400, 'reserved_key_name', 'key names starting "owner:" or "session:" are reserved');
     }
     // A key never outlives the key that minted it: without this, a 7-day
     // sandbox key would be one call away from a permanent one.

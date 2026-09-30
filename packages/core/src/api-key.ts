@@ -13,8 +13,14 @@ import { AgentId, ApiKeyId, OrgId } from './ids.js';
  * moving a vendor's score. The engine's own reporting routes ride `evaluate`
  * because there the reporter IS the spender — that reasoning does not reach
  * across to a shared graph.
+ *
+ * `identity` is the hosted console's grant (Sprint 13): it redeems claim codes
+ * and turns a signed-in owner into a short-lived read key for their org. It is
+ * useful only on an UNSCOPED key -- those routes have no tenant rule, so an
+ * org-scoped key holding it is refused before the route runs -- and it reads
+ * and spends nothing by itself.
  */
-export const ApiKeyScope = z.enum(['read', 'evaluate', 'approve', 'report', 'admin']);
+export const ApiKeyScope = z.enum(['read', 'evaluate', 'approve', 'report', 'identity', 'admin']);
 export type ApiKeyScope = z.infer<typeof ApiKeyScope>;
 
 /**
