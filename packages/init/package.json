@@ -1,0 +1,61 @@
+{
+  "name": "@reinconsole/init",
+  "version": "0.3.0",
+  "description": "npx @reinconsole/init -- a Rein sandbox in one command: an agent, a spending policy and a test wallet on the hosted engine, then one governed payment and one refused one. No account.",
+  "license": "MIT",
+  "homepage": "https://github.com/bugiiiii11/rein#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bugiiiii11/rein.git",
+    "directory": "packages/init"
+  },
+  "bugs": "https://github.com/bugiiiii11/rein/issues",
+  "keywords": [
+    "rein",
+    "x402",
+    "ai-agents",
+    "agent-payments",
+    "spend-control",
+    "mcp",
+    "sandbox"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "bin": {
+    "rein-init": "./bin/rein-init.mjs"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist .turbo"
+  },
+  "dependencies": {
+    "@reinconsole/sdk": "workspace:^",
+    "@reinconsole/x402-rails": "workspace:^"
+  },
+  "devDependencies": {
+    "@reinconsole/policy-engine": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

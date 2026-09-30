@@ -1,6 +1,6 @@
 # Releasing
 
-The 11 `@reinconsole/*` packages publish from `.github/workflows/release.yml` with npm Trusted
+The 12 `@reinconsole/*` packages publish from `.github/workflows/release.yml` with npm Trusted
 Publishing (OIDC). No npm token exists in the repo, its secrets, or the workflow: npm trusts that
 one workflow file, running in the GitHub environment `release`, per package.
 
@@ -11,10 +11,10 @@ one workflow file, running in the GitHub environment `release`, per package.
 Environment `release` at https://github.com/bugiiiii11/rein/settings/environments -- required
 reviewer `bugiiiii11`, deployment limited to branch `main` and tags `v*`.
 
-### npmjs.com -- once per package, 11 times
+### npmjs.com -- once per package, 12 times
 
 Packages: `core`, `sdk`, `gate`, `policy-engine`, `graph`, `erc8004`, `mock-rails`, `x402-rails`,
-`mcp`, `signer`, `store`.
+`mcp`, `signer`, `store`, `init` (added in Sprint 12 -- see "A brand-new package" below).
 
 1. Sign in to https://www.npmjs.com as the account that owns the `@reinconsole` scope.
 2. Open `https://www.npmjs.com/package/@reinconsole/<package>/access` -- the package's **Settings**
@@ -41,18 +41,32 @@ its own, so check every one against the table before clicking.
 
 **Why `npm publish` stays allowed despite npm's "Not recommended" note:** unchecked, the workflow
 could only `npm stage publish`, and every version of every package would then wait for a manual
-promotion on npmjs.com -- 11 approvals per release. The human gate here is the `release`
+promotion on npmjs.com -- 12 approvals per release. The human gate here is the `release`
 environment's required reviewer instead, and `scripts/release-publish.mjs` uses `npm publish`.
 
-Renaming `release.yml` or the `release` environment breaks the trust for all 11 packages until
+Renaming `release.yml` or the `release` environment breaks the trust for all 12 packages until
 npmjs.com is updated to match.
+
+### A brand-new package
+
+The Trusted Publisher form lives on the package's own Settings tab, so it exists only once the
+package does. If npm offers no Settings tab for `@reinconsole/<new>`, publish a placeholder once by
+hand from a machine logged in as the scope owner (`npm login`, 2FA), then set up the connection as
+above and let the workflow publish every real version:
+
+```
+cd packages/<new> && npm publish --access public --tag bootstrap
+```
+
+The `bootstrap` dist-tag keeps the placeholder off `latest`; the next release overwrites nothing (a
+version already on the registry is skipped), so bump past the placeholder's version first.
 
 ## Cutting a release
 
 1. Bump every publishable package to the same version (a prerelease such as `0.3.0-rc.1` is fine)
    and push to `main` with CI green.
 2. Rehearse: Actions -> Release -> Run workflow (dry run is the default) -> approve the pending
-   deployment. It builds, typechecks, tests, smoke-tests, then `npm publish --dry-run`s all 11.
+   deployment. It builds, typechecks, tests, smoke-tests, then `npm publish --dry-run`s all 12.
 3. Tag and push: `git tag v0.3.0-rc.1 && git push origin v0.3.0-rc.1`, then approve the run.
    The tag must equal every package version or the run fails before publishing anything.
 4. A prerelease goes under the `next` dist-tag and never under `latest`. Promote later with
@@ -63,7 +77,7 @@ skipped, and publishing is in dependency order and stops at the first failure.
 
 ## After the first OIDC publish
 
-Once one release has published all 11 packages through the workflow, on each package's **Settings**
+Once one release has published all 12 packages through the workflow, on each package's **Settings**
 tab under **Publishing access** select **Require two-factor authentication and disallow tokens**,
 then let the granular npm token expire (2026-12-08) or revoke it. From then on the workflow is the
 only way to publish.

@@ -1,11 +1,16 @@
 # Changelog
 
-Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate`, `policy-engine`, `graph`, `erc8004`, `mock-rails`, `x402-rails`, `mcp`, `signer` and `store`. All eleven are versioned and released together. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate`, `policy-engine`, `graph`, `erc8004`, `mock-rails`, `x402-rails`, `mcp`, `signer`, `store` and `init`. All twelve are versioned and released together. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
 ### Added
 
+- **`@reinconsole/init`**, a new package: `npx @reinconsole/init` creates a sandbox on the hosted engine (no account, testnet, 7 days), writes `rein-agent.json` (agent, key and a wallet generated on your machine, file mode 0600, added to an existing `.gitignore`), waits for the test-USDC drip, then makes one allowed and settled call and one call the starter policy refuses. Options: `--engine`, `--vendor`, `--force`, `--no-demo`.
+- **`POST /v1/sandbox`** on `@reinconsole/policy-engine` (`ServerOptions.sandbox`, `REIN_SANDBOX=1` on `rein-engine`): unauthenticated, mints an org, one agent, a starter policy (per-call cap $0.004, 24h budget $0.05) and an org-scoped key that expires after 7 days. Limits: per IP (`REIN_SANDBOX_PER_IP_PER_DAY`, default 5), per day globally (`REIN_SANDBOX_DAILY_CAP`, default 200, counted from issued keys so it survives restarts), 3 agents per sandbox org. With `REIN_SANDBOX_FAUCET_KEY` it drips `REIN_SANDBOX_DRIP_USDC` (default 0.05) Base Sepolia USDC to the caller's wallet.
+- **API keys can expire:** `ApiKey.expiresAt`, `ApiKeyAuth.issue({ expiresAt })`, and a `401 key_expired` past it. A key minted by an expiring key inherits its deadline. The key name `sandbox` is reserved (`400 reserved_key_name`).
+- **`createUsdcFaucet`** in `@reinconsole/x402-rails`: Base Sepolia only, with no option that points it at mainnet.
+- **`REIN_AGENT_FILE`** for `@reinconsole/mcp`: read the engine URL, agent, key, payer and network from the `rein-agent.json` init writes. An explicit env var still wins.
 - **`@reinconsole/store` runs on a network Postgres** as well as PGlite. Pass `openReinStore({ databaseUrl, schema })`, or set `DATABASE_URL` (plus optional `REIN_DB_SCHEMA`) for `rein-engine`. The driver keeps one serialized connection, so statements land in issue order as they do on PGlite. A network store requires an external signing key (`signingKey` / `REIN_ENGINE_SIGNING_KEY`) and stores only the public half. New exports: `openNetworkDb`, `PgNetworkDb`, `Db`, `Queryable`, `NetworkDbOptions`.
 - **PGlite to Postgres migration.** Set `REIN_MIGRATE_FROM=<data dir>` beside `DATABASE_URL` and `rein-engine` copies the directory at boot, carrying `seq` values over and blanking the private key. It then checks row counts, byte-identical decision docs, the chain and reconciliation, and refuses to serve if any check fails. The source directory is only read. On a re-run it copies nothing. A target that does not continue the source chain is refused.
 - `ReinStoreOptions.pruneOnOpen` (default `true`).

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { AgentId } from '@reinconsole/core';
 import type { Payer } from '@reinconsole/sdk';
 
@@ -101,6 +102,46 @@ export class ConfigError extends Error {
 }
 
 /**
+ * `REIN_AGENT_FILE`: the `rein-agent.json` that `npx @reinconsole/init` writes,
+ * read as if its fields were the env vars below. The point is where the
+ * secrets live: in ONE file on the owner's disk, not copied into a harness's
+ * config block and not on a command line (S80: a key in a shell command is
+ * what Claude Code's auto mode refuses, and rightly).
+ */
+export function agentFileEnv(path: string | undefined): Record<string, string> {
+  if (!path) return {};
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch (err) {
+    throw new ConfigError(`REIN_AGENT_FILE ${path} cannot be read: ${(err as Error).message}`);
+  }
+  let file: {
+    engineUrl?: unknown;
+    agentId?: unknown;
+    apiKey?: unknown;
+    network?: unknown;
+    wallet?: { privateKey?: unknown };
+  };
+  try {
+    file = JSON.parse(raw);
+  } catch {
+    throw new ConfigError(`REIN_AGENT_FILE ${path} is not JSON`);
+  }
+  const out: Record<string, string> = {};
+  const put = (name: string, value: unknown) => {
+    if (typeof value === 'string' && value !== '') out[name] = value;
+  };
+  put('REIN_ENGINE_URL', file.engineUrl);
+  put('REIN_AGENT_ID', file.agentId);
+  put('REIN_ENGINE_API_KEY', file.apiKey);
+  put('REIN_PAYER_PRIVATE_KEY', file.wallet?.privateKey);
+  if (file.network === 'base') out['REIN_NETWORK_PROFILE'] = 'mainnet';
+  else if (file.network === 'base-sepolia') out['REIN_NETWORK_PROFILE'] = 'testnet';
+  return out;
+}
+
+/**
  * Build a config from the environment, the way a harness's MCP config block
  * supplies it (`"env": { "REIN_ENGINE_URL": "..." }`).
  *
@@ -109,7 +150,12 @@ export class ConfigError extends Error {
  * install pays neither the startup cost nor the attack surface of a signing
  * stack it will never use.
  */
-export async function configFromEnv(env: NodeJS.ProcessEnv = process.env): Promise<ReinMcpConfig> {
+export async function configFromEnv(
+  processEnv: NodeJS.ProcessEnv = process.env,
+): Promise<ReinMcpConfig> {
+  // An explicit variable always beats the file, so one value can be overridden
+  // without editing what `npx @reinconsole/init` wrote.
+  const env = { ...agentFileEnv(processEnv['REIN_AGENT_FILE']), ...processEnv };
   const engineUrl = env['REIN_ENGINE_URL'] ?? '';
   const agentId = env['REIN_AGENT_ID'] ?? '';
   if (!engineUrl) throw new ConfigError('REIN_ENGINE_URL is required');

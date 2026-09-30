@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes the 11 @reinconsole/* packages with npm Trusted Publishing (OIDC):
+# Publishes the 12 @reinconsole/* packages with npm Trusted Publishing (OIDC):
 # no npm token exists in this repo, its secrets, or this workflow. npm trusts
 # THIS file (by name) running in the `release` environment, per package, as
 # configured on npmjs.com. Renaming this file or the environment breaks that

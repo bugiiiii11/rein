@@ -141,7 +141,7 @@ export class SandboxService {
       throw new SandboxError(
         503,
         'sandbox_capacity',
-        'the sandbox has handed out all of today\'s orgs; try again tomorrow or self-host (docs: /run-rein-locally)',
+        'the sandbox has handed out all of today\'s orgs; try again tomorrow or self-host: https://reinconsole.com/run-rein-locally',
       );
     }
     const ipVerdict = this.perIp.take(ip, now);
