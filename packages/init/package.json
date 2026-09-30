@@ -1,6 +1,6 @@
 {
   "name": "@reinconsole/init",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "npx @reinconsole/init -- a Rein sandbox in one command: an agent, a spending policy and a test wallet on the hosted engine, then one governed payment and one refused one. No account.",
   "license": "MIT",
   "homepage": "https://github.com/bugiiiii11/rein#readme",

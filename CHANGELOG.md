@@ -4,6 +4,12 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.0] - 2026-09-30
+
+`@reinconsole/init` is new, so the set is now twelve packages. No breaking changes from `0.3.0`.
+
 ### Added
 
 - **`@reinconsole/init`**, a new package: `npx @reinconsole/init` creates a sandbox on the hosted engine (no account, testnet, 7 days), writes `rein-agent.json` (agent, key and a wallet generated on your machine, file mode 0600, added to an existing `.gitignore`), waits for the test-USDC drip, then makes one allowed and settled call and one call the starter policy refuses. Options: `--engine`, `--vendor`, `--force`, `--no-demo`.
