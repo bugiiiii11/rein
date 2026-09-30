@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
 import { newId } from '@reinconsole/core';
 import { ConfigError, configFromEnv } from './config.js';
 
@@ -12,6 +12,12 @@ function agentFile(contents: unknown): string {
 }
 
 describe('REIN_AGENT_FILE (what npx @reinconsole/init writes)', () => {
+  // The first payer needs `@reinconsole/x402-rails` (viem), which configFromEnv
+  // imports lazily; cold on CI that costs 5-6 s and blew the first test's 5 s.
+  beforeAll(async () => {
+    await import('@reinconsole/x402-rails');
+  }, 60_000);
+
   const agentId = newId('agt');
   const file = {
     engineUrl: 'https://engine.reinconsole.com',

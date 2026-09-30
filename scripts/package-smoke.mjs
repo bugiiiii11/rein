@@ -246,6 +246,9 @@ try {
  * loaded and the transport is up.
  */
 const BIN_BOOT = {
+  // A one-shot CLI, not a server: without an engine it exits 1 by design, so
+  // `--help` is the boot that proves the shim resolves dist/ and prints.
+  'rein-init': { expect: 'npx @reinconsole/init', args: ['--help'], env: {} },
   'rein-mcp': {
     expect: 'ready on stdio',
     env: {
@@ -256,16 +259,16 @@ const BIN_BOOT = {
     },
   },
 };
-const DEFAULT_BOOT = { expect: 'listening on', env: {} };
+const DEFAULT_BOOT = { expect: 'listening on', args: [], env: {} };
 
 /** Boot a bin and wait for its readiness line. Proves the shim resolves dist/. */
 function bootBin(binName, binFile) {
-  const { expect, env: extraEnv } = BIN_BOOT[binName] ?? DEFAULT_BOOT;
+  const { expect, args = [], env: extraEnv } = BIN_BOOT[binName] ?? DEFAULT_BOOT;
   return new Promise((resolve) => {
     // PORT=0 lets the OS pick, so a stray engine on 8787 cannot fail this run.
     // cwd is deliberately NOT the consumer dir: on Windows a live child holding
     // it as its working directory makes the cleanup rmdir fail with EBUSY.
-    const child = spawn(process.execPath, [binFile], {
+    const child = spawn(process.execPath, [binFile, ...args], {
       cwd: tmpdir(),
       env: { ...process.env, PORT: '0', ...extraEnv },
     });
@@ -298,7 +301,8 @@ function bootBin(binName, binFile) {
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.on('error', (err) => done(false, err.message));
-    child.on('exit', (code) => {
+    // 'close', not 'exit': a one-shot bin can exit before its stdout is drained.
+    child.on('close', (code) => {
       if (!output.includes(expect)) done(false, `exited early with code ${code}`);
     });
   });
