@@ -3,13 +3,16 @@
  * same console API. Run after `vite build`:  `tsx server/standalone.ts`
  * (or `pnpm --filter @reinconsole/console start`).
  */
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorld, type World } from './world';
 import { createRemoteWorld, type RemoteWorld } from './remote-world';
 import { createApiHandler, resolveConsolePosture } from './api';
+import { createAccountHandler } from './account';
+import { createOwnerBridge } from './owners';
+import { createSignIn, signInFromEnv } from './signin';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -87,8 +90,53 @@ if (posture.warning) console.warn(`[rein] WARNING: ${posture.warning}`);
  * against reality before Sprint 8 puts real money behind it.
  */
 const consoleProfile = process.env.REIN_NETWORK_PROFILE?.trim();
+
+/**
+ * Sign-in and claims (Sprint 13): on when `REIN_CONSOLE_SESSION_SECRET` and
+ * `REIN_CONSOLE_PUBLIC_URL` are set. Only meaningful against a hosted engine,
+ * and only with the `identity` key that lets the console redeem claims and
+ * fetch owner sessions -- anything half-configured refuses the boot rather
+ * than serving sign-in buttons that cannot work.
+ */
+let signInConfig: ReturnType<typeof signInFromEnv>;
+try {
+  signInConfig = signInFromEnv(process.env);
+} catch (err) {
+  console.error(`[rein] ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
+const identityKey = process.env.REIN_CONSOLE_IDENTITY_KEY?.trim();
+if (signInConfig && (!engineUrl || !identityKey)) {
+  console.error(
+    '[rein] sign-in is configured but REIN_CONSOLE_ENGINE_URL or REIN_CONSOLE_IDENTITY_KEY is not set. ' +
+      'Sign-in needs a hosted engine and its identity-scoped key.',
+  );
+  process.exit(1);
+}
+const signIn = signInConfig ? createSignIn(signInConfig) : undefined;
+const owners =
+  signIn && engineUrl && identityKey
+    ? createOwnerBridge({
+        engineUrl,
+        identityKey,
+        ...(process.env.REIN_CONSOLE_POLL_MS ? { pollMs: Number(process.env.REIN_CONSOLE_POLL_MS) } : {}),
+      })
+    : undefined;
+if (signIn) {
+  console.log(`[rein] sign-in on (${signIn.githubEnabled ? 'GitHub + ' : ''}Ethereum)`);
+}
+const account = createAccountHandler(signIn, owners);
+
 const handle = createApiHandler(world, {
   ...posture,
+  ...(signIn && owners
+    ? {
+        viewFor: async (req: IncomingMessage) => {
+          const session = signIn.session(req);
+          return session ? (await owners.viewFor(session.sub))?.world : undefined;
+        },
+      }
+    : {}),
   ...(remote
     ? {
         status: () => ({
@@ -110,6 +158,7 @@ async function serveFile(path: string): Promise<{ body: Buffer; type: string } |
 }
 
 const server = createServer(async (req, res) => {
+  if (account(req, res)) return;
   if (handle(req, res)) return;
 
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -178,6 +227,7 @@ const shutdown = async (signal: string): Promise<void> => {
   try {
     server.close();
     server.closeAllConnections();
+    await owners?.close();
     await world.close();
     clearTimeout(abandon);
     console.log('[rein] store drained, exiting cleanly');

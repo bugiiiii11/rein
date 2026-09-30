@@ -85,8 +85,12 @@ const BREAKER_AGENT_CAP = 25;
 export interface RemoteWorldOptions {
   /** Base URL of the hosted engine, e.g. `https://engine.reinconsole.com`. */
   engineUrl: string;
-  /** A `read`-scoped API key. Anything wider is authority this process should not hold. */
-  apiKey: string;
+  /**
+   * A `read`-scoped API key. Anything wider is authority this process should
+   * not hold. A function is read at every request -- an owner's session key is
+   * renewed in place (owners.ts).
+   */
+  apiKey: string | (() => string);
   pollMs?: number;
   /** Injected for tests; defaults to the global. */
   fetchImpl?: typeof fetch;
@@ -421,7 +425,10 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const res = await doFetch(`${base}${path}`, {
-        headers: { Authorization: `Bearer ${options.apiKey}`, Accept: 'application/json' },
+        headers: {
+          Authorization: `Bearer ${typeof options.apiKey === 'function' ? options.apiKey() : options.apiKey}`,
+          Accept: 'application/json',
+        },
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);

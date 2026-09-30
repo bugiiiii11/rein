@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useConsole } from './useConsole';
+import { fetchMe, type Me } from './account';
 import { TopBar } from './components/TopBar';
 import { Kpis } from './components/Kpis';
 import { Agents } from './components/Agents';
@@ -14,6 +16,10 @@ import { AuditChain } from './components/AuditChain';
 
 export function App() {
   const d = useConsole();
+  const [me, setMe] = useState<Me>({ signIn: null });
+  useEffect(() => {
+    void fetchMe().then(setMe);
+  }, []);
 
   if (!d.ready) {
     return (
@@ -25,7 +31,7 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} writable={d.control.writable} />
+      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} writable={d.control.writable} me={me} />
       <Kpis stats={d.stats} />
       <main className="grid">
         <div className="col left">

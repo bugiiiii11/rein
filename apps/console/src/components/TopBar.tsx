@@ -1,6 +1,8 @@
 import type { DemoStatus, Stats } from '../../server/wire';
 import { api } from '../api';
 import { Logo } from './Logo';
+import { Account } from './Account';
+import type { Me } from '../account';
 
 interface Props {
   connected: boolean;
@@ -8,9 +10,10 @@ interface Props {
   stats: Stats | null;
   /** False on a public deployment with no API key — see resolveConsolePosture. */
   writable: boolean;
+  me: Me;
 }
 
-export function TopBar({ connected, demo, stats, writable }: Props) {
+export function TopBar({ connected, demo, stats, writable, me }: Props) {
   const running = demo.running;
   return (
     <header className="cmd-bar">
@@ -23,6 +26,7 @@ export function TopBar({ connected, demo, stats, writable }: Props) {
       <div className="cmd-spacer" />
 
       <div className="cmd-meta">
+        <Account me={me} />
         <span className={`pill ${connected ? 'is-ok' : 'is-bad'}`}>
           <span className={`dot ${connected ? 'live' : 'off'}`} />
           {connected ? 'Live' : 'Reconnecting'}

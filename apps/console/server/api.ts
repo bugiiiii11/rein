@@ -58,7 +58,19 @@ export interface ApiOptions {
    * the authority path this topology exists to remove.
    */
   status?: () => unknown;
+  /**
+   * Whose dashboard this request sees (Sprint 13.3). Resolves to the signed-in
+   * owner's org world, or undefined for everybody else -- who get the public
+   * one. A rejection is answered 502, never with the public world: a signed-in
+   * owner shown somebody else's numbers would read them as their own.
+   */
+  viewFor?: (req: IncomingMessage) => Promise<World | undefined>;
 }
+
+const ENGINE_DOWN = {
+  error: 'engine_unreachable',
+  message: 'could not load your org from the engine; try again shortly',
+};
 
 /** `REIN_CONSOLE_MAX_SSE` default — see `ApiOptions.maxSseClients`. */
 const DEFAULT_MAX_SSE_CLIENTS = 64;
@@ -106,6 +118,8 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
   const startedAt = new Date();
   const maxSseClients = options.maxSseClients ?? DEFAULT_MAX_SSE_CLIENTS;
   let sseClients = 0;
+  const resolveView = async (req: IncomingMessage): Promise<World> =>
+    (options.viewFor ? await options.viewFor(req) : undefined) ?? world;
 
   /**
    * Gate every state change. Returns true when the request was refused (and
@@ -181,7 +195,9 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
 
     // GET /api/state — full snapshot
     if (method === 'GET' && pathname === '/api/state') {
-      sendJson(res, 200, world.getState());
+      resolveView(req)
+        .then((view) => sendJson(res, 200, view.getState()))
+        .catch(() => sendJson(res, 502, ENGINE_DOWN));
       return true;
     }
 
@@ -200,19 +216,9 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
         return true;
       }
       sseClients += 1;
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      });
-      res.write(': connected\n\n');
-      const unsubscribe = world.subscribe((ev) => {
-        res.write(`event: ${ev.type}\n`);
-        res.write(`data: ${JSON.stringify(ev)}\n\n`);
-      });
-      const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
       let released = false;
+      let unsubscribe = (): void => undefined;
+      let heartbeat: NodeJS.Timeout | undefined;
       req.on('close', () => {
         // `close` can fire more than once on a socket that errors; a double
         // decrement would leak capacity upward until the cap meant nothing.
@@ -222,6 +228,26 @@ export function createApiHandler(world: World, options: ApiOptions = {}) {
         clearInterval(heartbeat);
         unsubscribe();
       });
+      resolveView(req).then(
+        (view) => {
+          if (released) return;
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          });
+          res.write(': connected\n\n');
+          unsubscribe = view.subscribe((ev) => {
+            res.write(`event: ${ev.type}\n`);
+            res.write(`data: ${JSON.stringify(ev)}\n\n`);
+          });
+          heartbeat = setInterval(() => res.write(': ping\n\n'), 15000);
+        },
+        () => {
+          if (!released) sendJson(res, 502, ENGINE_DOWN);
+        },
+      );
       return true;
     }
 
