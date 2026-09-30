@@ -29,11 +29,11 @@ export function Account({ me }: { me: Me }) {
         <span className={`pill ${me.org ? 'is-ok' : ''}`} title={me.user.identity}>
           {me.org ? (
             <>
-              Your org <b>{me.org.orgId}</b>
+              Your org<span className="pill-detail"> <b className="org-id">{me.org.orgId}</b></span>
             </>
           ) : (
             <>
-              Public demo · <b>no org claimed</b>
+              Public demo<span className="pill-detail"> · <b>no org claimed</b></span>
             </>
           )}
         </span>

@@ -39,6 +39,9 @@ export function Claim() {
     body = (
       <>
         <p className="claim-ok">Claimed. <b>{done}</b> is yours: its keys no longer expire and the sandbox quotas are lifted.</p>
+        <p>
+          To pay with real USDC, run <code>npx @reinconsole/init --mainnet</code> in the same folder.
+        </p>
         <a className="run-btn" href="/">Open your dashboard</a>
       </>
     );

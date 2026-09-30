@@ -1355,8 +1355,15 @@ a.pill:hover {
   .cmd-spacer {
     display: none;
   }
+  /* Its own row, wrapping: with the account pills (Sprint 13) the row no
+     longer fits a phone, and a clipped pill is a pill nobody can read. */
   .cmd-meta {
-    margin-left: auto;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .cmd-meta .pill {
+    white-space: nowrap;
   }
   .run-btn {
     flex: 1 0 100%;
@@ -1582,8 +1589,13 @@ a.pill:hover {
   align-self: flex-start;
   text-decoration: none;
 }
+/* An id is case-sensitive: the pill's uppercase would turn org_ into ORG_. */
+.account .org-id {
+  text-transform: none;
+}
 @media (max-width: 760px) {
-  .account .pill:first-child {
+  /* The pill stays: it is what says whose numbers these are. Only the detail goes. */
+  .account .pill-detail {
     display: none;
   }
 }
