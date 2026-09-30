@@ -949,6 +949,52 @@ GRANT SELECT ON ALL SEQUENCES IN SCHEMA rein TO rein_backup;
 ALTER DEFAULT PRIVILEGES IN SCHEMA rein GRANT SELECT ON TABLES TO rein_backup;
 ```
 
+## Sign-in and claims on the console (Sprint 13, S87-S88)
+
+**Engine:** the claim routes (`POST /v1/claims`, `/v1/claims/redeem`, `/v1/owners/session`) are on
+whenever `REIN_SANDBOX=1` is. No new variable is needed, but the engine has to be redeployed from a
+commit that has them. To check: call `POST /v1/claims` with the operator's unscoped admin key. It
+should return `403 claim_needs_org_admin`. A `404` means the engine is still on the old build.
+
+**The console's identity key.** This is an UNSCOPED key (no `orgId`) whose only scope is `identity`.
+It can redeem a claim code for an identity that the console has verified, and fetch a 12-hour
+org-scoped read key for an owner. It cannot read any org itself. Mint it with the operator's
+unscoped admin key:
+
+```
+set -a; . ./.env.engine-ops; set +a
+curl -s -X POST https://engine.reinconsole.com/v1/keys \
+  -H "authorization: Bearer $REIN_ENGINE_API_KEY" -H 'content-type: application/json' \
+  -d '{"name":"console-identity","scopes":["identity"]}'
+```
+
+The `secret` in the response is shown only once. It becomes `REIN_CONSOLE_IDENTITY_KEY` below.
+
+**GitHub OAuth app** (optional; SIWE works without it): github.com -> Settings -> Developer settings
+-> OAuth Apps -> New. Homepage `https://app.reinconsole.com`, callback
+`https://app.reinconsole.com/api/auth/github/callback`. It requests no scopes, and the identity is
+the numeric GitHub user id.
+
+**Console env** (the `rein-console` service):
+
+| Variable | Value |
+|---|---|
+| `REIN_CONSOLE_SESSION_SECRET` | 32 or more random characters (it HMACs the session cookie) |
+| `REIN_CONSOLE_PUBLIC_URL` | `https://app.reinconsole.com` (an origin with no path; also the SIWE domain) |
+| `REIN_CONSOLE_IDENTITY_KEY` | the key minted above |
+| `REIN_GITHUB_CLIENT_ID` / `REIN_GITHUB_CLIENT_SECRET` | both or neither |
+
+Sign-in is off unless the session secret and the public URL are both set. If either one is set
+without a valid value for the other, or without `REIN_CONSOLE_ENGINE_URL` and the identity key,
+**the boot is refused**, so a console never shows sign-in buttons that cannot work. The public
+read-only dashboard is unchanged for signed-out visitors.
+
+**Exit checks:** `GET /api/me` returns `signIn: { github, ethereum }`. On a phone-width screen the
+top bar says "Public demo" signed out and "Your org" once signed in. Rehearsed locally in S88:
+`npx @reinconsole/init --no-demo`, then `--claim`, then SIWE through a stub extension wallet, then
+Claim, then the owner dashboard, then `--mainnet`, then an escalation, then `--approve --yes`, all
+against a local engine and console.
+
 ## The live workflow (S58)
 
 `.github/workflows/live.yml` runs the suites that spend real testnet money and
