@@ -61,9 +61,12 @@
     <meta name="twitter:image" content="https://reinconsole.com/og-card.png" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="/fonts/fonts.css" />
-    <link rel="stylesheet" href="styles.css" />
+    <!-- The home page has its own sheet; the subpages stay on styles.css. -->
+    <link rel="stylesheet" href="landing.css" />
   </head>
   <body>
+    <div class="sky" aria-hidden="true"></div>
+
     <!-- ── Nav ─────────────────────────────────────────────────────────── -->
     <header class="nav">
       <a class="brand" href="#top" aria-label="Rein — home">
@@ -90,66 +93,121 @@
 
     <main id="top">
       <!-- ── Hero ──────────────────────────────────────────────────────── -->
-      <section class="hero">
-        <div class="hero-copy">
-          <div class="hero-pills reveal">
-            <span class="pill"><span class="dot live"></span>LIVE ON BASE MAINNET</span>
-            <span class="pill">v0.3 · OPEN SOURCE</span>
-          </div>
-          <h1 class="reveal d1">
-            The control plane for<br class="wide-only" /> AI&nbsp;agent payments.
-          </h1>
-          <p class="hero-sub reveal d2">
-            Set the rules. Watch every payment. Score every counterparty.
-            Rein governs your agent's <em>authority to spend</em>,
-            whatever wallet it uses — and it never holds the funds.
-          </p>
-          <div class="install reveal d3">
-            <code class="install-cmd" id="installCmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
-            <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
-          </div>
-          <p class="hero-fine reveal d4">Using Claude Code or Cursor? <code>npx -y @reinconsole/mcp</code> gives your agent a spend-governed fetch — <a class="inline-link" href="agent-quickstart.md">MCP setup</a>.</p>
-          <div class="hero-actions reveal d4">
-            <a class="btn btn-primary" href="https://app.reinconsole.com" target="_blank" rel="noopener">
-              See it live <span class="btn-arrow">→</span>
-            </a>
-            <a class="btn btn-ghost" href="get-started.html">Get started</a>
-          </div>
-          <p class="hero-fine reveal d5">MIT-licensed · 12 packages on npm · x402 + ERC-8004 stack</p>
-        </div>
-
-        <div class="hero-stage reveal d3">
-          <div class="panel feed-panel" id="feedPanel">
-            <div class="panel-head">
-              <span class="panel-tick"></span>
-              <span class="panel-title">Live feed</span>
-              <span class="panel-pill"><span class="dot live"></span>STREAMING</span>
+      <div class="hero-wrap">
+        <div class="hero-floor" aria-hidden="true"></div>
+        <div class="hero-haze" aria-hidden="true"></div>
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="hero-pills reveal">
+              <span class="pill"><span class="dot live"></span>LIVE ON BASE MAINNET</span>
+              <span class="pill">v0.5 · OPEN SOURCE · MIT</span>
             </div>
-            <ul class="feed" id="feed">
-              <li class="feed-row" data-kind="allow">
-                <span class="feed-time">14:02:11</span>
-                <span class="feed-main"><span class="feed-verb allow">ALLOW</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
-                <span class="feed-right">within budget</span>
-              </li>
-              <li class="feed-row" data-kind="settled">
-                <span class="feed-time">14:02:12</span>
-                <span class="feed-main"><span class="feed-verb settled">SETTLED</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
-                <span class="feed-right">base-sepolia</span>
-              </li>
-              <li class="feed-row" data-kind="deny">
-                <span class="feed-time">14:02:19</span>
-                <span class="feed-main"><span class="feed-verb deny">DENY</span> <b class="feed-amt">$180.00</b> <span class="feed-arrow">→</span> <span class="feed-host">premium-intel.example</span></span>
-                <span class="feed-right">over per-tx cap</span>
-              </li>
-            </ul>
-            <div class="panel-foot">audit chain intact · every decision hash-linked</div>
+            <h1 class="reveal d1">
+              The control plane for <span class="grad">AI&nbsp;agent payments.</span>
+            </h1>
+            <p class="hero-sub reveal d2">
+              Set the rules. Watch every payment. Score every counterparty.
+              Rein governs your agent's <em>authority to spend</em>,
+              whatever wallet it uses — and it never holds the funds.
+            </p>
+            <div class="install reveal d3">
+              <code class="install-cmd" id="installCmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
+              <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
+            </div>
+            <div class="hero-actions reveal d4">
+              <a class="btn btn-primary" href="https://app.reinconsole.com" target="_blank" rel="noopener">
+                See it live <span class="btn-arrow">→</span>
+              </a>
+              <a class="btn btn-ghost" href="get-started.html">Get started</a>
+            </div>
+            <p class="hero-fine reveal d5">Using Claude Code or Cursor? <code>npx -y @reinconsole/mcp</code> gives your agent a spend-governed fetch — <a class="inline-link" href="agent-quickstart.md">MCP setup</a>.</p>
+          </div>
+
+          <div class="hero-stage reveal d3">
+            <div class="panel feed-panel" id="feedPanel">
+              <div class="panel-scan" aria-hidden="true"></div>
+              <div class="panel-head">
+                <span class="panel-tick"></span>
+                <span class="panel-title">Live feed</span>
+                <span class="panel-pill"><span class="dot live"></span>STREAMING</span>
+              </div>
+              <!-- Seeded newest-first so the panel is full before the loop runs
+                   (no-JS, ?static, crawlers). main.js restamps the times. -->
+              <ul class="feed" id="feed">
+                <li class="feed-row" data-kind="settled">
+                  <span class="feed-time">14:02:31</span>
+                  <span class="feed-main"><span class="feed-verb settled">SETTLED</span> <b class="feed-amt">$0.02</b> <span class="feed-arrow">→</span> <span class="feed-host">api.quotes.example</span></span>
+                  <span class="feed-right">base-sepolia</span>
+                </li>
+                <li class="feed-row" data-kind="allow">
+                  <span class="feed-time">14:02:28</span>
+                  <span class="feed-main"><span class="feed-verb allow">ALLOW</span> <b class="feed-amt">$0.02</b> <span class="feed-arrow">→</span> <span class="feed-host">api.quotes.example</span></span>
+                  <span class="feed-right">vendor score 87</span>
+                </li>
+                <li class="feed-row" data-kind="deny">
+                  <span class="feed-time">14:02:19</span>
+                  <span class="feed-main"><span class="feed-verb deny">DENY</span> <b class="feed-amt">$180.00</b> <span class="feed-arrow">→</span> <span class="feed-host">premium-intel.example</span></span>
+                  <span class="feed-right">over per-tx cap</span>
+                </li>
+                <li class="feed-row" data-kind="refused">
+                  <span class="feed-time">14:02:16</span>
+                  <span class="feed-main"><span class="feed-verb refused">REFUSED</span> <b class="feed-amt">$0.10</b> <span class="feed-arrow">→</span> <span class="feed-host">payer 0x3c11…88d0</span></span>
+                  <span class="feed-right">reputation 31 &lt; 40</span>
+                </li>
+                <li class="feed-row" data-kind="frozen">
+                  <span class="feed-time">14:02:14</span>
+                  <span class="feed-main"><span class="feed-verb frozen">FROZEN</span> <span class="feed-arrow">→</span> <span class="feed-host">agent research-scout</span></span>
+                  <span class="feed-right">kill switch engaged</span>
+                </li>
+                <li class="feed-row" data-kind="settled">
+                  <span class="feed-time">14:02:12</span>
+                  <span class="feed-main"><span class="feed-verb settled">SETTLED</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
+                  <span class="feed-right">base-sepolia</span>
+                </li>
+                <li class="feed-row" data-kind="allow">
+                  <span class="feed-time">14:02:11</span>
+                  <span class="feed-main"><span class="feed-verb allow">ALLOW</span> <b class="feed-amt">$0.05</b> <span class="feed-arrow">→</span> <span class="feed-host">api.research.example</span></span>
+                  <span class="feed-right">within budget</span>
+                </li>
+              </ul>
+              <div class="panel-foot">
+                audit chain intact · every decision hash-linked
+                <span class="chain" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── Instrument rail ───────────────────────────────────────────── -->
+      <div class="rail">
+        <div class="rail-inner">
+          <div class="rail-item">
+            <span class="rail-k">Network</span>
+            <span class="rail-v"><span class="dot live"></span>Base mainnet</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Custody</span>
+            <span class="rail-v">None, by architecture</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Packages</span>
+            <span class="rail-v">12 on npm · 0.5.0</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Stack</span>
+            <span class="rail-v">x402 + ERC-8004</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Licence</span>
+            <span class="rail-v">MIT · public code</span>
           </div>
         </div>
-      </section>
+      </div>
 
       <!-- ── Problem ───────────────────────────────────────────────────── -->
       <section class="section" id="problem">
-        <div class="eyebrow reveal"><span class="tick"></span>THE FAILURE MODES</div>
+        <div class="eyebrow reveal"><span class="idx">01</span><span class="tick"></span>THE FAILURE MODES</div>
         <h2 class="reveal d1">An agent with a wallet is an unattended<br class="wide-only" /> terminal with a credit card.</h2>
         <div class="incidents">
           <article class="incident reveal d1">
@@ -170,7 +228,7 @@
 
       <!-- ── Pillars ───────────────────────────────────────────────────── -->
       <section class="section" id="planes">
-        <div class="eyebrow reveal"><span class="tick"></span>THE CONTROL PLANE</div>
+        <div class="eyebrow reveal"><span class="idx">02</span><span class="tick"></span>THE CONTROL PLANE</div>
         <h2 class="reveal d1">Three planes. One loop.</h2>
         <p class="section-lede reveal d2">
           Guard the demand side, gate the supply side, and let one reputation graph
@@ -178,7 +236,7 @@
         </p>
 
         <div class="pillars">
-          <article class="pillar reveal d1">
+          <article class="pillar reveal d1" data-num="01">
             <div class="pillar-head">
               <span class="pillar-num">01</span>
               <h3>GUARD</h3>
@@ -205,7 +263,7 @@
             <a class="pillar-link" href="https://www.npmjs.com/package/@reinconsole/sdk" target="_blank" rel="noopener">@reinconsole/sdk →</a>
           </article>
 
-          <article class="pillar reveal d2">
+          <article class="pillar reveal d2" data-num="02">
             <div class="pillar-head">
               <span class="pillar-num">02</span>
               <h3>GATE</h3>
@@ -233,7 +291,7 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
             <a class="pillar-link" href="https://www.npmjs.com/package/@reinconsole/gate" target="_blank" rel="noopener">@reinconsole/gate →</a>
           </article>
 
-          <article class="pillar reveal d3">
+          <article class="pillar reveal d3" data-num="03">
             <div class="pillar-head">
               <span class="pillar-num">03</span>
               <h3>GRAPH</h3>
@@ -262,45 +320,45 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
 
       <!-- ── Proof ─────────────────────────────────────────────────────── -->
       <section class="section" id="proof">
-        <div class="eyebrow reveal"><span class="tick"></span>RECEIPTS</div>
+        <div class="eyebrow reveal"><span class="idx">03</span><span class="tick"></span>RECEIPTS</div>
         <h2 class="reveal d1">“Live on mainnet” — with links,<br class="wide-only" /> not adjectives.</h2>
         <div class="proof-grid">
           <a class="proof reveal d1" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">
             <span class="proof-label">OFFLINE TEST SUITE</span>
             <span class="proof-value">1111</span>
-            <span class="proof-sub">tests passing · MIT · monorepo →</span>
+            <span class="proof-sub">tests passing · MIT · monorepo</span>
           </a>
           <a class="proof reveal d2" href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">
             <span class="proof-label">PUBLIC PACKAGES</span>
             <span class="proof-value">12</span>
-            <span class="proof-sub">@reinconsole/* on npm · 0.5.0 →</span>
+            <span class="proof-sub">@reinconsole/* on npm · 0.5.0</span>
           </a>
           <a class="proof reveal d3" href="https://sepolia.basescan.org/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/7393" target="_blank" rel="noopener">
             <span class="proof-label">ERC-8004 AGENT #7393</span>
             <span class="proof-value">82<span class="proof-denominator">/100</span></span>
-            <span class="proof-sub">rein-score published on-chain →</span>
+            <span class="proof-sub">rein-score published on-chain</span>
           </a>
           <a class="proof reveal d1" href="https://sepolia.basescan.org/tx/0x73c2971ac85330d1b6d21889ffb356716babb4ba740468a8f9066be6ca310689" target="_blank" rel="noopener">
             <span class="proof-label">GUARDED SETTLEMENT</span>
             <span class="proof-value mono">0x73c2…0689</span>
-            <span class="proof-sub">real USDC on Base Sepolia →</span>
+            <span class="proof-sub">real USDC on Base Sepolia</span>
           </a>
           <a class="proof reveal d2" href="https://sepolia.basescan.org/tx/0x1352fae21246fefc4bc65f704a2075f121369d4d7f6fc16653f1f68c065b97f1" target="_blank" rel="noopener">
             <span class="proof-label">SHADOW SPEND CAUGHT</span>
             <span class="proof-value mono">0x1352…b97f1</span>
-            <span class="proof-sub">unguarded transfer, flagged →</span>
+            <span class="proof-sub">unguarded transfer, flagged</span>
           </a>
           <a class="proof reveal d3" href="https://basescan.org/tx/0x12d2bebb82bbf56da2b2e80f828840182e02e27d0ed3c855457d8828c0090f13" target="_blank" rel="noopener">
             <span class="proof-label">FIRST MAINNET REVENUE</span>
             <span class="proof-value mono">0x12d2…0f13</span>
-            <span class="proof-sub">guarded agent → Rein's Gate, real USDC on Base →</span>
+            <span class="proof-sub">guarded agent → Rein's Gate, real USDC on Base</span>
           </a>
         </div>
       </section>
 
       <!-- ── Trust ─────────────────────────────────────────────────────── -->
       <section class="section" id="trust">
-        <div class="eyebrow reveal"><span class="tick"></span>TRUST, CHECKED</div>
+        <div class="eyebrow reveal"><span class="idx">04</span><span class="tick"></span>TRUST, CHECKED</div>
         <h2 class="reveal d1">Don't take our word for it.<br class="wide-only" /> Every claim here has a link.</h2>
         <p class="section-lede reveal d2">
           Rein never asks for a private key and never sees one. Your agent signs its own payments; Rein signs only the
@@ -315,12 +373,12 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
           <a class="proof reveal d2" href="https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913?a=0x23dd13f6C680FE6Ab0ee86512a3D168D1fe83f40" target="_blank" rel="noopener">
             <span class="proof-label">MAINNET SETTLEMENTS</span>
             <span class="proof-value mono">0x23dd…3f40</span>
-            <span class="proof-sub">every USDC payment into Rein's vendor, on BaseScan →</span>
+            <span class="proof-sub">every USDC payment into Rein's vendor, on BaseScan</span>
           </a>
           <a class="proof reveal d3" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md#review-history" target="_blank" rel="noopener">
             <span class="proof-label">PRE-MAINNET SECURITY REVIEW</span>
             <span class="proof-value">5<span class="proof-denominator"> found · 5 fixed</span></span>
-            <span class="proof-sub">none accepted unfixed · each pinned by a test →</span>
+            <span class="proof-sub">none accepted unfixed · each pinned by a test</span>
           </a>
         </div>
         <div class="trust-provenance reveal d1">
@@ -360,7 +418,7 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
 
       <!-- ── Architecture ──────────────────────────────────────────────── -->
       <section class="section" id="architecture">
-        <div class="eyebrow reveal"><span class="tick"></span>NON-CUSTODIAL BY ARCHITECTURE</div>
+        <div class="eyebrow reveal"><span class="idx">05</span><span class="tick"></span>NON-CUSTODIAL BY ARCHITECTURE</div>
         <h2 class="reveal d1">Authority moves through Rein.<br class="wide-only" /> Money doesn't.</h2>
         <div class="arch reveal d2">
           <div class="arch-node">
@@ -391,24 +449,27 @@ app.<span class="tk-fn">use</span>(<span class="tk-fn">gateMiddleware</span>(gat
       </section>
 
       <!-- ── Footer CTA ────────────────────────────────────────────────── -->
-      <section class="section outro" id="cta">
-        <h2 class="reveal">Put reins on it.</h2>
-        <div class="install install-lg reveal d1">
-          <code class="install-cmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
-          <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
-        </div>
-        <div class="hero-actions center reveal d2">
-          <a class="btn btn-primary" href="get-started.html">
-            Get started <span class="btn-arrow">→</span>
-          </a>
-          <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
-          <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
-        </div>
-        <p class="outro-fine reveal d3">
-          v0.3 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
-          No waitlist. No email capture. The code is public.
-        </p>
-      </section>
+      <div class="outro-wrap">
+        <div class="hero-floor" aria-hidden="true"></div>
+        <section class="section outro" id="cta">
+          <h2 class="reveal">Put reins on it.</h2>
+          <div class="install install-lg reveal d1">
+            <code class="install-cmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
+            <button class="copy-btn" type="button" data-copy="npm install @reinconsole/sdk" aria-label="Copy install command">copy</button>
+          </div>
+          <div class="hero-actions center reveal d2">
+            <a class="btn btn-primary" href="get-started.html">
+              Get started <span class="btn-arrow">→</span>
+            </a>
+            <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
+            <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
+          </div>
+          <p class="outro-fine reveal d3">
+            v0.5 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
+            No waitlist. No email capture. The code is public.
+          </p>
+        </section>
+      </div>
     </main>
 
     <footer class="footer">
