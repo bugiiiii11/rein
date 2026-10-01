@@ -1,0 +1,11 @@
+Fonts in this directory are self-hosted copies of Google Fonts files (latin and
+latin-ext subsets, woff2), served from our own domain so no visitor's browser
+contacts Google.
+
+- Archivo -- Copyright 2020 The Archivo Project Authors
+  (https://github.com/Omnibus-Type/Archivo)
+- IBM Plex Mono -- Copyright 2017 IBM Corp.
+  (https://github.com/IBM/plex)
+
+Both are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org/open-font-license-official-text/
