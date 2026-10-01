@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>Privacy Policy — Rein</title>
+    <meta name="description" content="What Rein's hosted services collect, why, where it goes, how long it is kept, and your rights." />
+    <!-- DRAFT pending legal review: keep out of search and the sitemap until counsel signs off. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="canonical" href="https://www.reinconsole.com/privacy" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <article class="qa">
+        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Legal</nav>
+        <h1>Privacy Policy</h1>
+        <div class="qa-answer">
+          <span class="proof-label">DRAFT</span>
+          This is a draft pending legal review. It is not yet in effect. Last updated: 1 October 2026.
+        </div>
+
+        <h2>Who we are</h2>
+        <p>
+          Rein's hosted services are operated by <b>M.D.N Tech FZE</b>, Al Shmookh Business Center, One UAQ, UAQ Free
+          Trade Zone, Umm Al Quwain, United Arab Emirates, licence no. 7813 ("we", "us"). We are the controller of the
+          personal data described here. Contact: <b>[privacy contact email]</b>.
+        </p>
+
+        <h2>What this policy covers</h2>
+        <p>
+          The hosted services: the policy engine at <code class="inline-code">engine.reinconsole.com</code>, the console at
+          <code class="inline-code">app.reinconsole.com</code>, the reference vendor at
+          <code class="inline-code">vendor.reinconsole.com</code> and this website. It does not cover the open-source
+          <code class="inline-code">@reinconsole/*</code> packages when you run them yourself: a self-hosted engine
+          sends us nothing, and none of the packages contains analytics or telemetry.
+        </p>
+
+        <h2>Rein never holds your funds or your wallet key</h2>
+        <p>
+          Rein decides whether an agent may pay; it does not move money. Wallets created by
+          <code class="inline-code">npx @reinconsole/init</code> are generated on your machine, and their private keys
+          never reach us. We never ask for a private key or a seed phrase. Your owner file
+          (<code class="inline-code">~/.rein/owner-*.json</code>) also stays on your machine.
+        </p>
+
+        <h2>What we collect, and why</h2>
+        <p><b>When you create a sandbox</b> (<code class="inline-code">npx @reinconsole/init</code>):</p>
+        <ul>
+          <li>Your agent's <b>wallet address</b>, stored with the agent, so we can send it test USDC and record payments.</li>
+          <li>An org, an agent, a starter policy and an API key. We store only a cryptographic digest of each key, never the key itself, plus when it was created, last used and when it expires.</li>
+          <li>Your <b>IP address</b>, used only in memory to limit how many sandboxes one address can create per day. We do not write it to our database.</li>
+        </ul>
+        <p><b>When you sign in to the console and claim an org:</b></p>
+        <ul>
+          <li>With GitHub: your numeric <b>GitHub user id</b> and your <b>GitHub username</b>. We request no GitHub permissions beyond your public profile, and we do not keep the GitHub access token.</li>
+          <li>With an Ethereum wallet: your <b>wallet address</b> and a signed sign-in message. The signature moves no funds.</li>
+          <li>Claiming binds your org to that identity. We store it as <code class="inline-code">github:&lt;id&gt;</code> or <code class="inline-code">eth:&lt;address&gt;</code> in the name of the org's owner key. Your username is kept only in your session cookie, not in our database.</li>
+        </ul>
+        <p><b>When your agent uses the engine</b> (this is the service itself):</p>
+        <ul>
+          <li>Each payment decision: the outcome, the reason, the rules that matched, a hash of the payment request, and a timestamp and signature.</li>
+          <li>Spending records: the vendor's host, the resource, the amount and time, used to enforce your budgets.</li>
+          <li>Escalations (payments your policy parks for a person): the vendor, resource, amount, asset, chain and reason, and the approver's signed answer.</li>
+          <li>Settlements your agent reports: the transaction hash, chain and amount.</li>
+        </ul>
+        <p>
+          <b>When an agent pays the reference vendor:</b> the paying wallet address, the resource, the amount and the
+          transaction hash, so the vendor can prove what it was paid for.
+        </p>
+        <p>
+          <b>This website</b> sets no cookies, has no forms and runs no analytics. It reads one public status figure from
+          the console.
+        </p>
+
+        <h2>Cookies</h2>
+        <p>The console sets two cookies, both needed to keep you signed in. Neither is used for tracking or advertising.</p>
+        <ul>
+          <li><code class="inline-code">rein_session</code>: your sign-in identity and display name, signed so it cannot be altered. It lasts 7 days, or until you sign out.</li>
+          <li><code class="inline-code">rein_oauth</code>: a one-time value that protects the GitHub sign-in. It lasts 10 minutes.</li>
+        </ul>
+
+        <h2>Legal basis</h2>
+        <p>
+          We process this data to provide the service you asked for (performance of a contract), to keep it secure and
+          stop abuse such as the per-address sandbox limit (legitimate interests), and to keep an accurate audit record
+          of payment decisions (legitimate interests, and any legal obligation that applies). [Counsel: confirm the
+          bases under the UAE PDPL and, for users in the EU/UK, the GDPR.]
+        </p>
+
+        <h2>Who else receives data</h2>
+        <p>We share data only with the providers that run the service, and we do not sell it.</p>
+        <ul>
+          <li><b>Railway</b>: hosts the engine, console and vendor, and receives their logs. Engine logs include the details of each escalation.</li>
+          <li><b>Supabase</b>: hosts the engine's database, in the EU (West).</li>
+          <li><b>Vercel</b>: hosts this website.</li>
+          <li><b>GitHub</b>: provides GitHub sign-in, and stores our nightly full database backups in a private repository. Backups run on GitHub Actions.</li>
+          <li><b>Telegram</b>: delivers escalation and alert notifications to the Rein operator. A message can include an escalation's agent id, amount, vendor and reason.</li>
+          <li><b>Google Fonts</b>: this website and the console load fonts from Google, which receives your IP address when your browser fetches them.</li>
+          <li><b>Payment facilitators</b> (x402.org on testnet; PayAI or Coinbase on mainnet): receive the signed payment when an agent pays the reference vendor, in order to settle it.</li>
+          <li><b>Blockchain RPC providers</b> (Base): receive wallet addresses when we send test USDC or read the chain.</li>
+        </ul>
+        <p>
+          Some of these providers are outside your country, including in the United States. [Counsel: transfer
+          mechanism wording.]
+        </p>
+
+        <h2>Public blockchains</h2>
+        <p>
+          Payments, test USDC transfers and wallet addresses on Base are public and permanent. Anyone can read them, and
+          neither we nor anyone else can delete them.
+        </p>
+
+        <h2>How long we keep data</h2>
+        <ul>
+          <li><b>Decision log</b>: kept indefinitely. Each decision is hash-linked to the one before, so removing one would break the verifiable record for everyone. This is how Rein proves what was and was not allowed.</li>
+          <li><b>Spending records, settlements and API key records</b>: kept indefinitely, as part of the same record.</li>
+          <li><b>Resolved escalations</b>: pruned after they are no longer needed for enforcement.</li>
+          <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. The records stay in the decision log.</li>
+          <li><b>IP addresses</b>: held in memory only, and discarded when the limit resets or the service restarts.</li>
+          <li><b>Sign-in cookies</b>: 7 days at most.</li>
+          <li><b>Backups</b>: [retention period].</li>
+        </ul>
+
+        <h2>Your rights</h2>
+        <p>
+          Depending on where you live, you can ask to access, correct or delete your personal data, to object to or
+          restrict its processing, and to receive a copy. Write to <b>[privacy contact email]</b>. We can unlink your
+          sign-in identity from your org. We cannot remove entries from the hash-linked decision log or from a public
+          blockchain, for the reasons above. You can also complain to your data protection authority.
+        </p>
+
+        <h2>Security</h2>
+        <p>
+          API keys are stored only as digests. Sessions are signed. The decision log is signed and hash-linked, so tampering
+          is detectable. See <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>
+          for how to report a vulnerability.
+        </p>
+
+        <h2>Children</h2>
+        <p>The services are not intended for anyone under 18.</p>
+
+        <h2>Changes</h2>
+        <p>
+          We will post changes on this page and update the date above. If a change materially affects how we use your
+          data, we will say so on this website before it takes effect.
+        </p>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>
