@@ -155,6 +155,14 @@ export {
   type SandboxCreated,
 } from './sandbox.js';
 export {
+  reapExpired,
+  DEFAULT_REAP_INTERVAL_MS,
+  DEFAULT_SANDBOX_GRACE_MS,
+  DEFAULT_SESSION_KEY_GRACE_MS,
+  type ReapOptions,
+  type ReapResult,
+} from './reaper.js';
+export {
   ClaimService,
   ClaimError,
   Identity,

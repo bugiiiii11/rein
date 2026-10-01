@@ -147,6 +147,7 @@ describe('ApiKeyAuth', () => {
       get: (id: string) => inner.get(id),
       byHash: (h: string) => inner.byHash(h),
       list: () => inner.list(),
+      delete: (id: string) => inner.delete(id),
     };
     const auth = new ApiKeyAuth({ store, now: () => 5_000 });
     const { key, secret } = await auth.issue({ name: 'sandbox', scopes: ['admin'], expiresAt: new Date(9_000) });

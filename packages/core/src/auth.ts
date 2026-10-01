@@ -73,6 +73,8 @@ export interface ApiKeyStorePort {
   /** Lookup by sha256 of a presented secret (current OR in-grace previous). */
   byHash(hash: string): ApiKeyRecord | undefined;
   list(): ApiKeyRecord[];
+  /** Drop a key outright. Only ever an EXPIRED one -- see `ApiKeyAuth.remove`. */
+  delete(id: string): MaybePromise<void>;
 }
 
 export class InMemoryApiKeyStore implements ApiKeyStorePort {
@@ -101,6 +103,14 @@ export class InMemoryApiKeyStore implements ApiKeyStorePort {
 
   list(): ApiKeyRecord[] {
     return [...this.byId.values()];
+  }
+
+  delete(id: string): void {
+    const existing = this.byId.get(id);
+    if (!existing) return;
+    this.hashes.delete(existing.secretHash);
+    if (existing.previousSecretHash) this.hashes.delete(existing.previousSecretHash);
+    this.byId.delete(id);
   }
 }
 
@@ -276,6 +286,32 @@ export class ApiKeyAuth {
     delete lifted.expiresAt;
     await this.write(lifted);
     return toPublicApiKey(lifted);
+  }
+
+  /**
+   * Delete an EXPIRED key's row. Refused for anything else, because a deleted
+   * row forgets more than a key: an env-seeded secret would be re-issued at
+   * the next boot, resurrecting a revocation. Expiring keys are never
+   * env-seeded (sandbox and owner-session keys only), and an expired secret
+   * already authenticates nothing, so dropping one changes no answer but the
+   * error code -- `invalid_key` instead of `key_expired`.
+   *
+   * No `touch` can overtake this: `authenticate` throws on an expired key
+   * before it touches, so nothing writes the snapshot back afterwards.
+   */
+  async remove(keyId: string): Promise<boolean> {
+    const record = this.store.get(keyId);
+    if (!record) return false;
+    if (record.expiresAt === undefined || this.now() < record.expiresAt.getTime()) {
+      throw new TypeError(`refusing to delete key ${keyId}: only an expired key may be deleted`);
+    }
+    this.mutating.add(keyId);
+    try {
+      await this.store.delete(keyId);
+    } finally {
+      this.mutating.delete(keyId);
+    }
+    return true;
   }
 
   list(): ApiKey[] {

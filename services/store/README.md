@@ -72,6 +72,15 @@ Data directories: `REIN_DATA_DIR` / `REIN_GRAPH_DATA_DIR`. Directories this pack
 
 **Never pruned, at any age:** `decisions`, `spend_records`, `settlements`, `breaker_resets`, `agent_liveness`, `api_keys`. These are not history, they are the state the engine reasons from -- a pruned decision breaks the hash chain, a pruned spend record refills a budget, a pruned reset re-trips a breaker somebody already answered for, and a pruned key resurrects a revocation.
 
+**The one exception: the engine's sandbox reaper** (`services/policy-engine/src/reaper.ts`, every 30 minutes wherever claims or the sandbox are on). It deletes only rows that can no longer authorize anything:
+
+| Rows | Deleted | Why it is safe |
+|------|---------|----------------|
+| `api_keys` named `session:*` | 1 d after they expire | A console sign-in's 12 h read key; an expired secret authenticates nothing. |
+| A dead sandbox org's `policies`, `agents` (+ `frozen_agents`, `agent_liveness`), then `api_keys` | 30 d after the LAST of its keys expired | The org holds a `sandbox` key, no `owner:` key, and every key has lapsed -- nobody can reach it again. A claimed org, or any org without a `sandbox` key, never matches. |
+
+`ApiKeyAuth.remove` refuses any key that has not expired, which is what keeps "a pruned key resurrects a revocation" true: expiring keys are never env-seeded, so nothing re-issues them. The reaped org's `decisions`, `spend_records` and `settlements` stay -- the chain cannot lose a row -- and read as unattributed, i.e. operator-only.
+
 ## Single node, by construction
 
 One engine per data directory. PGlite admits a single writer, so this is not a tuning choice:

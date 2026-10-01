@@ -721,6 +721,40 @@ describe('durable API keys', () => {
 });
 
 /**
+ * The sandbox reaper's deletes (policy-engine reaper.ts) are the only ones in
+ * the authority tables, so a delete that reached memory and not disk would
+ * bring a reaped org straight back on the next deploy.
+ */
+describe('durable deletes (the sandbox reaper)', () => {
+  it('keeps a reaped key, agent and policy gone across a restart, and only those', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const engine = new PolicyEngine(first);
+    const orgId = newId('org');
+    const gone = await engine.registerAgent({ id: newId('agt'), orgId, name: 'gone', createdAt: new Date() });
+    const kept = await engine.registerAgent({ id: newId('agt'), orgId, name: 'kept', createdAt: new Date() });
+    await engine.freeze(gone.id);
+    await engine.addPolicy({ policyId: 'pol_gone', orgId, rules: [], default: 'allow' });
+    await engine.addPolicy({ policyId: 'pol_kept', orgId, rules: [], default: 'allow' });
+    let now = Date.now();
+    const auth = new ApiKeyAuth({ store: first.apiKeys, now: () => now });
+    const expiring = await auth.issue({ name: 'sandbox', scopes: ['read'], orgId, expiresAt: new Date(now + 1000) });
+    const permanent = await auth.issue({ name: 'op', scopes: ['read'] });
+    now += 1000;
+    await engine.agents.remove(gone.id);
+    await engine.policies.remove('pol_gone');
+    await auth.remove(expiring.key.id);
+    await first.close();
+
+    const resumed = await open(dir);
+    expect(resumed.agents.list().map((a) => a.id)).toEqual([kept.id]);
+    expect(resumed.agents.isFrozen(gone.id)).toBe(false);
+    expect(resumed.policies.list().map((p) => p.policyId)).toEqual(['pol_kept']);
+    expect(new ApiKeyAuth({ store: resumed.apiKeys }).list().map((k) => k.id)).toEqual([permanent.key.id]);
+  });
+});
+
+/**
  * Sprint 2's durable half: org attribution is a SIDECAR column, because a
  * `Decision` has no agentId and its canonical form hashes a fixed field set.
  * If the column did not resume, every decision on disk would read as

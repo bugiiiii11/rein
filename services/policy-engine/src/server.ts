@@ -47,6 +47,7 @@ import {
   type SandboxOptions,
 } from './sandbox.js';
 import { ClaimError, ClaimService, reservedKeyName, type ClaimOptions } from './claims.js';
+import { DEFAULT_REAP_INTERVAL_MS, reapExpired } from './reaper.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
@@ -145,6 +146,12 @@ export interface ServerOptions {
    * sandbox to claim-enable an engine that mints its orgs some other way.
    */
   claims?: ClaimOptions;
+  /**
+   * How often to delete expired owner-session keys and dead sandbox orgs
+   * (reaper.ts), in ms; 0 = never. Runs only where claims or the sandbox are
+   * on -- nothing else mints the rows it removes. Default 30 minutes.
+   */
+  reapIntervalMs?: number;
 }
 
 /**
@@ -347,6 +354,26 @@ export function buildServer(
     auth && (options.sandbox || options.claims)
       ? new ClaimService(auth, { ...(options.sandbox?.now ? { now: options.sandbox.now } : {}), ...options.claims })
       : undefined;
+  const reapIntervalMs = options.reapIntervalMs ?? DEFAULT_REAP_INTERVAL_MS;
+  if (claims && auth && reapIntervalMs > 0) {
+    const reap = () =>
+      reapExpired(engine, auth, {
+        sandboxes: sandbox !== undefined,
+        ...(options.sandbox?.now ? { now: options.sandbox.now } : {}),
+      }).then(
+        (r) => {
+          if (r.sessionKeys + r.orgs === 0) return;
+          console.log(
+            `[rein] reaped ${r.sessionKeys} expired session key(s) and ${r.orgs} dead sandbox org(s) ` +
+              `(${r.agents} agents, ${r.policies} policies, ${r.keys} keys)`,
+          );
+        },
+        (err: unknown) => console.error(`[rein] reap failed: ${messageOf(err)}`),
+      );
+    const timer = setInterval(() => void reap(), reapIntervalMs);
+    timer.unref?.();
+    app.addHook('onClose', async () => clearInterval(timer));
+  }
 
   // Fastify's own view of what got registered, captured as it happens. It is
   // what `tenant.test.ts` walks to prove `TENANT_ROUTES` still mirrors the

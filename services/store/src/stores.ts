@@ -89,6 +89,12 @@ export class PgAgentRegistry implements AgentRegistryPort {
   isFrozen(id: string): boolean {
     return this.mem.isFrozen(id);
   }
+
+  async remove(id: string): Promise<void> {
+    await this.db.query('DELETE FROM frozen_agents WHERE id = $1', [id]);
+    await this.db.query('DELETE FROM agents WHERE id = $1', [id]);
+    this.mem.remove(id);
+  }
 }
 
 export class PgPolicyStore implements PolicyStorePort {
@@ -121,6 +127,11 @@ export class PgPolicyStore implements PolicyStorePort {
 
   get(policyId: string): Policy | undefined {
     return this.mem.get(policyId);
+  }
+
+  async remove(policyId: string): Promise<void> {
+    await this.db.query('DELETE FROM policies WHERE policy_id = $1', [policyId]);
+    this.mem.remove(policyId);
   }
 }
 
@@ -546,6 +557,14 @@ export class PgApiKeyStore implements ApiKeyStorePort {
         [record.id, JSON.stringify(record)],
       );
       this.mem.put(record);
+    });
+  }
+
+  /** On the tail too, so a delete cannot be overtaken by an earlier queued put. */
+  delete(id: string): Promise<void> {
+    return this.tail.enqueue(async () => {
+      await this.db.query('DELETE FROM api_keys WHERE id = $1', [id]);
+      this.mem.delete(id);
     });
   }
 

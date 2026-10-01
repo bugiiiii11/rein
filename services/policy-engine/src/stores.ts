@@ -104,6 +104,8 @@ export interface PolicyStorePort {
   add(policy: Policy): MaybePromise<void>;
   list(): Policy[];
   get(policyId: string): Policy | undefined;
+  /** Drop a policy. Only the sandbox reaper calls this (reaper.ts). */
+  remove(policyId: string): MaybePromise<void>;
 }
 
 export interface AgentRegistryPort {
@@ -113,6 +115,8 @@ export interface AgentRegistryPort {
   freeze(id: string): MaybePromise<void>;
   unfreeze(id: string): MaybePromise<void>;
   isFrozen(id: string): boolean;
+  /** Drop an agent and its freeze. Only the sandbox reaper calls this (reaper.ts). */
+  remove(id: string): MaybePromise<void>;
 }
 
 const WINDOW_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -228,6 +232,10 @@ export class InMemoryPolicyStore implements PolicyStorePort {
     return this.policies.find((p) => p.policyId === policyId);
   }
 
+  remove(policyId: string): void {
+    this.policies = this.policies.filter((p) => p.policyId !== policyId);
+  }
+
   applicableFor(
     intent: Parameters<typeof policyApplies>[1],
     agent?: Parameters<typeof policyApplies>[2],
@@ -263,5 +271,10 @@ export class InMemoryAgentRegistry implements AgentRegistryPort {
 
   isFrozen(id: string): boolean {
     return this.frozen.has(id);
+  }
+
+  remove(id: string): void {
+    this.agents.delete(id);
+    this.frozen.delete(id);
   }
 }
