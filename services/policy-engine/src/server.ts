@@ -34,7 +34,7 @@ import {
   DEFAULT_ESCALATION_TTL_MS,
   type ApprovalChannel,
 } from './approvals.js';
-import { LoggingChannel, TelegramChannel } from './channels.js';
+import { LoggingChannel, OrgScopedChannel, TelegramChannel, type NotifyChannel } from './channels.js';
 import { TenantError, ownsOrg, scopeOf, type TenantScope } from './tenant.js';
 import { buildRateLimiters, rateLimitFromEnv, type RateLimitOptions } from './rate-limit.js';
 import type { ApprovalStorePort } from './approvals.js';
@@ -955,8 +955,11 @@ export async function authFromEnv(
  * misconfiguration, and dropping the channel silently would leave an operator
  * who set a token believing a human is paged when nobody is.
  */
-export function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & AlertChannel)[] {
-  const channels: (ApprovalChannel & AlertChannel)[] = [new LoggingChannel()];
+export function channelsFromEnv(
+  env: NodeJS.ProcessEnv,
+  options: { orgOfAgent?: (agentId: string) => string | undefined } = {},
+): (ApprovalChannel & AlertChannel)[] {
+  const channels: (ApprovalChannel & AlertChannel & NotifyChannel)[] = [new LoggingChannel()];
   const botToken = env['REIN_TELEGRAM_BOT_TOKEN']?.trim();
   const chatId = env['REIN_TELEGRAM_CHAT_ID']?.trim();
   if (Boolean(botToken) !== Boolean(chatId)) {
@@ -966,7 +969,25 @@ export function channelsFromEnv(env: NodeJS.ProcessEnv): (ApprovalChannel & Aler
     );
   }
   if (botToken && chatId) channels.push(new TelegramChannel({ botToken, chatId }));
-  return channels;
+  // REIN_NOTIFY_ORGS (S89): on a shared engine, only these orgs' escalations
+  // and alarms reach the operator's channels in full. The log keeps an id-only
+  // line for the rest, so an operator can still see that the tier is working;
+  // Telegram carries nothing for them. Unset = every org (a self-hoster's
+  // engine is all theirs).
+  const orgs = (env['REIN_NOTIFY_ORGS'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (orgs.length === 0) return channels;
+  const { orgOfAgent } = options;
+  return channels.map(
+    (channel) =>
+      new OrgScopedChannel(channel, {
+        orgs,
+        ...(orgOfAgent ? { orgOfAgent } : {}),
+        ...(channel instanceof LoggingChannel ? { withheld: (what: string) => `${what} (details withheld)` } : {}),
+      }),
+  );
 }
 
 /**
@@ -989,11 +1010,11 @@ function messageOf(err: unknown): string {
 
 export function livenessFromEnv(
   env: NodeJS.ProcessEnv,
-  options: { store?: LivenessStorePort } = {},
+  options: { store?: LivenessStorePort; orgOfAgent?: (agentId: string) => string | undefined } = {},
 ): LivenessMonitor {
   return new LivenessMonitor({
     ...(options.store ? { store: options.store } : {}),
-    channels: channelsFromEnv(env),
+    channels: channelsFromEnv(env, options),
     // Message only, never the error object: a channel's transport failure can
     // quote the request it made, and for Telegram the request IS the token.
     onAlertError: (channel, error) =>
@@ -1006,9 +1027,9 @@ export function livenessFromEnv(
 /** The approval tier the standalone server runs with. */
 export function approvalsFromEnv(
   env: NodeJS.ProcessEnv,
-  options: { store?: ApprovalStorePort } = {},
+  options: { store?: ApprovalStorePort; orgOfAgent?: (agentId: string) => string | undefined } = {},
 ): ApprovalService {
-  const channels: ApprovalChannel[] = channelsFromEnv(env);
+  const channels: ApprovalChannel[] = channelsFromEnv(env, options);
   const ttl = Number(env['REIN_ESCALATION_TTL_MS'] ?? DEFAULT_ESCALATION_TTL_MS);
   return new ApprovalService({
     ...(options.store ? { store: options.store } : {}),

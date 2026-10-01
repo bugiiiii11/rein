@@ -118,12 +118,14 @@ export {
   // Pre-B2 names, kept as aliases of the same classes.
   LoggingApprovalChannel,
   TelegramApprovalChannel,
+  OrgScopedChannel,
   formatChallenge,
   formatAlert,
   formatSilence,
   type NotifyChannel,
   type LoggingChannelOptions,
   type TelegramChannelOptions,
+  type OrgScopedChannelOptions,
 } from './channels.js';
 export {
   TenantError,

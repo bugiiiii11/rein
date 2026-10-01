@@ -53,7 +53,10 @@ const signature = signApproval(privateKey, { decisionId, intentHash, verdict: 'a
 
 Environment for the standalone server: `REIN_ESCALATION_TTL_MS`,
 `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` (both or neither -- one without the
-other is a startup error). The durable `rein-engine` bin reads the same three.
+other is a startup error). The durable `rein-engine` bin reads the same three, plus
+`REIN_NOTIFY_ORGS`: on a shared engine, the comma-separated orgs whose escalations and alarms
+the operator's channels carry in full. Other orgs get an id-only log line and no Telegram message;
+unset means every org.
 
 ## What it does
 

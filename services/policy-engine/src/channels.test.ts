@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { LoggingChannel, TelegramChannel } from './channels.js';
+import type { ApprovalRequest } from '@reinconsole/core';
+import { LoggingChannel, OrgScopedChannel, TelegramChannel } from './channels.js';
+import type { LivenessAlert } from './liveness.js';
 import { channelsFromEnv } from './server.js';
 
 describe('channelsFromEnv', () => {
@@ -20,6 +22,87 @@ describe('channelsFromEnv', () => {
     );
     // Whitespace is not a value.
     expect(() => channelsFromEnv({ REIN_TELEGRAM_BOT_TOKEN: 't', REIN_TELEGRAM_CHAT_ID: '  ' })).toThrow();
+  });
+});
+
+describe('OrgScopedChannel (REIN_NOTIFY_ORGS)', () => {
+  const OURS = 'org_01OURS0000000000000000000';
+  const THEIRS = 'org_01THEIRS00000000000000000';
+  const agents: Record<string, string> = { agt_ours: OURS, agt_theirs: THEIRS };
+  const orgOfAgent = (id: string) => agents[id];
+  const challenges = { approve: 'APPROVE-BYTES', reject: 'REJECT-BYTES' };
+  const request = (over: Partial<ApprovalRequest>): ApprovalRequest => ({
+    decisionId: 'dec_1',
+    intentId: 'int_1',
+    intentHash: 'h',
+    agentId: 'agt_theirs',
+    orgId: THEIRS,
+    vendorHost: 'secret-vendor.example',
+    resource: '/private/thing',
+    amount: '12.50',
+    asset: 'USDC',
+    chain: 'base',
+    reason: 'over the per-call cap',
+    breakers: [],
+    status: 'pending',
+    createdAt: new Date(0),
+    expiresAt: new Date(60_000),
+    ...over,
+  });
+  const alert = (agentId: string): LivenessAlert => ({
+    agentId,
+    expectation: { interval: '15m', intervalMs: 900_000, graceMs: 0, note: 'tenant poller' },
+    silentMs: 3_600_000,
+    at: 0,
+  } as LivenessAlert);
+  const logged = () => {
+    const lines: string[] = [];
+    return { lines, channel: new LoggingChannel({ write: (m) => lines.push(m) }) };
+  };
+
+  it("delivers the operator's own orgs in full, and another org's only as ids", () => {
+    const { lines, channel } = logged();
+    const scoped = new OrgScopedChannel(channel, { orgs: [OURS], orgOfAgent, withheld: (w) => `${w} (withheld)` });
+    scoped.deliver(request({ agentId: 'agt_ours', orgId: OURS }), challenges);
+    expect(lines[0]).toContain('secret-vendor.example');
+    scoped.deliver(request({}), challenges);
+    expect(lines[1]).toBe(`[rein] escalation dec_1 parked for org ${THEIRS} (withheld)`);
+    for (const leak of ['secret-vendor.example', '/private/thing', '12.50', 'over the per-call cap', 'APPROVE-BYTES']) {
+      expect(lines[1]).not.toContain(leak);
+    }
+  });
+
+  it('sends nothing at all for another org when no withheld line is given (Telegram)', () => {
+    const { lines, channel } = logged();
+    const scoped = new OrgScopedChannel(channel, { orgs: [OURS], orgOfAgent });
+    scoped.deliver(request({}), challenges);
+    scoped.alert(alert('agt_theirs'));
+    expect(lines).toEqual([]);
+  });
+
+  it("finds an alarm's org through the agent, since an alarm names only the agent", () => {
+    const { lines, channel } = logged();
+    const scoped = new OrgScopedChannel(channel, { orgs: [OURS], orgOfAgent });
+    scoped.alert(alert('agt_ours'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('tenant poller');
+  });
+
+  it('delivers unattributed news -- only an unscoped operator can have produced it (S56)', () => {
+    const { lines, channel } = logged();
+    const scoped = new OrgScopedChannel(channel, { orgs: [OURS], orgOfAgent });
+    const { orgId: _none, ...unattributed } = request({ agentId: 'agt_unregistered' });
+    scoped.deliver(unattributed as ApprovalRequest, challenges);
+    scoped.alert(alert('agt_unregistered'));
+    expect(lines).toHaveLength(2);
+  });
+
+  it('channelsFromEnv narrows both channels only when REIN_NOTIFY_ORGS is set', () => {
+    const env = { REIN_TELEGRAM_BOT_TOKEN: 't', REIN_TELEGRAM_CHAT_ID: '42' };
+    expect(channelsFromEnv(env).every((c) => !(c instanceof OrgScopedChannel))).toBe(true);
+    const scoped = channelsFromEnv({ ...env, REIN_NOTIFY_ORGS: ` ${OURS} , ` }, { orgOfAgent });
+    expect(scoped.map((c) => c.name)).toEqual(['log', 'telegram']);
+    expect(scoped.every((c) => c instanceof OrgScopedChannel)).toBe(true);
   });
 });
 

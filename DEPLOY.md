@@ -816,6 +816,7 @@ Environment:
 | `REIN_ENGINE_API_KEY` | bootstrap admin key; mint narrower keys via `/v1/keys` and stop using it |
 | `REIN_ENGINE_SIGNING_KEY` | a FRESH `openssl genpkey -algorithm ed25519` PEM |
 | `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
+| `REIN_NOTIFY_ORGS` | the operator's own org id(s), comma-separated. Only their escalations and alarms reach Telegram and the log in full; every other org gets an id-only log line and no Telegram message. Unset = every org, which on a shared engine sends tenants' payment details to the operator |
 | `REIN_ESCALATION_TTL_MS` | `3600000` |
 | `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it, and forgeable if you write anything else. Not a hop count: see "Rate limiting" above |
 | `RAILWAY_RUN_UID` | `0` -- start as root so the boot script can chown the volume, then drop. See the bullet above; without it the drop no-ops |

@@ -261,8 +261,11 @@ if (isMainModule()) {
     // never noticed -- the two things a restart must not forget. Same env as
     // the in-memory engine: REIN_ESCALATION_TTL_MS, REIN_TELEGRAM_BOT_TOKEN +
     // REIN_TELEGRAM_CHAT_ID (both or neither -- half is a startup error).
-    const approvals = approvalsFromEnv(process.env, { store: store.approvalStore });
-    const liveness = livenessFromEnv(process.env, { store: store.livenessStore });
+    // REIN_NOTIFY_ORGS narrows those channels to the operator's own orgs; the
+    // agent registry is how an alarm, which names only an agent, finds its org.
+    const orgOfAgent = (agentId: string) => store.agents.get(agentId)?.orgId;
+    const approvals = approvalsFromEnv(process.env, { store: store.approvalStore, orgOfAgent });
+    const liveness = livenessFromEnv(process.env, { store: store.livenessStore, orgOfAgent });
     // A bin is reachable by strangers and stays up for weeks, so it gets both
     // things an embedded engine has no use for: a rate limiter, and a
     // maintenance sweep that is not just the one at open.

@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Added
+
+- `REIN_NOTIFY_ORGS` on `@reinconsole/policy-engine` and the `rein-engine` bin, and `OrgScopedChannel`: on a shared engine, only the listed orgs' escalations and dead-man alarms reach the operator's Telegram chat and log in full. Every other org gets an id-only log line and no Telegram message. Unset keeps the old behaviour: every org.
+
 ## [0.5.0] - 2026-10-01
 
 Owners can claim a sandbox and take its agent to Base mainnet. No breaking changes from `0.4.0`.

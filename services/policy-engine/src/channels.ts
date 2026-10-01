@@ -132,6 +132,61 @@ export class LoggingChannel implements ApprovalChannel, AlertChannel, NotifyChan
   }
 }
 
+export interface OrgScopedChannelOptions {
+  /** The orgs whose news this channel may carry in full. */
+  orgs: Iterable<string>;
+  /** The org an agent belongs to; alerts name only the agent. */
+  orgOfAgent?: (agentId: string) => string | undefined;
+  /**
+   * What to send instead for any other org -- a line with ids and no
+   * payment details. Omit it and the news is simply not sent.
+   */
+  withheld?: (what: string) => string;
+}
+
+/**
+ * A channel narrowed to the operator's own orgs (S89). On a shared engine the
+ * channels are the OPERATOR's -- one Telegram chat, one log -- and a tenant's
+ * escalation (amount, vendor, reason) is that tenant's business, not news for
+ * whoever runs the engine.
+ *
+ * Unattributed news -- no `orgId` on the request, an agent whose org is
+ * unknown -- is delivered: under the S56 rule only an unscoped operator could
+ * have produced it, so it is the operator's.
+ */
+export class OrgScopedChannel implements ApprovalChannel, AlertChannel {
+  readonly name: string;
+  private readonly orgs: ReadonlySet<string>;
+
+  constructor(
+    private readonly inner: ApprovalChannel & AlertChannel & NotifyChannel,
+    private readonly options: OrgScopedChannelOptions,
+  ) {
+    this.name = inner.name;
+    this.orgs = new Set(options.orgs);
+  }
+
+  deliver(request: ApprovalRequest, challenges: ApprovalChallenges): Promise<void> | void {
+    const org = request.orgId ?? this.options.orgOfAgent?.(request.agentId);
+    if (this.carries(org)) return this.inner.deliver(request, challenges);
+    return this.withhold(`escalation ${request.decisionId} parked for org ${org}`);
+  }
+
+  alert(alert: LivenessAlert): Promise<void> | void {
+    const org = this.options.orgOfAgent?.(alert.agentId);
+    if (this.carries(org)) return this.inner.alert(alert);
+    return this.withhold(`agent ${alert.agentId} of org ${org} has gone quiet`);
+  }
+
+  private carries(org: string | undefined): boolean {
+    return org === undefined || this.orgs.has(org);
+  }
+
+  private withhold(what: string): Promise<void> | void {
+    if (this.options.withheld) return this.inner.send(this.options.withheld(what));
+  }
+}
+
 export interface TelegramChannelOptions {
   botToken: string;
   chatId: string | number;

@@ -120,11 +120,11 @@
         <h2>Who else receives data</h2>
         <p>We share data only with the providers that run the service, and we do not sell it.</p>
         <ul>
-          <li><b>Railway</b>: hosts the engine, console and vendor, and receives their logs. Engine logs include the details of each escalation.</li>
+          <li><b>Railway</b>: hosts the engine, console and vendor, and receives their logs. For your org, engine logs record only the ids of an escalation, not its details.</li>
           <li><b>Supabase</b>: hosts the engine's database, in the EU (West).</li>
           <li><b>Vercel</b>: hosts this website.</li>
           <li><b>GitHub</b>: provides GitHub sign-in, and stores our nightly full database backups in a private repository. Backups run on GitHub Actions.</li>
-          <li><b>Telegram</b>: delivers escalation and alert notifications to the Rein operator. A message can include an escalation's agent id, amount, vendor and reason.</li>
+          <li><b>Telegram</b>: delivers escalation and alert notifications for Rein's own orgs to the Rein operator. Nothing about your org is sent to Telegram.</li>
           <li><b>Google Fonts</b>: this website and the console load fonts from Google, which receives your IP address when your browser fetches them.</li>
           <li><b>Payment facilitators</b> (x402.org on testnet; PayAI or Coinbase on mainnet): receive the signed payment when an agent pays the reference vendor, in order to settle it.</li>
           <li><b>Blockchain RPC providers</b> (Base): receive wallet addresses when we send test USDC or read the chain.</li>
