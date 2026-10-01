@@ -1,6 +1,6 @@
 /* Zero-dependency static server for local preview: `node serve.mjs` */
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,8 +26,10 @@ createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     let path = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '');
     if (path === '' || path === '.') path = 'index.html';
-    const file = join(root, path);
+    let file = join(root, path);
     if (!file.startsWith(root)) throw new Error('outside root');
+    // Vercel serves this directory with cleanUrls: /get-started is get-started.html.
+    if (!extname(file)) await access(file).catch(() => { file += '.html'; });
     const body = await readFile(file);
     res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
     res.end(body);

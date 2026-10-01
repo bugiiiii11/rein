@@ -13,9 +13,11 @@
     <link rel="canonical" href="https://www.reinconsole.com/privacy" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="/fonts/fonts.css" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="landing.css" />
   </head>
   <body>
+    <div class="sky" aria-hidden="true"></div>
+
     <header class="nav">
       <a class="brand" href="/" aria-label="Rein — home">
         <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -28,21 +30,35 @@
       </a>
       <nav class="nav-links">
         <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#proof">Proof</a>
         <a href="/#trust">Trust</a>
         <a href="get-started">Get started</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
         <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
       </nav>
       <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
     </header>
 
     <main>
+      <div class="page-wrap">
+        <header class="page-hero">
+          <nav class="eyebrow qa-crumbs reveal" aria-label="Breadcrumb"><span class="idx">§</span><span class="tick"></span><a href="/">Rein</a><span class="sep">/</span>Legal</nav>
+          <h1 class="reveal d1">Privacy Policy</h1>
+          <div class="page-stage">
+            <div class="hero-floor" aria-hidden="true"></div>
+            <div class="hero-haze" aria-hidden="true"></div>
+            <div class="panel answer-panel is-draft reveal d2">
+              <div class="panel-scan" aria-hidden="true"></div>
+              <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
+              <p class="answer-body">
+            This is a draft pending legal review. It is not yet in effect. Last updated: 1 October 2026.
+              </p>
+            </div>
+          </div>
+        </header>
+      </div>
+
       <article class="qa">
-        <nav class="qa-crumbs" aria-label="Breadcrumb"><a href="/">Rein</a> / Legal</nav>
-        <h1>Privacy Policy</h1>
-        <div class="qa-answer">
-          <span class="proof-label">DRAFT</span>
-          This is a draft pending legal review. It is not yet in effect. Last updated: 1 October 2026.
-        </div>
 
         <h2>Who we are</h2>
         <p>
@@ -182,11 +198,18 @@
         <span>MIT © Rein contributors</span>
       </div>
       <nav class="footer-links">
+        <a href="/">Overview</a>
         <a href="get-started">Get started</a>
         <a href="agent-quickstart.md">For agents</a>
         <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
         <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
         <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+        <a href="cap-ai-agent-spending">Cap agent spend</a>
+        <a href="x402-spend-limits">x402 limits</a>
+        <a href="ai-agent-kill-switch">Kill switch</a>
+        <a href="run-rein-locally">Run locally</a>
+        <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
+        <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
       </nav>
     </footer>
 

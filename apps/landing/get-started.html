@@ -61,12 +61,14 @@
     <meta name="twitter:image" content="https://reinconsole.com/og-card-get-started.png" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="/fonts/fonts.css" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="landing.css" />
   </head>
   <body>
+    <div class="sky" aria-hidden="true"></div>
+
     <!-- ── Nav ─────────────────────────────────────────────────────────── -->
     <header class="nav">
-      <a class="brand" href="index.html" aria-label="Rein — home">
+      <a class="brand" href="/" aria-label="Rein — home">
         <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
           <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
           <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
@@ -76,42 +78,101 @@
         <span class="brand-name">REIN</span>
       </a>
       <nav class="nav-links">
-        <a href="index.html">Overview</a>
+        <a href="/">Overview</a>
         <a href="#paths">Quickstarts</a>
         <a href="#live">Go live</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
         <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <a class="btn btn-primary nav-cta" href="https://app.reinconsole.com" target="_blank" rel="noopener">
-        See it live
-      </a>
+      <a class="btn btn-primary nav-cta" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
     </header>
 
     <main id="top">
       <!-- ── Hero ──────────────────────────────────────────────────────── -->
-      <section class="section guide-hero">
-        <div class="hero-pills reveal">
-          <span class="pill"><span class="dot live"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
-          <span class="pill">NODE ≥22 · v0.3 · MIT</span>
+      <div class="hero-wrap">
+        <div class="hero-floor" aria-hidden="true"></div>
+        <div class="hero-haze" aria-hidden="true"></div>
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="hero-pills reveal">
+              <span class="pill"><span class="dot live"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
+              <span class="pill">NODE ≥22 · v0.5 · MIT</span>
+            </div>
+            <h1 class="reveal d1">From npm install to a <span class="grad">governed agent payment.</span></h1>
+            <p class="hero-sub reveal d2">
+              Rein governs your agent's <em>authority to spend</em> — it never holds the funds.
+              This runbook takes you from an empty folder to watching a policy engine allow four
+              payments and refuse the fifth <b>before any payment exists</b>. Everything below was
+              run, verbatim, against the published packages before this page shipped.
+            </p>
+            <div class="hero-actions reveal d3">
+              <a class="btn btn-primary" href="#paths">Start the quickstart <span class="btn-arrow">↓</span></a>
+              <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
+            </div>
+            <p class="hero-fine reveal d4">
+              The quickstart runs 100% offline — no accounts, no chain, no funds. The live track at the end settles real testnet USDC. Prefer MCP? <code>npx -y @reinconsole/mcp</code> — see the <a class="inline-link" href="agent-quickstart.md">agent quickstart</a>.
+            </p>
+          </div>
+
+          <div class="hero-stage reveal d3">
+            <nav class="panel feed-panel" aria-label="Runbook steps">
+              <div class="panel-scan" aria-hidden="true"></div>
+              <div class="panel-head">
+                <span class="panel-tick"></span>
+                <span class="panel-title">Runbook</span>
+                <span class="panel-pill">11 STEPS · OFFLINE FIRST</span>
+              </div>
+              <ol class="runbook">
+                <li><a class="runbook-row" data-track="prep" href="#step-01"><span class="runbook-num">01</span><span class="runbook-title">Check Node</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="prep" href="#step-02"><span class="runbook-num">02</span><span class="runbook-title">Install the packages</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="prep" href="#step-03"><span class="runbook-num">03</span><span class="runbook-title">Boot the policy engine</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="guard" href="#step-04"><span class="runbook-num">04</span><span class="runbook-title">Save guard-quickstart.mjs</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="guard" href="#step-05"><span class="runbook-num">05</span><span class="runbook-title">Run it: four allows, one deny</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="gate" href="#step-06"><span class="runbook-num">06</span><span class="runbook-title">Save gate-quickstart.mjs</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="gate" href="#step-07"><span class="runbook-num">07</span><span class="runbook-title">Run it: a 402 quote, then a 200</span><span class="runbook-tag">offline</span></a></li>
+                <li><a class="runbook-row" data-track="live" href="#step-08"><span class="runbook-num">08</span><span class="runbook-title">First Sepolia run</span><span class="runbook-tag">testnet</span></a></li>
+                <li><a class="runbook-row" data-track="live" href="#step-09"><span class="runbook-num">09</span><span class="runbook-title">Fund the wallet, free</span><span class="runbook-tag">testnet</span></a></li>
+                <li><a class="runbook-row" data-track="live" href="#step-10"><span class="runbook-num">10</span><span class="runbook-title">Run again, read the chain</span><span class="runbook-tag">testnet</span></a></li>
+                <li><a class="runbook-row" data-track="live" href="#step-11"><span class="runbook-num">11</span><span class="runbook-title">On-chain identity, ERC-8004</span><span class="runbook-tag">testnet</span></a></li>
+              </ol>
+              <div class="panel-foot">
+                every command ran before this page shipped
+                <span class="chain" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+              </div>
+            </nav>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── Instrument rail ───────────────────────────────────────────── -->
+      <div class="rail">
+        <div class="rail-inner">
+          <div class="rail-item">
+            <span class="rail-k">Runtime</span>
+            <span class="rail-v">Node ≥ 22</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Quickstarts</span>
+            <span class="rail-v"><span class="dot live"></span>100% offline</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Installs</span>
+            <span class="rail-v">4 packages · 0.5.0</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Live track</span>
+            <span class="rail-v">Base Sepolia · free USDC</span>
+          </div>
+          <div class="rail-item">
+            <span class="rail-k">Verified</span>
+            <span class="rail-v">Every command ran green</span>
+          </div>
         </div>
-        <h1 class="reveal d1">From npm install to a<br class="wide-only" /> governed agent payment.</h1>
-        <p class="hero-sub reveal d2">
-          Rein governs your agent's <em>authority to spend</em> — it never holds the funds.
-          This runbook takes you from an empty folder to watching a policy engine allow four
-          payments and refuse the fifth <b>before any payment exists</b>. Everything below was
-          run, verbatim, against the published packages before this page shipped.
-        </p>
-        <div class="hero-actions reveal d3">
-          <a class="btn btn-primary" href="#paths">Start the quickstart <span class="btn-arrow">↓</span></a>
-          <a class="btn btn-ghost" href="https://app.reinconsole.com" target="_blank" rel="noopener">See it live</a>
-        </div>
-        <p class="hero-fine reveal d4">
-          The quickstart runs 100% offline — no accounts, no chain, no funds. The live track at the end settles real testnet USDC. Prefer MCP? <code>npx -y @reinconsole/mcp</code> — see the <a class="inline-link" href="agent-quickstart.md">agent quickstart</a>.
-        </p>
-      </section>
+      </div>
 
       <!-- ── Why ───────────────────────────────────────────────────────── -->
       <section class="section" id="why">
-        <div class="eyebrow reveal"><span class="tick"></span>WHY THIS EXISTS</div>
+        <div class="eyebrow reveal"><span class="idx">01</span><span class="tick"></span>WHY THIS EXISTS</div>
         <h2 class="reveal d1">Agents can spend money now.<br class="wide-only" /> Someone has to hold the reins.</h2>
         <div class="pillars guide-whys">
           <article class="pillar reveal d1">
@@ -144,7 +205,7 @@
               <li>Fail-closed: engine unreachable → payments deny, not allow</li>
               <li>Denies happen <b>before</b> a payment is constructed</li>
               <li>Offline dev loop: the whole stack runs with zero setup</li>
-              <li>MIT, 12 packages on npm, live on Base mainnet — <a class="inline-link" href="index.html#proof">with links, not adjectives</a></li>
+              <li>MIT, 12 packages on npm, live on Base mainnet — <a class="inline-link" href="/#proof">with links, not adjectives</a></li>
             </ul>
           </article>
         </div>
@@ -152,24 +213,24 @@
 
       <!-- ── Paths ─────────────────────────────────────────────────────── -->
       <section class="section" id="paths">
-        <div class="eyebrow reveal"><span class="tick"></span>CHOOSE YOUR PATH</div>
+        <div class="eyebrow reveal"><span class="idx">02</span><span class="tick"></span>CHOOSE YOUR PATH</div>
         <h2 class="reveal d1">Two quickstarts. One prep.</h2>
         <p class="section-lede reveal d2">
           Both quickstarts share the three prep commands below and run entirely offline against
           simulated rails — the same code paths, no real money.
         </p>
         <div class="pillars guide-paths">
-          <a class="pillar path-card reveal d1" href="#guard">
+          <a class="pillar path-card reveal d1" data-num="01" href="#guard">
             <div class="pillar-head"><span class="pillar-num">01</span><h3>GUARD</h3><span class="pillar-side">I'm building an agent</span></div>
             <p class="pillar-lede">Cap what your agent can spend. Watch a budget deny fire before a cent moves.</p>
             <span class="pillar-link">guard quickstart →</span>
           </a>
-          <a class="pillar path-card reveal d2" href="#gate">
+          <a class="pillar path-card reveal d2" data-num="02" href="#gate">
             <div class="pillar-head"><span class="pillar-num">02</span><h3>GATE</h3><span class="pillar-side">I'm selling an API</span></div>
             <p class="pillar-lede">Price your routes. An unpaid caller gets a quote; a paying one gets through — receipted.</p>
             <span class="pillar-link">gate quickstart →</span>
           </a>
-          <a class="pillar path-card reveal d3" href="https://app.reinconsole.com" target="_blank" rel="noopener">
+          <a class="pillar path-card reveal d3" data-num="03" href="https://app.reinconsole.com" target="_blank" rel="noopener">
             <div class="pillar-head"><span class="pillar-num">03</span><h3>WATCH</h3><span class="pillar-side">I'm just looking</span></div>
             <p class="pillar-lede">The live console runs the whole two-sided story. Click <b>Run scenario</b> and watch.</p>
             <span class="pillar-link">app.reinconsole.com →</span>
@@ -177,7 +238,7 @@
         </div>
 
         <div class="steps">
-          <div class="step reveal">
+          <div class="step reveal" id="step-01">
             <span class="step-num">01</span>
             <div class="step-body">
               <span class="step-title">Check Node</span>
@@ -190,7 +251,7 @@
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-02">
             <span class="step-num">02</span>
             <div class="step-body">
               <span class="step-title">Make a folder, install the packages</span>
@@ -208,7 +269,7 @@
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-03">
             <span class="step-num">03</span>
             <div class="step-body">
               <span class="step-title">Boot the policy engine — in a second terminal</span>
@@ -230,7 +291,7 @@
 
       <!-- ── Track A: Guard ────────────────────────────────────────────── -->
       <section class="section" id="guard">
-        <div class="eyebrow reveal"><span class="tick"></span>QUICKSTART · DEMAND SIDE</div>
+        <div class="eyebrow reveal"><span class="idx">03</span><span class="tick"></span>QUICKSTART · DEMAND SIDE</div>
         <h2 class="reveal d1">Put reins on an agent.</h2>
         <p class="section-lede reveal d2">
           One file: register an agent, wrap its <code class="inline-code">fetch</code>, set a
@@ -238,7 +299,7 @@
         </p>
 
         <div class="steps">
-          <div class="step reveal">
+          <div class="step reveal" id="step-04">
             <span class="step-num">04</span>
             <div class="step-body">
               <span class="step-title">Save guard-quickstart.mjs</span>
@@ -311,7 +372,7 @@
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-05">
             <span class="step-num">05</span>
             <div class="step-body">
               <span class="step-title">Run it</span>
@@ -342,7 +403,7 @@ ledger has 4 entries — the denied payment was never constructed</code></pre>
 
       <!-- ── Track B: Gate ─────────────────────────────────────────────── -->
       <section class="section" id="gate">
-        <div class="eyebrow reveal"><span class="tick"></span>QUICKSTART · SUPPLY SIDE</div>
+        <div class="eyebrow reveal"><span class="idx">04</span><span class="tick"></span>QUICKSTART · SUPPLY SIDE</div>
         <h2 class="reveal d1">Put a paywall on an API.</h2>
         <p class="section-lede reveal d2">
           The vendor side is two calls: <code class="inline-code">createGate</code> to price your
@@ -352,7 +413,7 @@ ledger has 4 entries — the denied payment was never constructed</code></pre>
         </p>
 
         <div class="steps">
-          <div class="step reveal">
+          <div class="step reveal" id="step-06">
             <span class="step-num">06</span>
             <div class="step-body">
               <span class="step-title">Save gate-quickstart.mjs</span>
@@ -437,7 +498,7 @@ server.<span class="tk-fn">close</span>();</code></pre>
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-07">
             <span class="step-num">07</span>
             <div class="step-body">
               <span class="step-title">Run it</span>
@@ -468,7 +529,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
 
       <!-- ── The whole loop ────────────────────────────────────────────── -->
       <section class="section" id="demos">
-        <div class="eyebrow reveal"><span class="tick"></span>THE WHOLE LOOP</div>
+        <div class="eyebrow reveal"><span class="idx">05</span><span class="tick"></span>THE WHOLE LOOP</div>
         <h2 class="reveal d1">Five failure modes, one run,<br class="wide-only" /> under a second.</h2>
         <p class="section-lede reveal d2">
           The repo ships demos that exercise everything the quickstarts didn't — offline, with a
@@ -485,6 +546,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
         </div>
 
         <div class="panel demo-panel reveal d3">
+          <div class="panel-scan" aria-hidden="true"></div>
           <div class="panel-head">
             <span class="panel-tick"></span>
             <span class="panel-title">What the demo plays out</span>
@@ -526,7 +588,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
 
       <!-- ── Go live ───────────────────────────────────────────────────── -->
       <section class="section" id="live">
-        <div class="eyebrow reveal"><span class="tick"></span>GO LIVE · BASE SEPOLIA</div>
+        <div class="eyebrow reveal"><span class="idx">06</span><span class="tick"></span>GO LIVE · BASE SEPOLIA</div>
         <h2 class="reveal d1">The same loop, real chain,<br class="wide-only" /> free testnet money.</h2>
         <p class="section-lede reveal d2">
           Everything above, but the settlement is a real USDC transfer on Base Sepolia through the
@@ -535,7 +597,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
         </p>
 
         <div class="steps">
-          <div class="step reveal">
+          <div class="step reveal" id="step-08">
             <span class="step-num">08</span>
             <div class="step-body">
               <span class="step-title">First run — it sets itself up</span>
@@ -550,7 +612,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-09">
             <span class="step-num">09</span>
             <div class="step-body">
               <span class="step-title">Fund the wallet — free</span>
@@ -562,7 +624,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-10">
             <span class="step-num">10</span>
             <div class="step-body">
               <span class="step-title">Run it again — and read the chain</span>
@@ -587,7 +649,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             </div>
           </div>
 
-          <div class="step reveal">
+          <div class="step reveal" id="step-11">
             <span class="step-num">11</span>
             <div class="step-body">
               <span class="step-title">Give the agent an on-chain identity and reputation</span>
@@ -619,10 +681,10 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
 
       <!-- ── Honesty ───────────────────────────────────────────────────── -->
       <section class="section" id="honest">
-        <div class="eyebrow reveal"><span class="tick"></span>READ BEFORE DEPENDING ON IT</div>
+        <div class="eyebrow reveal"><span class="idx">07</span><span class="tick"></span>READ BEFORE DEPENDING ON IT</div>
         <h2 class="reveal d1">What Rein is — and isn't. Yet.</h2>
         <div class="is-isnt">
-          <div class="fact-col reveal d1">
+          <div class="fact-col reveal d1" data-glyph="IS">
             <span class="fact-col-title is">IT IS</span>
             <ul class="fact-list is">
               <li>Non-custodial by architecture — funds never pass through Rein</li>
@@ -632,20 +694,22 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
               <li>Auditable — every decision ed25519-signed and hash-chained</li>
             </ul>
           </div>
-          <div class="fact-col reveal d2">
+          <div class="fact-col reveal d2" data-glyph="ISN'T">
             <span class="fact-col-title isnt">IT ISN'T</span>
             <ul class="fact-list isnt">
               <li>A wallet or custodian — it never holds keys to your funds</li>
               <li>Hard enforcement in SDK mode — an agent holding its own key can bypass the guard; Rein <b>catches</b> that (shadow spend). Key-less enforcement is the session-signer tier, in the repo today, published at GA</li>
-              <li>1.0 — this is v0.3; APIs may change</li>
-              <li>Self-serve on the hosted engine — it is invite-only today; <a class="inline-link" href="run-rein-locally">self-hosting</a> is open to everyone, no account</li>
+              <li>1.0 — this is v0.5; APIs may change</li>
+              <li>Multi-chain — Base and Base Sepolia only, paying USDC; any other network is refused rather than guessed at. <a class="inline-link" href="run-rein-locally">Self-hosting</a> is open to everyone, no account</li>
             </ul>
           </div>
         </div>
       </section>
 
       <!-- ── Outro ─────────────────────────────────────────────────────── -->
-      <section class="section outro" id="cta">
+      <div class="outro-wrap">
+        <div class="hero-floor" aria-hidden="true"></div>
+        <section class="section outro" id="cta">
         <h2 class="reveal">Now put reins on yours.</h2>
         <div class="install install-lg reveal d1">
           <code class="install-cmd"><span class="install-prompt">$</span> npm install @reinconsole/sdk</code>
@@ -656,13 +720,14 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
             See it live <span class="btn-arrow">→</span>
           </a>
           <a class="btn btn-ghost" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">Read the code</a>
-          <a class="btn btn-ghost" href="index.html">Overview</a>
+          <a class="btn btn-ghost" href="/">Overview</a>
         </div>
         <p class="outro-fine reveal d3">
-          v0.3 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
+          v0.5 — early open-source infrastructure, live on Base mainnet. APIs may change before 1.0.<br />
           No waitlist. No email capture. The code is public.
         </p>
-      </section>
+        </section>
+      </div>
     </main>
 
     <footer class="footer">
@@ -676,8 +741,7 @@ gate receipt   grc_01KX3SM05GDR… · $0.05 · tx 0xa650338ff1…</code></pre>
         <span>MIT © Rein contributors</span>
       </div>
       <nav class="footer-links">
-        <a href="index.html">Overview</a>
-        <!-- The agent-facing kit (C2): an agent finds llms.txt on its own, a human needs the link. -->
+        <a href="/">Overview</a>
         <a href="agent-quickstart.md">For agents</a>
         <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
         <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
