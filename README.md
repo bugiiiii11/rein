@@ -35,7 +35,7 @@ A complete demand-side Guard loop, runnable two ways: fully offline on mock rail
 
 ## Install
 
-The twelve library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.4.0` — `npx @reinconsole/init` (a sandbox, a payment and a refusal in one command), expiring API keys, and the engine on Postgres. No breaking changes from `0.3.0`; `0.3.0` broke from `0.2.0`, so read [CHANGELOG.md](CHANGELOG.md) before upgrading from that:
+The twelve library packages are published on npm under the [`@reinconsole`](https://www.npmjs.com/org/reinconsole) scope (MIT, Node ≥22), with provenance, by the release workflow. `latest` is `0.5.0` — `npx @reinconsole/init` (a sandbox, a payment and a refusal in one command), expiring API keys, and the engine on Postgres. No breaking changes from `0.3.0`; `0.3.0` broke from `0.2.0`, so read [CHANGELOG.md](CHANGELOG.md) before upgrading from that:
 
 ```bash
 npx @reinconsole/init          # a sandbox on the hosted engine, one paid call, one refused — no account
