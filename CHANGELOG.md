@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-01
+
+Owners can claim a sandbox and take its agent to Base mainnet. No breaking changes from `0.4.0`.
+
 ### Added
 
 - **Claiming a sandbox** on `@reinconsole/policy-engine` (`ServerOptions.claims`, on whenever the sandbox is). `POST /v1/claims` with a sandbox's org-wide admin key returns a one-time code that is valid for 10 minutes. `POST /v1/claims/redeem` binds the org to a signed-in identity (`github:<id>` or `eth:<address>`) and lifts the expiry and quotas on the org's keys. `POST /v1/owners/session` returns a 12-hour org-scoped `read` key for the owner. Both of these calls need the new `identity` scope on an unscoped key. The binding is an `owner:<identity>` key whose secret is discarded. It is visible in `GET /v1/keys`, and revoking it releases the org. One org per identity. Key names starting `owner:` or `session:` are reserved.
