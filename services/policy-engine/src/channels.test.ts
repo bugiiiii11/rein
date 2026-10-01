@@ -51,10 +51,10 @@ describe('OrgScopedChannel (REIN_NOTIFY_ORGS)', () => {
   });
   const alert = (agentId: string): LivenessAlert => ({
     agentId,
-    expectation: { interval: '15m', intervalMs: 900_000, graceMs: 0, note: 'tenant poller' },
+    expectation: { agentId, interval: '15m', graceMs: 0, since: new Date(0), note: 'tenant poller' },
     silentMs: 3_600_000,
     at: 0,
-  } as LivenessAlert);
+  });
   const logged = () => {
     const lines: string[] = [];
     return { lines, channel: new LoggingChannel({ write: (m) => lines.push(m) }) };
