@@ -152,6 +152,17 @@ export interface EngineStores {
   now?: () => number;
 }
 
+/** What `GET /v1/chain/verify` answers — see {@link PolicyEngine.verifyChain}. */
+export interface ChainVerdict {
+  /** Every link of the whole chain recomputed and every signature checked. */
+  intact: boolean;
+  /** Decisions the caller can see — its own rows for a scoped key, the chain for an operator. */
+  visible: number;
+  verifiedAt: string; // ISO
+  /** Index of the first bad link. Unscoped callers only. */
+  brokenAt?: number;
+}
+
 /**
  * The policy engine: normalizes intents, applies the kill-switch, evaluates
  * policy, writes a signed decision, emits events, and (on ALLOW) records the
@@ -774,6 +785,23 @@ export class PolicyEngine {
   /** The agent a decision judged, or undefined for an unattributed row. Not signed. */
   agentOfDecision(decisionId: string): string | undefined {
     return this.log.agentOf(decisionId);
+  }
+
+  /**
+   * The engine's own verdict on the WHOLE chain — the one check a scoped
+   * reader cannot make from its subsequence (see `decisions`). `visible` is
+   * what the caller can see of it, the same number as `Rein-Chain-Length`.
+   * WHERE it broke is withheld from a scoped caller: an index into the whole
+   * chain is a fact about rows it cannot see.
+   */
+  verifyChain(scope?: TenantScope): ChainVerdict {
+    const v = this.log.verify(new Date(this.now()));
+    return {
+      intact: v.intact,
+      visible: this.decisions(scope).length,
+      verifiedAt: v.verifiedAt.toISOString(),
+      ...(scope === undefined && v.brokenAt !== undefined ? { brokenAt: v.brokenAt } : {}),
+    };
   }
 
   /** Liveness rows for the agents a caller owns. */

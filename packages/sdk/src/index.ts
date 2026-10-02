@@ -21,6 +21,7 @@ export {
   LivenessState,
   AllowanceGap,
   ReconciliationReport,
+  ChainVerdict,
   type ReconciliationQuery,
   type EngineClientOptions,
   type EvaluateResponse,

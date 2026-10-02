@@ -23,7 +23,7 @@ export function App() {
     void fetchMe().then(setMe);
   }, []);
   // One verdict for the bar and the panel: they must never disagree.
-  const chain = useMemo(() => chainStatus(d.feed), [d.feed]);
+  const chain = useMemo(() => chainStatus(d.feed, d.stats?.chainVerified), [d.feed, d.stats?.chainVerified]);
 
   if (!d.ready) {
     if (d.error) {

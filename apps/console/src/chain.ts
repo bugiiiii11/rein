@@ -20,8 +20,22 @@ import type { FeedItem } from '../server/wire';
  *   broken  -- a link points at a VISIBLE hash that is not its predecessor:
  *              the rows between them are not on the chain that link is on.
  *              With one chain per engine that is a fork, never a scoping gap.
+ *
+ * The engine can say what the rows cannot. `GET /v1/chain/verify` is the
+ * engine walking its WHOLE chain, every link between every tenant's rows,
+ * and that verdict rides in the snapshot as `stats.chainVerified`. With it,
+ * a partial view whose unseen links the engine has verified is `intact`; and
+ * an engine that reports its own chain broken is `broken` whatever the rows
+ * here look like. Local evidence of a fork still wins over an engine that
+ * says intact -- the console never talks itself out of what it can see.
  */
 export type ChainVerdict = 'empty' | 'intact' | 'partial' | 'broken';
+
+/** The engine's whole-chain verdict, as the snapshot carries it. */
+export interface EngineVerdict {
+  intact: boolean;
+  at: string; // ISO
+}
 
 export interface ChainStatus {
   verdict: ChainVerdict;
@@ -33,9 +47,11 @@ export interface ChainStatus {
   unseen: number;
   /** Hashes of the rows whose `prevHash` is unseen, for marking them in a list. */
   gaps: ReadonlySet<string>;
+  /** Present when the engine answered for the whole chain this snapshot. */
+  engine?: EngineVerdict;
 }
 
-export function chainStatus(feed: FeedItem[]): ChainStatus {
+export function chainStatus(feed: FeedItem[], engine?: EngineVerdict): ChainStatus {
   const rows = feed.filter((f) => f.kind === 'decision' && f.hash);
   const index = new Map<string, number>();
   rows.forEach((r, i) => index.set(r.hash as string, i));
@@ -58,7 +74,10 @@ export function chainStatus(feed: FeedItem[]): ChainStatus {
     }
   }
 
-  const verdict: ChainVerdict =
-    rows.length === 0 ? 'empty' : broken ? 'broken' : unseen > 0 ? 'partial' : 'intact';
-  return { verdict, visible: rows.length, verified, unseen, gaps };
+  let verdict: ChainVerdict;
+  if (rows.length === 0) verdict = 'empty';
+  else if (broken || engine?.intact === false) verdict = 'broken';
+  else if (unseen > 0 && engine?.intact !== true) verdict = 'partial';
+  else verdict = 'intact';
+  return { verdict, visible: rows.length, verified, unseen, gaps, ...(engine ? { engine } : {}) };
 }

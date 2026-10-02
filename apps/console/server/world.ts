@@ -1035,6 +1035,8 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
     // resumed world report 0 decisions beside 11 chain links — the same
     // number, from the same events, disagreeing with itself. One source.
     const chain = engine.decisions();
+    // Incremental in the log, so this costs the links since the last call.
+    const verdict = engine.verifyChain();
     const outcomes = (o: Decision['outcome']) => chain.filter((d) => d.outcome === o).length;
     // Since-boot counters stay on the feed: these have no durable reading to
     // restore (see Stats). Latency is this process's calls by definition.
@@ -1053,6 +1055,7 @@ export async function createWorld(options: WorldOptions = {}): Promise<World> {
       escalate: outcomes('escalate'),
       agents: engine.agents.list().length,
       chainLinks: chain.length,
+      chainVerified: { intact: verdict.intact, at: verdict.verifiedAt },
       revenue: sumDecimal(Object.values(gateStats.revenue)),
       quoted: gateStats.quoted,
       gateRefused: gateStats.refused,

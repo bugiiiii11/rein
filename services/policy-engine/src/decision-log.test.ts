@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
-import { DecisionLog, verifyDecisionChain } from './decision-log.js';
+import { DecisionLog, chainBreakAt, verifyDecisionChain } from './decision-log.js';
 import { newId, type Decision } from '@reinconsole/core';
 
 function input(i: number) {
@@ -85,5 +85,44 @@ describe('DecisionLog', () => {
     const d = await log.append(input(1));
     expect(d.prevHash).toBe('genesis'); // the failed append left no trace
     expect(verifyDecisionChain(log.all(), log.publicKeyPem)).toBe(true);
+  });
+
+  it('says WHERE a chain breaks, not just that it does', async () => {
+    const log = new DecisionLog();
+    await appendSome(log, 4);
+    expect(chainBreakAt(log.all(), log.publicKeyPem)).toBeUndefined();
+
+    const tampered = log.all().map((d) => ({ ...d }));
+    tampered[2]!.outcome = tampered[2]!.outcome === 'allow' ? 'deny' : 'allow';
+    expect(chainBreakAt(tampered, log.publicKeyPem)).toBe(2);
+
+    const other = generateKeyPairSync('ed25519');
+    const otherPem = other.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    expect(chainBreakAt(log.all(), otherPem)).toBe(0);
+  });
+
+  it('verifies its own chain incrementally and never forgets a break', async () => {
+    const keyPair = generateKeyPairSync('ed25519');
+    const signed = new DecisionLog({ keyPair });
+    await appendSome(signed, 3);
+
+    const at = new Date('2026-10-02T01:44:52.000Z');
+    expect(signed.verify(at)).toEqual({ intact: true, length: 3, verifiedAt: at });
+    // The next call walks only what was appended since: the verdict grows with the chain.
+    await signed.append(input(3));
+    expect(signed.verify(at)).toMatchObject({ intact: true, length: 4 });
+
+    // A resumed chain is verified on the FIRST call -- the check the store does not make on open.
+    const tampered = signed.all().map((d) => ({ ...d }));
+    tampered[1]!.outcome = tampered[1]!.outcome === 'allow' ? 'deny' : 'allow';
+    const resumed = new DecisionLog({ keyPair, resume: tampered });
+    expect(resumed.verify(at)).toEqual({ intact: false, brokenAt: 1, length: 4, verifiedAt: at });
+    // Appending past a break does not heal it: the index is remembered.
+    await resumed.append(input(4));
+    expect(resumed.verify(at)).toMatchObject({ intact: false, brokenAt: 1, length: 5 });
+
+    // And a chain signed by another key breaks at its first link.
+    const foreign = new DecisionLog({ resume: signed.all() });
+    expect(foreign.verify(at)).toMatchObject({ intact: false, brokenAt: 0 });
   });
 });

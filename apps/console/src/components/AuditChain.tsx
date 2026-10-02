@@ -1,6 +1,6 @@
 import type { FeedItem } from '../../server/wire';
 import type { ChainStatus, ChainVerdict } from '../chain';
-import { midHash } from '../format';
+import { clockTime, midHash } from '../format';
 
 /** A short fingerprint of the engine's ed25519 public key (PEM). */
 function fingerprint(pem: string): string {
@@ -30,10 +30,17 @@ const HEAD: Record<ChainVerdict, string> = {
 function detail(c: ChainStatus): string {
   switch (c.verdict) {
     case 'intact':
+      if (c.engine?.intact) {
+        const outside = c.unseen > 0 ? ` · ${c.unseen} lead outside this org's view` : '';
+        return `${c.visible} visible · whole chain verified by the engine ${clockTime(c.engine.at)}${outside}`;
+      }
       return `${c.visible} visible · every link verified · ed25519-signed · sha256-linked`;
     case 'partial':
       return `${c.visible} visible · ${c.verified} links verified · ${c.unseen} lead outside this org's view`;
     case 'broken':
+      if (c.engine?.intact === false) {
+        return `the engine reports its own chain broken ${clockTime(c.engine.at)}`;
+      }
       return 'a link points past rows this console can see: a fork, not a gap';
     default:
       return 'ed25519-signed · sha256-linked · tamper-evident';

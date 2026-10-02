@@ -728,3 +728,27 @@ describe('tenant isolation: a tenant never has to name its own org', () => {
     await app.close();
   });
 });
+
+describe('tenant isolation: the whole-chain verdict', () => {
+  it('counts a scoped reader its own rows only, on a verdict about the whole chain', async () => {
+    const { app, root, readA, agentA, agentB, as } = await tenantWorld();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: as(root),
+      payload: { policyId: 'pol_open', default: 'allow' },
+    });
+    for (const id of [agentA.id, agentB.id, agentA.id]) {
+      const r = await app.inject({ method: 'POST', url: '/v1/evaluate', headers: as(root), payload: intent(id) });
+      expect(r.json().decision.outcome).toBe('allow');
+    }
+    // A's reader sees two of the three rows -- and B's row sits BETWEEN them
+    // on the one chain, which is exactly the link it could never verify alone.
+    const mine = await app.inject({ method: 'GET', url: '/v1/chain/verify', headers: as(readA) });
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json()).toEqual({ intact: true, visible: 2, verifiedAt: expect.any(String) });
+    const all = await app.inject({ method: 'GET', url: '/v1/chain/verify', headers: as(root) });
+    expect(all.json()).toMatchObject({ intact: true, visible: 3 });
+    await app.close();
+  });
+});

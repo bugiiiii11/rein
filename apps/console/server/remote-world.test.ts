@@ -25,6 +25,8 @@ interface FakeEngine {
   approvers: unknown[];
   breakers: Record<string, unknown[]>;
   decisions: unknown[];
+  /** `GET /v1/chain/verify`; unset answers 404 like an engine that predates it. */
+  verify?: unknown;
   /** Paths that should fail, mapped to the status to answer. */
   fail: Map<string, number>;
 }
@@ -105,6 +107,11 @@ function fakeFetch(engine: FakeEngine): { impl: typeof fetch; calls: string[] } 
 
     const breakerMatch = /^\/v1\/agents\/([^/]+)\/breakers$/.exec(url.pathname);
     if (breakerMatch) return json(engine.breakers[breakerMatch[1] as string] ?? []);
+
+    if (url.pathname === '/v1/chain/verify') {
+      if (engine.verify === undefined) return new Response('not found', { status: 404 });
+      return json(engine.verify);
+    }
 
     if (url.pathname === '/v1/decisions') {
       const total = engine.decisions.length;
@@ -617,6 +624,33 @@ describe('fingerprintPem', () => {
   it('is reported on the status once a poll has seen the key', async () => {
     const { w } = await world(emptyEngine());
     expect(w.status().publicKeyFingerprint).toBe(fingerprintPem(PEM));
+    await w.close();
+  });
+});
+
+describe("createRemoteWorld — the engine's whole-chain verdict", () => {
+  it('carries it into stats, and lives without it on an engine that predates the route', async () => {
+    const engine = emptyEngine();
+    engine.decisions = [decision(0), decision(1)];
+    engine.verify = { intact: true, visible: 2, verifiedAt: '2026-10-02T01:44:52.000Z' };
+    const { w } = await world(engine);
+    expect(w.getState().stats.chainVerified).toEqual({ intact: true, at: '2026-10-02T01:44:52.000Z' });
+    expect(w.status().state).toBe('ok');
+
+    // An older engine answers 403 (a scoped key on a route it has no tenant
+    // rule for) -- measured against engine.reinconsole.com before the deploy.
+    // That is "no verdict", not a failed poll: the rest of the dashboard must
+    // not blank over a field it never had before.
+    engine.fail.set('/v1/chain/verify', 403);
+    await w.refresh();
+    expect(w.getState().stats.chainVerified).toBeUndefined();
+    expect(w.getState().stats.decisions).toBe(2);
+    expect(w.status().state).toBe('ok');
+
+    engine.fail.delete('/v1/chain/verify');
+    engine.verify = { intact: false, visible: 2, verifiedAt: '2026-10-02T01:45:00.000Z' };
+    await w.refresh();
+    expect(w.getState().stats.chainVerified).toEqual({ intact: false, at: '2026-10-02T01:45:00.000Z' });
     await w.close();
   });
 });

@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { newId } from '@reinconsole/core';
+import { generateKeyPairSync } from 'node:crypto';
+import { newId, type Decision } from '@reinconsole/core';
+import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { buildServer } from './server.js';
 import { PolicyEngine } from './engine.js';
+import { DecisionLog } from './decision-log.js';
 import { LivenessMonitor } from './liveness.js';
 
 describe('policy-engine HTTP API', () => {
@@ -13,6 +16,53 @@ describe('policy-engine HTTP API', () => {
     expect(body.status).toBe('ok');
     expect(body.publicKey).toContain('BEGIN PUBLIC KEY');
     await app.close();
+  });
+
+  it('verifies the whole chain over HTTP, and tells only an operator where it broke', async () => {
+    const keyPair = generateKeyPairSync('ed25519');
+    const signed = new DecisionLog({ keyPair });
+    for (let i = 0; i < 3; i++) {
+      await signed.append({
+        intentId: newId('int'),
+        intentHash: `ih-${i}`,
+        outcome: 'allow',
+        matchedRules: [],
+        reason: 'r',
+        policyId: 'pol_x',
+        policyVersion: '1',
+        latencyMs: 1,
+      });
+    }
+    const tampered: Decision[] = signed.all().map((d) => ({ ...d }));
+    tampered[1]!.outcome = 'deny';
+
+    const auth = new ApiKeyAuth();
+    const root = await auth.issue({ name: 'operator', scopes: ['admin'] });
+    const tenant = await auth.issue({ name: 'tenant', scopes: ['read'], orgId: newId('org') });
+    const as = (k: { secret: string }) => ({ authorization: `Bearer ${k.secret}` });
+
+    const intact = buildServer(
+      new PolicyEngine({ log: new DecisionLog({ keyPair, resume: signed.all() }) }),
+      { auth },
+    );
+    const ok = await intact.inject({ method: 'GET', url: '/v1/chain/verify', headers: as(root) });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ intact: true, visible: 3, verifiedAt: expect.any(String) });
+    await intact.close();
+
+    const broken = buildServer(
+      new PolicyEngine({ log: new DecisionLog({ keyPair, resume: tampered }) }),
+      { auth },
+    );
+    const op = await broken.inject({ method: 'GET', url: '/v1/chain/verify', headers: as(root) });
+    expect(op.json()).toMatchObject({ intact: false, brokenAt: 1, visible: 3 });
+    // A scoped reader learns THAT the chain is broken and nothing about where:
+    // an index into the whole chain is a fact about rows it cannot see. These
+    // rows are unattributed, so it can see none of them.
+    const scoped = await broken.inject({ method: 'GET', url: '/v1/chain/verify', headers: as(tenant) });
+    expect(scoped.statusCode).toBe(200);
+    expect(scoped.json()).toEqual({ intact: false, visible: 0, verifiedAt: expect.any(String) });
+    await broken.close();
   });
 
   it('reconciles over HTTP: an allowance opens a gap and a settlement closes it', async () => {

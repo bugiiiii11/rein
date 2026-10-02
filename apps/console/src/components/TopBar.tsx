@@ -28,7 +28,11 @@ function chainPill(chain: ChainStatus | null, booting: boolean, links: number) {
   const count = String(links);
   if (!chain || chain.verdict === 'empty') return { glyph: '·', tone: '', title: 'no decisions yet', count };
   if (chain.verdict === 'broken') {
-    return { glyph: '!', tone: 'is-bad', title: 'a visible link points past rows this console can see: a fork, not a gap', count };
+    const title =
+      chain.engine?.intact === false
+        ? 'the engine reports its own chain broken'
+        : 'a visible link points past rows this console can see: a fork, not a gap';
+    return { glyph: '!', tone: 'is-bad', title, count };
   }
   if (chain.verdict === 'partial') {
     return {
@@ -38,7 +42,10 @@ function chainPill(chain: ChainStatus | null, booting: boolean, links: number) {
       count,
     };
   }
-  return { glyph: '✓', tone: 'is-ok', title: `${chain.verified} links verified here`, count };
+  const title = chain.engine?.intact
+    ? `${chain.verified} links verified here · whole chain verified by the engine`
+    : `${chain.verified} links verified here`;
+  return { glyph: '✓', tone: 'is-ok', title, count };
 }
 
 export function TopBar({ connected, demo, stats, chain, writable, me, booting = false }: Props) {

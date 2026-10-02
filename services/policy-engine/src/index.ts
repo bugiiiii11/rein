@@ -1,5 +1,6 @@
 export {
   PolicyEngine,
+  type ChainVerdict,
   IntentInput,
   type EvaluateOutput,
   type ResolveOutput,
@@ -31,6 +32,8 @@ export {
 export {
   DecisionLog,
   verifyDecisionChain,
+  chainBreakAt,
+  type ChainVerification,
   type DecisionInput,
   type DecisionLogOptions,
   type DecisionLogKeyPair,

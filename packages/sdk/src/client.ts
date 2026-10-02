@@ -68,6 +68,17 @@ const Health = z.object({
   approvals: z.string().optional(),
 });
 
+/** What `GET /v1/chain/verify` answers — see {@link EngineClient.verifyChain}. */
+export const ChainVerdict = z.object({
+  intact: z.boolean(),
+  /** Decisions this key can see — the same number as `chainLength`. */
+  visible: z.number().int().nonnegative(),
+  verifiedAt: z.string(),
+  /** Index of the first bad link. Unscoped keys only. */
+  brokenAt: z.number().int().nonnegative().optional(),
+});
+export type ChainVerdict = z.infer<typeof ChainVerdict>;
+
 const EvaluateResponse = z.object({
   intent: PaymentIntent,
   decision: Decision,
@@ -311,6 +322,20 @@ export class EngineClient {
       // what the page itself proves rather than reporting a NaN length.
       chainLength: length === null ? decisions.length : Number(length),
     };
+  }
+
+  /**
+   * The engine's own verdict on its WHOLE decision chain.
+   *
+   * An org-scoped key reads a SUBSEQUENCE of one chain from `decisionsPage`,
+   * whose `prevHash` links lead to rows the key cannot see, so running
+   * `verifyDecisionChain` over those pages proves only the links between
+   * visible rows. This is the engine verifying every link, including the ones
+   * between other tenants' rows, and answering `intact` without showing them.
+   * Needs a 0.6.0 engine; an older one answers 404.
+   */
+  verifyChain(): Promise<ChainVerdict> {
+    return this.request('GET', '/v1/chain/verify', ChainVerdict);
   }
 
   // --- Reconciliation (B1) ---

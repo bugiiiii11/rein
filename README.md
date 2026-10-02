@@ -370,6 +370,7 @@ The guard layers _underneath_ any x402 payment library: the first unpaid request
 | GET    | `/v1/policies`               | List policies                                 |
 | POST   | `/v1/evaluate`               | Evaluate a payment intent → signed decision   |
 | GET    | `/v1/decisions`              | The hash-chained decision log                 |
+| GET    | `/v1/chain/verify`           | The engine's verdict on its whole chain       |
 | GET    | `/v1/agents/:id/breakers`    | Where the agent's behavioral breakers stand   |
 | POST   | `/v1/settlements`            | Report that an allowed payment landed         |
 | GET    | `/v1/reconciliation`         | Allowances with no settlement behind them     |

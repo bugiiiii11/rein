@@ -64,6 +64,17 @@ export interface DecisionLogOptions {
   persist?: (decision: Decision, agentId?: string) => MaybePromise<void>;
 }
 
+/** The verdict of a whole-chain verification — see {@link DecisionLog.verify}. */
+export interface ChainVerification {
+  /** Every link's `prevHash` recomputed and every signature checked against this log's key. */
+  intact: boolean;
+  /** Index of the first link that failed to verify, when one did. */
+  brokenAt?: number;
+  /** How many links the verdict covers — always the whole chain. */
+  length: number;
+  verifiedAt: Date;
+}
+
 /**
  * Append-only, tamper-evident decision log. Each decision is sha256-hashed over
  * its canonical content + the previous hash (a hash chain), then signed with an
@@ -73,8 +84,13 @@ export interface DecisionLogOptions {
 export class DecisionLog {
   private prevHash: string;
   private readonly privateKey: KeyObject;
+  private readonly publicKey: KeyObject;
   readonly publicKeyPem: string;
   private readonly chain: Decision[];
+  /** Links `[0, verifiedCount)` have been proven; `verify` resumes from here. */
+  private verifiedCount = 0;
+  private verifiedPrev = 'genesis';
+  private brokenAt: number | undefined;
   private readonly persist:
     | ((decision: Decision, agentId?: string) => MaybePromise<void>)
     | undefined;
@@ -86,6 +102,7 @@ export class DecisionLog {
   constructor(options: DecisionLogOptions = {}) {
     const kp = options.keyPair ?? generateKeyPairSync('ed25519');
     this.privateKey = kp.privateKey;
+    this.publicKey = kp.publicKey;
     this.publicKeyPem = kp.publicKey.export({ type: 'spki', format: 'pem' }).toString();
     this.chain = [...(options.resume ?? [])];
     this.prevHash = this.chain.at(-1)?.hash ?? 'genesis';
@@ -158,6 +175,60 @@ export class DecisionLog {
   all(): readonly Decision[] {
     return this.chain;
   }
+
+  /**
+   * Verify the chain — every link's `prevHash`, hash and signature — against
+   * this log's own key.
+   *
+   * Incremental, because the chain is append-only: links already proven are
+   * not walked again, so a dashboard polling this every few seconds costs the
+   * engine the links appended since, not the whole log. The FIRST call walks
+   * everything, including whatever `resume` loaded, which is a check the
+   * store does not make on open. A break, once found, stays found: nothing
+   * repairs a link in place, so every later call reports the same index.
+   */
+  verify(at: Date = new Date()): ChainVerification {
+    if (this.brokenAt === undefined) {
+      const broke = chainBreakAt(this.chain, this.publicKey, this.verifiedCount, this.verifiedPrev);
+      if (broke === undefined) {
+        this.verifiedCount = this.chain.length;
+        this.verifiedPrev = this.chain[this.verifiedCount - 1]?.hash ?? 'genesis';
+      } else {
+        this.brokenAt = broke;
+      }
+    }
+    return {
+      intact: this.brokenAt === undefined,
+      ...(this.brokenAt !== undefined ? { brokenAt: this.brokenAt } : {}),
+      length: this.chain.length,
+      verifiedAt: at,
+    };
+  }
+}
+
+/**
+ * Index of the first link that fails to verify, or undefined when the chain
+ * is intact. `from` and `prev` let a caller resume a walk it has already done
+ * — see {@link DecisionLog.verify}.
+ */
+export function chainBreakAt(
+  decisions: readonly Decision[],
+  publicKey: string | KeyObject,
+  from = 0,
+  prev = 'genesis',
+): number | undefined {
+  const key = typeof publicKey === 'string' ? createPublicKey(publicKey) : publicKey;
+  for (let i = from; i < decisions.length; i++) {
+    const d = decisions[i];
+    if (d === undefined || d.prevHash !== prev) return i;
+    const hash = createHash('sha256').update(canonicalDecision(d)).digest('hex');
+    if (hash !== d.hash) return i;
+    if (!edVerify(null, Buffer.from(d.hash), key, Buffer.from(d.signature, 'base64'))) {
+      return i;
+    }
+    prev = d.hash;
+  }
+  return undefined;
 }
 
 /** Recompute the hash chain and verify every signature. */
@@ -165,16 +236,5 @@ export function verifyDecisionChain(
   decisions: readonly Decision[],
   publicKeyPem: string,
 ): boolean {
-  const publicKey = createPublicKey(publicKeyPem);
-  let prev = 'genesis';
-  for (const d of decisions) {
-    if (d.prevHash !== prev) return false;
-    const hash = createHash('sha256').update(canonicalDecision(d)).digest('hex');
-    if (hash !== d.hash) return false;
-    if (!edVerify(null, Buffer.from(d.hash), publicKey, Buffer.from(d.signature, 'base64'))) {
-      return false;
-    }
-    prev = d.hash;
-  }
-  return true;
+  return chainBreakAt(decisions, publicKeyPem) === undefined;
 }

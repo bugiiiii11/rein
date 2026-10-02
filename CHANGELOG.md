@@ -6,6 +6,7 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ### Added
 
+- `GET /v1/chain/verify` on `@reinconsole/policy-engine`: the engine's own verdict on its whole decision chain, `{ intact, visible, verifiedAt, brokenAt? }`. An org-scoped key reads a subsequence of one chain whose `prevHash` links lead to rows it cannot see, so `verifyDecisionChain` over its pages can only prove the links between visible rows; this route is the engine verifying every link without showing them. `visible` is the caller's own row count (the same number as `Rein-Chain-Length`); `brokenAt` goes to unscoped keys only. Verification is incremental in `DecisionLog.verify()`, so polling it costs the links appended since the last call. Also `chainBreakAt()`, the index-returning form of `verifyDecisionChain`, and `EngineClient.verifyChain()` in `@reinconsole/sdk`.
 - `REIN_NOTIFY_ORGS` on `@reinconsole/policy-engine` and the `rein-engine` bin, and `OrgScopedChannel`: on a shared engine, only the listed orgs' escalations and dead-man alarms reach the operator's Telegram chat and log in full. Every other org gets an id-only log line and no Telegram message. Unset keeps the old behaviour: every org.
 
 ## [0.5.0] - 2026-10-01

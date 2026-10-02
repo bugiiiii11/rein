@@ -151,6 +151,13 @@ export interface Stats {
   escalate: number;
   agents: number;
   chainLinks: number;
+  /**
+   * The engine's verdict on the WHOLE chain (`GET /v1/chain/verify`), not just
+   * the rows this console can see. Absent when the engine predates the route
+   * or the read failed this poll; the panel then says only what it can prove
+   * from the rows (src/chain.ts).
+   */
+  chainVerified?: { intact: boolean; at: string };
   // vendor side (the gate fronting the world's API), from persisted receipts
   revenue: string; // decimal USDC the gate has settled
   quoted: number;

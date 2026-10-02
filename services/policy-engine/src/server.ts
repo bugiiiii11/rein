@@ -258,6 +258,7 @@ const TENANT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/v1\/policies$/ },
   { method: 'POST', path: /^\/v1\/evaluate$/ },
   { method: 'GET', path: /^\/v1\/decisions$/ },
+  { method: 'GET', path: /^\/v1\/chain\/verify$/ },
   { method: 'POST', path: /^\/v1\/settlements$/ },
   { method: 'GET', path: /^\/v1\/reconciliation$/ },
   { method: 'POST', path: /^\/v1\/keys$/ },
@@ -678,6 +679,15 @@ export function buildServer(
       return agentId === undefined ? d : { ...d, agentId };
     });
   });
+
+  /**
+   * The engine's verdict on the whole chain. A scoped reader's `/v1/decisions`
+   * is a subsequence whose `prevHash` links lead to rows it cannot see, so it
+   * can never verify end to end on its own; this is the engine answering for
+   * the rows in between without showing them. Cheap to poll: the log verifies
+   * incrementally (see DecisionLog.verify).
+   */
+  app.get('/v1/chain/verify', (req) => engine.verifyChain(scopeFor(req)));
 
   // --- Reconciliation (B1): allowed but never settled ---
   // The write is the settlement half of the join — see requiredScope for why

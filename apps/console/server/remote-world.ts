@@ -170,6 +170,12 @@ interface RemoteDecision {
   decidedAt: string;
 }
 
+interface RemoteChainVerdict {
+  intact: boolean;
+  visible: number;
+  verifiedAt: string;
+}
+
 interface RemoteLiveness {
   agentId: string;
   expectation: { interval: string; note?: string };
@@ -563,8 +569,36 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
     return collected;
   }
 
-  function buildStats(agentCount: number, recon: ReconciliationView): Stats {
+  /**
+   * The engine's whole-chain verdict, best effort. An engine older than the
+   * route answers 403 (an unclassified route refuses a scoped key) or 404,
+   * and a console that read that as a failed poll would
+   * blank a dashboard over a verdict it never had before. Absent is the
+   * honest answer either way: the panel then says what the rows alone prove.
+   */
+  let verdictUnavailable = false;
+  async function readChainVerdict(): Promise<Stats['chainVerified']> {
+    try {
+      const res = await get<RemoteChainVerdict>('/v1/chain/verify');
+      verdictUnavailable = false;
+      return { intact: res.body.intact, at: res.body.verifiedAt };
+    } catch (err) {
+      // Once per outage, not once per 5 s poll.
+      if (!verdictUnavailable) {
+        verdictUnavailable = true;
+        console.error('[console] chain verdict unavailable:', err instanceof Error ? err.message : err);
+      }
+      return undefined;
+    }
+  }
+
+  function buildStats(
+    agentCount: number,
+    recon: ReconciliationView,
+    chainVerified: Stats['chainVerified'],
+  ): Stats {
     return {
+      ...(chainVerified !== undefined ? { chainVerified } : {}),
       // All-time, from the chain itself: `Rein-Chain-Length` is what this key
       // can see in total, the same number the local world reads off its log.
       decisions: chainLength,
@@ -603,11 +637,12 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
       const health = await get<{ publicKey?: string }>('/health');
       publicKey = health.body.publicKey ?? publicKey;
 
-      const [agentRes, policyRes, livenessRes, reconRes] = await Promise.all([
+      const [agentRes, policyRes, livenessRes, reconRes, chainVerified] = await Promise.all([
         get<RemoteAgent[]>('/v1/agents'),
         get<RemotePolicy[]>('/v1/policies'),
         get<RemoteLiveness[]>('/v1/liveness'),
         get<RemoteReconciliation>('/v1/reconciliation'),
+        readChainVerdict(),
       ]);
 
       agentNames.clear();
@@ -780,7 +815,7 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
         });
       }
 
-      const nextStats = buildStats(nextAgents.length, nextReconciliation);
+      const nextStats = buildStats(nextAgents.length, nextReconciliation, chainVerified);
       emitChanged(stats, nextStats, (v) => ({ type: 'stats', stats: v }));
       stats = nextStats;
 

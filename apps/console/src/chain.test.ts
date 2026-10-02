@@ -48,4 +48,26 @@ describe('chainStatus', () => {
     ]);
     expect(s).toMatchObject({ verdict: 'intact', visible: 2, verified: 1, unseen: 0 });
   });
+
+  it('turns a partial view intact once the engine has verified the whole chain', () => {
+    const engine = { intact: true, at };
+    const s = chainStatus([dec(1, 'a', '0'), dec(2, 'b', 'a'), dec(4, 'c', 'other-tenant')], engine);
+    expect(s).toMatchObject({ verdict: 'intact', verified: 1, unseen: 1, engine });
+    // Still a gap in THIS view; the engine answered for it, not the rows.
+    expect([...s.gaps]).toEqual(['c']);
+  });
+
+  it('is broken when the engine says so, whatever the rows here look like', () => {
+    const s = chainStatus([dec(1, 'a', '0'), dec(2, 'b', 'a')], { intact: false, at });
+    expect(s.verdict).toBe('broken');
+  });
+
+  it('keeps a fork it can see even if the engine says intact', () => {
+    const s = chainStatus([dec(1, 'a', '0'), dec(2, 'b', 'a'), dec(3, 'c', 'a')], { intact: true, at });
+    expect(s.verdict).toBe('broken');
+  });
+
+  it('has nothing to say about an empty view, engine verdict or not', () => {
+    expect(chainStatus([], { intact: true, at }).verdict).toBe('empty');
+  });
 });
