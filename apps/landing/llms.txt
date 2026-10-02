@@ -25,7 +25,7 @@ Four things are load-bearing and worth knowing before you integrate:
 - [Agent Skill](https://www.reinconsole.com/skill/SKILL.md): An installable skill that teaches a coding agent how to wire Rein into a project correctly. Drop it in `~/.claude/skills/rein/SKILL.md`.
 - [Get started (for humans)](https://www.reinconsole.com/get-started): The same runbook as a page, with both the agent side and the vendor side.
 - [Live console](https://app.reinconsole.com): Read-only view of the hosted engine — agents, policies, decisions, breakers, reconciliation, escalations.
-- [Hosted engine](https://engine.reinconsole.com/health): `https://engine.reinconsole.com`, keyed, invited beta. An invitee's key is scoped to one org and one agent. `vendor.reinconsole.com` sells two testnet routes (`/testnet/v1/ping` $0.001, `/testnet/v1/scores/vendor/:host` $0.005) to try it against. Path 0 in the agent quickstart.
+- [Hosted engine](https://engine.reinconsole.com/health): `https://engine.reinconsole.com`, keyed. `npx @reinconsole/init` creates a sandbox on it in one command: an org, an agent, a starter policy and a key scoped to that org and agent, testnet only, expiring in 7 days unless claimed. `npx @reinconsole/init --claim` keeps it (sign in with GitHub or an Ethereum wallet); `--mainnet` then moves the claimed agent to Base mainnet. `vendor.reinconsole.com` sells two testnet routes (`/testnet/v1/ping` $0.001, `/testnet/v1/scores/vendor/:host` $0.005) to try it against. Path 0 in the agent quickstart.
 
 ## Questions
 
@@ -38,6 +38,7 @@ Four things are load-bearing and worth knowing before you integrate:
 
 All on npm under [@reinconsole](https://www.npmjs.com/org/reinconsole), Node >=22, MIT.
 
+- [@reinconsole/init](https://www.npmjs.com/package/@reinconsole/init): A sandbox in one command. Generates a wallet on your machine, creates an org, an agent, a starter policy and a 7-day key on the hosted engine, writes `rein-agent.json`, then makes one call the policy allows (settles on Base Sepolia) and one it refuses before any money moves. `--claim` keeps the sandbox; `--mainnet` moves a claimed agent to Base mainnet.
 - [@reinconsole/mcp](https://www.npmjs.com/package/@reinconsole/mcp): The Guard as an MCP server. Point any MCP-capable harness at it and its agent gets a spend-governed fetch. The fastest path to a governed agent.
 - [@reinconsole/sdk](https://www.npmjs.com/package/@reinconsole/sdk): The guard. Wrap an agent's fetch once and every x402 paywall it hits is policy-checked, receipted and observable.
 - [@reinconsole/policy-engine](https://www.npmjs.com/package/@reinconsole/policy-engine): The referee. Holds agents, policies, and the hash-chained signed decision log. Runs standalone: `npx -p @reinconsole/policy-engine rein-policy-engine`.

@@ -5,187 +5,363 @@
     <meta name="robots" content="noindex" />
     <title>Rein — og:image card source (screenshot via Playwright, not linked from the site)</title>
     <link rel="stylesheet" href="/fonts/fonts.css" />
+    <!--
+      Two 1200x630 cards on the landing.css design ("the control room at the horizon"):
+      sky, perspective floor, aurora horizon, a glass instrument panel sitting on the floor.
+      Nothing animates, so a screenshot is the same frame every time.
+      Regenerate: `node serve.mjs` here, then with playwright-core at deviceScaleFactor 1
+        page.locator('#card-index').screenshot({ path: 'og-card.png' })
+        page.locator('#card-get-started').screenshot({ path: 'og-card-get-started.png' })
+      (the og:image meta tags declare 1200x630).
+    -->
     <style>
       :root {
         --font-display: 'Archivo', system-ui, sans-serif;
         --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
-        --bg: #06080b;
-        --bg-2: #0e1219;
-        --line: rgba(150, 170, 200, 0.09);
-        --line-strong: rgba(150, 170, 200, 0.18);
-        --ink: #e9eef6;
-        --ink-dim: #93a0b4;
-        --ink-faint: #56627a;
+        --bg: #04060a;
+        --glass: rgba(10, 14, 22, 0.72);
+        --line: rgba(150, 170, 200, 0.1);
+        --line-strong: rgba(150, 170, 200, 0.2);
+        --ink: #eef2f8;
+        --ink-dim: #97a3b7;
+        --ink-faint: #5a667c;
         --accent: #5b8cff;
-        --accent-soft: rgba(91, 140, 255, 0.14);
+        --accent-2: #5ee3ff;
         --accent-line: rgba(91, 140, 255, 0.45);
         --ok: #34d399;
+        --warn: #f5c451;
         --bad: #ff6b81;
+        --radius: 14px;
+        --shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.9);
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #222; font-family: var(--font-display); }
+      body { background: #222; font-family: var(--font-display); -webkit-font-smoothing: antialiased; }
 
       .card {
         position: relative;
         width: 1200px;
         height: 630px;
         overflow: hidden;
-        background:
-          radial-gradient(ellipse 900px 500px at 8% -10%, rgba(91, 140, 255, 0.16), transparent 60%),
-          radial-gradient(ellipse 700px 400px at 105% 115%, rgba(91, 140, 255, 0.1), transparent 60%),
-          var(--bg);
+        background: var(--bg);
         color: var(--ink);
         margin-bottom: 24px;
       }
-      .card::before {
+
+      /* ── Atmosphere: sky, dot lattice, grain ─────────────────────────────── */
+      .sky {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(760px 440px at 82% -10%, rgba(91, 140, 255, 0.22), transparent 62%),
+          radial-gradient(600px 400px at 6% 112%, rgba(94, 227, 255, 0.09), transparent 58%),
+          linear-gradient(180deg, #050810 0%, var(--bg) 40%, var(--bg) 100%);
+      }
+      .sky::before {
         content: '';
         position: absolute;
         inset: 0;
-        background:
-          repeating-linear-gradient(0deg, var(--line) 0 1px, transparent 1px 72px),
-          repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 72px);
-        mask-image: radial-gradient(ellipse 1100px 700px at 30% 30%, #000 40%, transparent 100%);
+        background-image: radial-gradient(rgba(170, 190, 220, 0.16) 0.6px, transparent 0.9px);
+        background-size: 28px 28px;
+        -webkit-mask-image: radial-gradient(70% 70% at 50% 30%, black 20%, transparent 100%);
+        mask-image: radial-gradient(70% 70% at 50% 30%, black 20%, transparent 100%);
       }
+      /* No film grain here: the site's noise layer triples the PNG for nothing visible at preview size. */
+
+      /* ── The floor: a lattice tilted toward the horizon ──────────────────── */
+      .floor {
+        position: absolute;
+        left: 50%;
+        top: 396px;
+        height: 340px;
+        width: 2400px;
+        transform: translateX(-50%);
+        z-index: 1;
+        perspective: 700px;
+        perspective-origin: 50% 0%;
+      }
+      .floor::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        transform-origin: 50% 0%;
+        transform: rotateX(62deg);
+        background-image:
+          linear-gradient(rgba(94, 227, 255, 0.3) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(91, 140, 255, 0.28) 1px, transparent 1px);
+        background-size: 100% 64px, 64px 100%;
+        -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 30%, black 100%);
+        mask-image: linear-gradient(180deg, transparent 0%, black 30%, black 100%);
+      }
+      /* Horizon: sharp line with its bloom, lit on the panel's side only. */
+      .horizon {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 396px;
+        height: 2px;
+        z-index: 1;
+        background: linear-gradient(90deg, transparent 0%, transparent 40%, var(--accent-2) 56%, #fff 70%, var(--accent) 86%, transparent 100%);
+        box-shadow:
+          0 0 24px 4px rgba(94, 227, 255, 0.35),
+          0 0 120px 30px rgba(91, 140, 255, 0.2);
+        opacity: 0.9;
+      }
+      .haze {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 230px;
+        z-index: 2;
+        background: linear-gradient(180deg, transparent, var(--bg) 92%);
+      }
+
+      /* ── Copy ─────────────────────────────────────────────────────────────── */
       .inner {
         position: relative;
+        z-index: 3;
         height: 100%;
-        padding: 56px 64px;
+        padding: 50px 60px 46px;
         display: flex;
         flex-direction: column;
       }
-
-      .brand-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-      }
-      .brand { display: flex; align-items: center; gap: 14px; color: var(--ink); }
-      .brand svg { width: 40px; height: 40px; }
-      .brand-name { font-weight: 800; font-size: 26px; letter-spacing: 0.34em; }
+      .brand-row { display: flex; align-items: center; justify-content: space-between; }
+      .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); }
+      .brand svg { width: 34px; height: 34px; }
+      .brand-name { font-weight: 800; font-size: 22px; letter-spacing: 0.34em; }
       .brand-domain {
         font-family: var(--font-mono);
-        font-size: 19px;
+        font-size: 16px;
         color: var(--ink-faint);
         letter-spacing: 0.06em;
       }
 
-      .headline-block { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
-      .eyebrow {
+      .copy {
+        margin-top: 42px;
+        max-width: 600px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 22px;
+      }
+      .pills { display: flex; flex-wrap: wrap; gap: 10px; }
+      .pill {
         display: inline-flex;
         align-items: center;
-        gap: 12px;
-        align-self: flex-start;
-        font-family: var(--font-mono);
-        font-size: 17px;
-        font-weight: 500;
-        letter-spacing: 0.18em;
-        color: var(--ink-dim);
+        gap: 9px;
+        height: 32px;
+        padding: 0 14px;
         border: 1px solid var(--line-strong);
         border-radius: 999px;
-        padding: 10px 20px;
-        background: rgba(14, 18, 25, 0.7);
+        background: var(--glass);
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        letter-spacing: 0.14em;
+        color: var(--ink-dim);
+        white-space: nowrap;
       }
-      .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+      .dot.live {
+        background: var(--ok);
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18), 0 0 12px var(--ok);
+      }
       h1 {
-        font-size: 78px;
-        line-height: 1.04;
         font-weight: 800;
-        letter-spacing: -0.022em;
-        max-width: 950px;
+        font-size: 52px;
+        line-height: 0.98;
+        letter-spacing: -0.035em;
       }
-      /* index card shares the row with the feed panel — keep clear of it */
-      #card-index h1 { font-size: 64px; max-width: 700px; }
-      #card-index .sub { font-size: 22px; max-width: 700px; }
-      h1 .accent { color: var(--accent); }
+      h1 .grad {
+        background: linear-gradient(92deg, #bcd0ff 0%, var(--accent-2) 45%, var(--accent) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
       .sub {
         font-family: var(--font-mono);
-        font-size: 24px;
-        line-height: 1.5;
+        font-size: 18px;
+        line-height: 1.55;
         color: var(--ink-dim);
-        max-width: 860px;
+        max-width: 580px;
       }
       .sub em { font-style: normal; color: var(--ink); border-bottom: 2px solid var(--accent-line); }
 
-      .foot {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        font-family: var(--font-mono);
-        font-size: 17px;
-        letter-spacing: 0.12em;
-        color: var(--ink-faint);
-      }
-      .foot .sep { color: var(--ink-faint); opacity: 0.6; }
-
-      /* feed strip (index card) */
-      .feed {
-        position: absolute;
-        right: -46px;
-        top: 96px;
-        width: 460px;
-        transform: rotate(3.5deg);
-        border: 1px solid var(--line-strong);
-        border-radius: 14px;
-        background: rgba(10, 13, 18, 0.92);
-        box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.9);
-        font-family: var(--font-mono);
-        font-size: 16.5px;
-        overflow: hidden;
-      }
-      .feed-head {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        padding: 13px 18px;
-        border-bottom: 1px solid var(--line);
-        color: var(--ink-faint);
-        font-size: 13.5px;
-        letter-spacing: 0.16em;
-      }
-      .feed-head .lamp { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
-      .feed-head .lamp.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
-      .feed-row {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        padding: 13px 18px;
-        border-bottom: 1px solid var(--line);
-      }
-      .feed-row:last-child { border-bottom: 0; }
-      .verdict { font-weight: 600; width: 94px; letter-spacing: 0.08em; }
-      .v-allow { color: var(--ok); }
-      .v-deny { color: var(--bad); }
-      .v-settled { color: var(--accent); }
-      .amt { color: var(--ink); width: 84px; }
-      .why { color: var(--ink-faint); font-size: 14.5px; flex: 1; white-space: nowrap; }
-
-      /* install command (get-started card) */
       .install {
         display: inline-flex;
         align-items: center;
-        gap: 16px;
-        align-self: flex-start;
+        gap: 10px;
+        padding: 12px 22px 12px 18px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: var(--glass);
         font-family: var(--font-mono);
-        font-size: 26px;
+        font-size: 20px;
         color: var(--ink);
-        border: 1px solid var(--accent-line);
-        background: var(--accent-soft);
-        border-radius: 12px;
-        padding: 18px 28px;
+        white-space: nowrap;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
       }
-      .install .prompt { color: var(--accent); font-weight: 600; }
+      .install .prompt { color: var(--accent-2); }
+
+      .foot {
+        margin-top: auto;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        font-family: var(--font-mono);
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        color: var(--ink-dim);
+        white-space: nowrap;
+      }
+      .foot .fact::before { content: '✓ '; color: var(--ok); }
+
+      /* ── The instrument: a glass panel sitting on the floor ──────────────── */
+      .stage {
+        position: absolute;
+        right: 40px;
+        top: 112px;
+        width: 490px;
+        z-index: 3;
+      }
+      .stage::before {
+        content: '';
+        position: absolute;
+        inset: -60px -80px;
+        background: radial-gradient(55% 55% at 50% 45%, rgba(91, 140, 255, 0.18), transparent 70%);
+        pointer-events: none;
+      }
+      .panel {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        background: linear-gradient(180deg, rgba(14, 19, 29, 0.94), rgba(6, 9, 14, 0.97));
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow), 0 0 0 1px rgba(94, 227, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+        transform: perspective(1600px) rotateY(-6deg) rotateX(2deg);
+        font-family: var(--font-mono);
+      }
+      /* Corner brackets: an instrument, not a card. */
+      .panel::before,
+      .panel::after {
+        content: '';
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border-color: var(--accent-2);
+        border-style: solid;
+        opacity: 0.7;
+        z-index: 1;
+      }
+      .panel::before { top: 8px; left: 8px; border-width: 1px 0 0 1px; }
+      .panel::after { bottom: 8px; right: 8px; border-width: 0 1px 1px 0; }
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.015);
+      }
+      .panel-tick {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--accent-2);
+        box-shadow: 0 0 10px var(--accent-2);
+      }
+      .panel-title {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 12.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+      .panel-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-left: auto;
+        font-size: 10.5px;
+        letter-spacing: 0.16em;
+        color: var(--ink-faint);
+      }
+      .panel-pill .dot { width: 6px; height: 6px; }
+      .panel-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 18px;
+        border-top: 1px dashed var(--line);
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .chain { margin-left: auto; display: inline-flex; gap: 3px; }
+      .chain i { width: 10px; height: 4px; border-radius: 1px; background: var(--accent); opacity: 0.35; }
+      .chain i:nth-child(2) { opacity: 0.6; }
+      .chain i:nth-child(3) { opacity: 0.95; }
+      .chain i:nth-child(4) { opacity: 0.6; }
+
+      /* Live feed (index card) */
+      .feed { list-style: none; }
+      .feed-row {
+        display: grid;
+        grid-template-columns: 68px 60px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 18px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .feed-row:last-child { border-bottom: 0; }
+      .verb { font-weight: 600; letter-spacing: 0.06em; }
+      .verb.allow { color: var(--ok); }
+      .verb.deny, .verb.refused, .verb.frozen { color: var(--bad); }
+      .verb.settled { color: var(--accent); }
+      .amt { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+      .host { color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .right { text-align: right; font-size: 11px; color: var(--ink-faint); white-space: nowrap; }
+
+      /* Runbook (get-started card) */
+      .runbook { list-style: none; }
+      .runbook-row {
+        display: grid;
+        grid-template-columns: 30px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 16px 6px 14px;
+        border-left: 2px solid transparent;
+        border-bottom: 1px solid var(--line);
+        font-size: 12.5px;
+      }
+      .runbook-row:last-child { border-bottom: 0; }
+      .runbook-row[data-track='prep'] { border-left-color: var(--ink-faint); }
+      .runbook-row[data-track='guard'] { border-left-color: var(--ok); }
+      .runbook-row[data-track='gate'] { border-left-color: var(--accent); }
+      .runbook-row[data-track='live'] { border-left-color: var(--warn); }
+      .runbook-num { font-size: 10.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+      .runbook-title { color: var(--ink); white-space: nowrap; }
+      .runbook-tag { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
+      .runbook-row[data-track='live'] .runbook-tag { color: var(--warn); }
+
+      /* Per-card tuning */
+      #card-get-started h1 { font-size: 46px; }
+      #card-get-started .copy { max-width: 640px; margin-top: 34px; }
+      #card-get-started .sub { font-size: 17px; max-width: 620px; }
+      #card-get-started .stage { width: 440px; top: 104px; }
     </style>
   </head>
   <body>
     <!-- ── card 1: index ─────────────────────────────────────────────── -->
     <div class="card" id="card-index">
-      <div class="feed" aria-hidden="true">
-        <div class="feed-head"><span class="lamp on"></span><span class="lamp"></span>LIVE DECISION FEED</div>
-        <div class="feed-row"><span class="verdict v-allow">ALLOW</span><span class="amt">$0.45</span><span class="why">api.search · under budget</span></div>
-        <div class="feed-row"><span class="verdict v-settled">SETTLED</span><span class="amt">$0.45</span><span class="why">tx 0x9f2c… · base-sepolia</span></div>
-        <div class="feed-row"><span class="verdict v-allow">ALLOW</span><span class="amt">$1.20</span><span class="why">data.vendor · reputation 82</span></div>
-        <div class="feed-row"><span class="verdict v-deny">DENY</span><span class="amt">$380.00</span><span class="why">exceeds per-tx cap</span></div>
-      </div>
+      <div class="sky"></div>
+      <div class="floor"></div>
+      <div class="horizon"></div>
+      <div class="haze"></div>
       <div class="inner">
         <div class="brand-row">
           <span class="brand">
@@ -197,22 +373,52 @@
             </svg>
             <span class="brand-name">REIN</span>
           </span>
+          <span class="brand-domain">reinconsole.com</span>
         </div>
-        <div class="headline-block">
-          <h1>The control plane for<br />AI&nbsp;agent <span class="accent">payments.</span></h1>
-          <p class="sub">Set the rules. Watch every payment. Score every counterparty. Rein governs your agent's <em>authority to spend</em> — it never holds the funds.</p>
+        <div class="copy">
+          <div class="pills">
+            <span class="pill"><span class="dot live"></span>LIVE ON BASE MAINNET</span>
+            <span class="pill">v0.5 · OPEN SOURCE · MIT</span>
+          </div>
+          <h1>The control plane for<br /><span class="grad">AI&nbsp;agent payments.</span></h1>
+          <p class="sub">Set the rules. Watch every payment. Score every counterparty. Rein governs your agent's <em>authority to spend</em>, whatever wallet it uses — and it never holds the funds.</p>
         </div>
         <div class="foot">
-          <span>NON-CUSTODIAL</span><span class="sep">·</span>
-          <span>OPEN SOURCE</span><span class="sep">·</span>
-          <span>LIVE ON BASE SEPOLIA</span><span class="sep">·</span>
-          <span class="brand-domain">reinconsole.com</span>
+          <span class="fact">Funds never pass through Rein</span>
+          <span class="fact">Every decision hash-chained &amp; signed</span>
+          <span class="fact">The kill switch revokes authority instantly</span>
+        </div>
+      </div>
+      <div class="stage" aria-hidden="true">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-tick"></span>
+            <span class="panel-title">Live feed</span>
+            <span class="panel-pill"><span class="dot live"></span>STREAMING</span>
+          </div>
+          <ul class="feed">
+            <li class="feed-row"><span class="verb settled">SETTLED</span><span class="amt">$0.02</span><span class="host">api.quotes.example</span><span class="right">base · tx 0x9f2c…</span></li>
+            <li class="feed-row"><span class="verb allow">ALLOW</span><span class="amt">$0.02</span><span class="host">api.quotes.example</span><span class="right">vendor score 87</span></li>
+            <li class="feed-row"><span class="verb deny">DENY</span><span class="amt">$180.00</span><span class="host">premium-intel.example</span><span class="right">over per-tx cap</span></li>
+            <li class="feed-row"><span class="verb refused">REFUSED</span><span class="amt">$0.10</span><span class="host">payer 0x3c11…88d0</span><span class="right">reputation 31 &lt; 40</span></li>
+            <li class="feed-row"><span class="verb frozen">FROZEN</span><span class="amt"></span><span class="host">agent research-scout</span><span class="right">kill switch engaged</span></li>
+            <li class="feed-row"><span class="verb settled">SETTLED</span><span class="amt">$0.05</span><span class="host">api.research.example</span><span class="right">base · tx 0x41be…</span></li>
+            <li class="feed-row"><span class="verb allow">ALLOW</span><span class="amt">$0.05</span><span class="host">api.research.example</span><span class="right">within budget</span></li>
+          </ul>
+          <div class="panel-foot">
+            audit chain intact · every decision hash-linked
+            <span class="chain"><i></i><i></i><i></i><i></i><i></i></span>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- ── card 2: get-started ───────────────────────────────────────── -->
     <div class="card" id="card-get-started">
+      <div class="sky"></div>
+      <div class="floor"></div>
+      <div class="horizon"></div>
+      <div class="haze"></div>
       <div class="inner">
         <div class="brand-row">
           <span class="brand">
@@ -226,15 +432,45 @@
           </span>
           <span class="brand-domain">reinconsole.com/get-started</span>
         </div>
-        <div class="headline-block">
-          <span class="eyebrow"><span class="dot"></span>VERIFIED RUNBOOK — EVERY COMMAND RAN GREEN</span>
-          <h1>From npm install to a governed agent <span class="accent">payment.</span></h1>
+        <div class="copy">
+          <div class="pills">
+            <span class="pill"><span class="dot live"></span>EVERY COMMAND RAN GREEN</span>
+            <span class="pill">NODE ≥22 · v0.5 · MIT</span>
+          </div>
+          <h1>From npm install to a<br /><span class="grad">governed agent payment.</span></h1>
+          <p class="sub">An empty folder to a policy engine that allows four payments and refuses the fifth — before any payment exists. Offline: no accounts, no chain, no funds.</p>
           <div class="install"><span class="prompt">$</span> npm install @reinconsole/sdk</div>
         </div>
         <div class="foot">
-          <span>QUICKSTART RUNS 100% OFFLINE</span><span class="sep">·</span>
-          <span>NODE ≥22</span><span class="sep">·</span>
-          <span>MIT</span>
+          <span class="fact">Quickstart runs 100% offline</span>
+          <span class="fact">Every command ran before the page shipped</span>
+          <span class="fact">Live track settles real testnet USDC</span>
+        </div>
+      </div>
+      <div class="stage" aria-hidden="true">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-tick"></span>
+            <span class="panel-title">Runbook</span>
+            <span class="panel-pill">11 STEPS · OFFLINE FIRST</span>
+          </div>
+          <ol class="runbook">
+            <li class="runbook-row" data-track="prep"><span class="runbook-num">01</span><span class="runbook-title">Check Node</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="prep"><span class="runbook-num">02</span><span class="runbook-title">Install the packages</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="prep"><span class="runbook-num">03</span><span class="runbook-title">Boot the policy engine</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="guard"><span class="runbook-num">04</span><span class="runbook-title">Save guard-quickstart.mjs</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="guard"><span class="runbook-num">05</span><span class="runbook-title">Run it: four allows, one deny</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="gate"><span class="runbook-num">06</span><span class="runbook-title">Save gate-quickstart.mjs</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="gate"><span class="runbook-num">07</span><span class="runbook-title">Run it: a 402 quote, then a 200</span><span class="runbook-tag">offline</span></li>
+            <li class="runbook-row" data-track="live"><span class="runbook-num">08</span><span class="runbook-title">First Sepolia run</span><span class="runbook-tag">testnet</span></li>
+            <li class="runbook-row" data-track="live"><span class="runbook-num">09</span><span class="runbook-title">Fund the wallet, free</span><span class="runbook-tag">testnet</span></li>
+            <li class="runbook-row" data-track="live"><span class="runbook-num">10</span><span class="runbook-title">Run again, read the chain</span><span class="runbook-tag">testnet</span></li>
+            <li class="runbook-row" data-track="live"><span class="runbook-num">11</span><span class="runbook-title">On-chain identity, ERC-8004</span><span class="runbook-tag">testnet</span></li>
+          </ol>
+          <div class="panel-foot">
+            every command ran before this page shipped
+            <span class="chain"><i></i><i></i><i></i><i></i><i></i></span>
+          </div>
         </div>
       </div>
     </div>
