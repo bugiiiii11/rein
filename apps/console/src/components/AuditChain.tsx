@@ -1,4 +1,5 @@
 import type { FeedItem } from '../../server/wire';
+import type { ChainStatus, ChainVerdict } from '../chain';
 import { midHash } from '../format';
 
 /** A short fingerprint of the engine's ed25519 public key (PEM). */
@@ -12,24 +13,35 @@ function fingerprint(pem: string): string {
 
 interface Props {
   feed: FeedItem[];
+  /** Computed once in App from the same feed, shared with the top bar. */
+  chain: ChainStatus;
   publicKey: string;
   chainLinks: number;
 }
 
-export function AuditChain({ feed, publicKey, chainLinks }: Props) {
-  const decisions = feed.filter((f) => f.kind === 'decision' && f.hash);
+const GLYPH: Record<ChainVerdict, string> = { intact: '✓', partial: '~', broken: '!', empty: '·' };
+const HEAD: Record<ChainVerdict, string> = {
+  intact: 'Chain intact',
+  partial: 'Partial view',
+  broken: 'Chain broken',
+  empty: 'Nothing to verify yet',
+};
 
-  // Verify the local hash chain: each link's prevHash must equal the prior hash.
-  let intact = true;
-  for (let i = 1; i < decisions.length; i++) {
-    const prev = decisions[i - 1];
-    const cur = decisions[i];
-    if (prev && cur && cur.prevHash !== prev.hash) {
-      intact = false;
-      break;
-    }
+function detail(c: ChainStatus): string {
+  switch (c.verdict) {
+    case 'intact':
+      return `${c.visible} visible · every link verified · ed25519-signed · sha256-linked`;
+    case 'partial':
+      return `${c.visible} visible · ${c.verified} links verified · ${c.unseen} lead outside this org's view`;
+    case 'broken':
+      return 'a link points past rows this console can see: a fork, not a gap';
+    default:
+      return 'ed25519-signed · sha256-linked · tamper-evident';
   }
+}
 
+export function AuditChain({ feed, chain, publicKey, chainLinks }: Props) {
+  const decisions = feed.filter((f) => f.kind === 'decision' && f.hash);
   const recent = decisions.slice(-7).reverse();
 
   return (
@@ -40,11 +52,11 @@ export function AuditChain({ feed, publicKey, chainLinks }: Props) {
         <span className="panel-count">{chainLinks} links</span>
       </div>
       <div className="panel-body">
-        <div className="chain-status">
-          <span className="check">{intact ? '✓' : '!'}</span>
+        <div className={`chain-status is-${chain.verdict}`}>
+          <span className="check">{GLYPH[chain.verdict]}</span>
           <span className="chain-status-text">
-            <b>{intact ? 'Chain intact' : 'Chain broken'}</b>
-            <small>ed25519-signed · sha256-linked · tamper-evident</small>
+            <b>{HEAD[chain.verdict]}</b>
+            <small>{detail(chain)}</small>
           </span>
         </div>
 
@@ -64,6 +76,7 @@ export function AuditChain({ feed, publicKey, chainLinks }: Props) {
                 </div>
                 <div className="link-prev">
                   <span className="arrow">↳</span> prev {midHash(d.prevHash, 8, 6)}
+                  {d.hash && chain.gaps.has(d.hash) && <span className="link-gap">outside view</span>}
                 </div>
               </div>
             </div>

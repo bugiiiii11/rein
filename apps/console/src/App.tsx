@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useConsole } from './useConsole';
 import { fetchMe, type Me } from './account';
+import { chainStatus } from './chain';
 import { TopBar } from './components/TopBar';
 import { Kpis } from './components/Kpis';
 import { Agents } from './components/Agents';
@@ -13,6 +14,7 @@ import { BreakersPanel } from './components/BreakersPanel';
 import { Escalations } from './components/Escalations';
 import { Reconciliation } from './components/Reconciliation';
 import { AuditChain } from './components/AuditChain';
+import { Skeleton } from './components/Skeleton';
 
 export function App() {
   const d = useConsole();
@@ -20,18 +22,23 @@ export function App() {
   useEffect(() => {
     void fetchMe().then(setMe);
   }, []);
+  // One verdict for the bar and the panel: they must never disagree.
+  const chain = useMemo(() => chainStatus(d.feed), [d.feed]);
 
   if (!d.ready) {
-    return (
-      <div className="boot">
-        {d.error ? <span className="err">connection failed · {d.error}</span> : 'initializing control plane…'}
-      </div>
-    );
+    if (d.error) {
+      return (
+        <div className="boot">
+          <span className="err">connection failed · {d.error}</span>
+        </div>
+      );
+    }
+    return <Skeleton me={me} />;
   }
 
   return (
     <div className="app">
-      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} writable={d.control.writable} me={me} />
+      <TopBar connected={d.connected} demo={d.demo} stats={d.stats} chain={chain} writable={d.control.writable} me={me} />
       <Kpis stats={d.stats} />
       <main className="grid">
         <div className="col left">
@@ -57,7 +64,7 @@ export function App() {
           <GatePanel gate={d.gate} />
           <SignerPanel signer={d.signer} />
           <Reconciliation reconciliation={d.reconciliation} feed={d.feed} />
-          <AuditChain feed={d.feed} publicKey={d.publicKey} chainLinks={d.stats?.chainLinks ?? 0} />
+          <AuditChain feed={d.feed} chain={chain} publicKey={d.publicKey} chainLinks={d.stats?.chainLinks ?? 0} />
         </div>
       </main>
     </div>

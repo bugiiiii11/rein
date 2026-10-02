@@ -1599,3 +1599,88 @@ a.pill:hover {
     display: none;
   }
 }
+
+/* ── Chain verdicts (src/chain.ts) ────────────────────────────────────────── */
+/* The default (green) block is "intact". A partial view is neutral: it is not
+   a verdict on rows this console cannot see. Broken is the only red. */
+.chain-status.is-partial,
+.chain-status.is-empty {
+  border-color: var(--line-strong);
+  background: var(--bg-1);
+}
+.chain-status.is-partial .check,
+.chain-status.is-empty .check {
+  background: var(--ink-faint);
+  color: var(--bg);
+}
+.chain-status.is-partial .chain-status-text b,
+.chain-status.is-empty .chain-status-text b {
+  color: var(--ink-dim);
+}
+.chain-status.is-broken {
+  border-color: rgba(255, 107, 129, 0.4);
+  background: var(--bad-soft);
+}
+.chain-status.is-broken .check {
+  background: var(--bad);
+  color: #1a0509;
+}
+.chain-status.is-broken .chain-status-text b {
+  color: var(--bad);
+}
+.link-gap {
+  margin-left: 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Boot skeleton (src/components/Skeleton.tsx) ──────────────────────────── */
+.sk {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  height: 10px;
+  border-radius: 4px;
+  background: rgba(150, 170, 200, 0.08);
+  vertical-align: middle;
+}
+.sk::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(150, 170, 200, 0.12), transparent);
+  animation: sk-sweep 1.5s ease-in-out infinite;
+}
+@keyframes sk-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+}
+.is-booting .kpi-value {
+  display: flex;
+  align-items: center;
+  height: 27px;
+}
+.is-booting .kpi-sub {
+  display: flex;
+  align-items: center;
+  height: 16px;
+}
+.is-booting .panel-count {
+  display: inline-flex;
+  align-items: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk::after {
+    animation: none;
+  }
+}
