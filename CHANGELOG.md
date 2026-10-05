@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-06
+
+The chain verified whole by the engine, mainnet gated per org, and `@reinconsole/mcp` ready for the MCP Registry. No breaking changes from `0.5.0`.
+
 ### Added
 
 - `GET /v1/chain/verify` on `@reinconsole/policy-engine`: the engine's own verdict on its whole decision chain, `{ intact, visible, verifiedAt, brokenAt? }`. An org-scoped key reads a subsequence of one chain whose `prevHash` links lead to rows it cannot see, so `verifyDecisionChain` over its pages can only prove the links between visible rows; this route is the engine verifying every link without showing them. `visible` is the caller's own row count (the same number as `Rein-Chain-Length`); `brokenAt` goes to unscoped keys only. Verification is incremental in `DecisionLog.verify()`, so polling it costs the links appended since the last call. Also `chainBreakAt()`, the index-returning form of `verifyDecisionChain`, and `EngineClient.verifyChain()` in `@reinconsole/sdk`.
