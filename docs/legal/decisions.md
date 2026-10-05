@@ -16,7 +16,7 @@ Screened by hand (record date, wallet, result, list version):
 
 | Date | Org | Wallet | Result |
 |------|-----|--------|--------|
-| pending | org_01M44B9PDD1S19E7CPP7XPZCVF (Matt, pilot) | 0x3d00D335F99aC0A0998b55c82321303f660017DF | founder to run the Chainalysis sanctions check and fill this row |
+| 2026-10-05 | org_01M44B9PDD1S19E7CPP7XPZCVF (Matt, pilot) | 0x3d00D335F99aC0A0998b55c82321303f660017DF | NOT sanctioned. Chainalysis on-chain sanctions oracle `0x40C57923924B5c5c5455c48D93317139ADDaC8fb` on Ethereum mainnet, `isSanctioned(address)` = false, read via ethereum-rpc.publicnode.com. Repeat before mainnet-enable of any new org; the free REST API (api key from go.chainalysis.com, `GET https://public.chainalysis.com/api/v1/address/<addr>`) is the formal source |
 
 ## Still open
 
