@@ -58,7 +58,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.1",
+    "@electric-sql/pglite": "^0.5.8",
     "@reinconsole/core": "workspace:^",
     "@reinconsole/gate": "workspace:^",
     "@reinconsole/graph": "workspace:^",
@@ -66,7 +66,7 @@
     "@reinconsole/signer": "workspace:^",
     "@reinconsole/x402-rails": "workspace:^",
     "fastify": "^5.12.1",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@reinconsole/boot": "workspace:^",
@@ -77,9 +77,9 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.23.1",
     "tsup": "^8.3.5",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "viem": "^2.47.0",
+    "viem": "^2.57.2",
     "vitest": "^2.1.8"
   }
 }
