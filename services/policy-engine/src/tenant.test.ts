@@ -223,6 +223,28 @@ describe('tenant isolation: policies', () => {
 });
 
 describe('tenant isolation: spending and its record', () => {
+  it('hides a global policy aimed only at another org’s agents, and shows one aimed at its own', async () => {
+    const { app, root, readA, adminB, agentA, agentB, as } = await tenantWorld();
+    for (const [policyId, id] of [['pol_for_b', agentB.id], ['pol_for_a', agentA.id]] as const) {
+      const r = await app.inject({
+        method: 'POST',
+        url: '/v1/policies',
+        headers: as(root),
+        payload: { policyId, appliesTo: { agents: [id] }, default: 'deny' },
+      });
+      expect(r.statusCode).toBe(200);
+    }
+    // Both are global (written by the operator with no org); each is a
+    // candidate for evaluation only where its target lives.
+    const aSees = (await app.inject({ method: 'GET', url: '/v1/policies', headers: as(readA) })).json();
+    expect(aSees.map((p: { policyId: string }) => p.policyId)).toEqual(['pol_for_a']);
+    const bSees = (await app.inject({ method: 'GET', url: '/v1/policies', headers: as(adminB) })).json();
+    expect(bSees.map((p: { policyId: string }) => p.policyId)).toEqual(['pol_for_b']);
+    const rootSees = (await app.inject({ method: 'GET', url: '/v1/policies', headers: as(root) })).json();
+    expect(rootSees).toHaveLength(2);
+    await app.close();
+  });
+
   it('403s an evaluate for an agent outside the key’s scope', async () => {
     const { app, evalA, agentB, as } = await tenantWorld();
     const res = await app.inject({
@@ -362,6 +384,28 @@ describe('tenant isolation: keys', () => {
     const bList = await app.inject({ method: 'GET', url: '/v1/keys', headers: as(adminB) });
     expect(bList.json().every((k: { orgId?: string }) => k.orgId === ORG_B)).toBe(true);
     await app.close();
+  });
+
+  it('gates a tenant’s mainnet key on the allow-list, and never the operator', async () => {
+    const { auth, engine, adminA, adminB, root, agentA, as } = await tenantWorld();
+    const mint = (app: ReturnType<typeof buildServer>, key: { secret: string }, body: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: '/v1/keys', headers: as(key), payload: { name: 'rt', scopes: ['read'], ...body } });
+    // Listed: A may; B may not; B WITHOUT the flag is untouched; the operator always may.
+    const gated = buildServer(engine, { auth, mainnetOrgs: [ORG_A] });
+    expect((await mint(gated, adminA, { mainnet: true })).statusCode).toBe(201);
+    const refused = await mint(gated, adminB, { mainnet: true });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({ error: 'mainnet_not_enabled' });
+    expect((await mint(gated, adminB, {})).statusCode).toBe(201);
+    expect((await mint(gated, root, { mainnet: true, orgId: ORG_B })).statusCode).toBe(201);
+    await gated.close();
+    // The sandbox's default is NOBODY; a plain engine's default is anybody.
+    const hosted = buildServer(engine, { auth, sandbox: {} });
+    expect((await mint(hosted, adminA, { mainnet: true, agentIds: [agentA.id] })).statusCode).toBe(403);
+    await hosted.close();
+    const own = buildServer(engine, { auth });
+    expect((await mint(own, adminB, { mainnet: true })).statusCode).toBe(201);
+    await own.close();
   });
 
   it('refuses an org id that is a NAME rather than a prefixed ULID', async () => {

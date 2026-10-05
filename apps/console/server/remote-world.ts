@@ -481,10 +481,10 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
         mode: wallet?.mode ?? 'observed',
         chain: wallet?.chain ?? '—',
         address: wallet?.address ?? '',
-        // Rolling spend is the engine's internal ledger and is not published.
-        // The reconciliation panel is where allowed value is reported here.
-        spent: '0',
-        calls: 0,
+        // Rolling spend is the engine's internal ledger and is not published,
+        // so the card says so rather than showing $0.00 next to a settled
+        // payment (a tester read that as a bug, S95). The reconciliation
+        // panel is where allowed value is reported here.
         createdAt: a.createdAt,
         ...(liveness ? { liveness } : {}),
       };

@@ -30,13 +30,18 @@ describe.skipIf(!live)('live: the deployable engine governs a real Base Sepolia 
       try {
         const wallet = privateKeyToAccount(KEY!).address;
         const admin = new EngineClient({ baseUrl: engine.url, apiKey: engine.adminSecret });
+        // The org is stamped on the policy too: an unscoped key writing a
+        // policy without one makes it GLOBAL, and the hosted engine collected
+        // one such row per nightly run (S95).
+        const orgId = newId('org');
         const agent = await admin.registerAgent({
-          orgId: newId('org'),
+          orgId,
           name: 'e2e-live-agent',
           wallets: [{ chain: 'base', address: wallet, mode: 'sdk' }],
         });
         await admin.addPolicy({
           policyId: newId('pol'),
+          orgId,
           appliesTo: { agents: [agent.id] },
           rules: [{ id: 'tx-cap', deny: { amountGt: '0.05' } }],
           default: 'allow',

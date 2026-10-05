@@ -71,11 +71,15 @@ function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
       <div className="agent-figures">
         <div>
           <div className="figure-label">spent</div>
-          <div className="figure-value">{usd(a.spent)}</div>
+          <div className="figure-value" title={a.spent === undefined ? 'not published by the engine; see Reconciliation' : undefined}>
+            {a.spent === undefined ? '—' : usd(a.spent)}
+          </div>
         </div>
         <div>
           <div className="figure-label">calls</div>
-          <div className="figure-value">{a.calls}</div>
+          <div className="figure-value" title={a.calls === undefined ? 'not published by the engine; see Reconciliation' : undefined}>
+            {a.calls === undefined ? '—' : a.calls}
+          </div>
         </div>
       </div>
 

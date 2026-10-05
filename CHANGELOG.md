@@ -8,6 +8,13 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 - `GET /v1/chain/verify` on `@reinconsole/policy-engine`: the engine's own verdict on its whole decision chain, `{ intact, visible, verifiedAt, brokenAt? }`. An org-scoped key reads a subsequence of one chain whose `prevHash` links lead to rows it cannot see, so `verifyDecisionChain` over its pages can only prove the links between visible rows; this route is the engine verifying every link without showing them. `visible` is the caller's own row count (the same number as `Rein-Chain-Length`); `brokenAt` goes to unscoped keys only. Verification is incremental in `DecisionLog.verify()`, so polling it costs the links appended since the last call. Also `chainBreakAt()`, the index-returning form of `verifyDecisionChain`, and `EngineClient.verifyChain()` in `@reinconsole/sdk`.
 - `REIN_NOTIFY_ORGS` on `@reinconsole/policy-engine` and the `rein-engine` bin, and `OrgScopedChannel`: on a shared engine, only the listed orgs' escalations and dead-man alarms reach the operator's Telegram chat and log in full. Every other org gets an id-only log line and no Telegram message. Unset keeps the old behaviour: every org.
+- `ServerOptions.mainnetOrgs` on `@reinconsole/policy-engine` and `REIN_MAINNET_ORGS` on the `rein-engine` bin: which orgs may take an agent to mainnet. `POST /v1/keys` accepts `mainnet: true`, which `init --mainnet` now sends; a tenant whose org is not listed gets `403 mainnet_not_enabled`. `any` lifts the gate. Unset: any org on an engine without the sandbox, no org on one with it. Unscoped keys are never gated. The engine still cannot see which network a payment is on; this gates the supported path.
+- `init --claim` waits for the sign-in (up to the code's 10 minutes) and prints `Claimed: org ... is yours` when the `owner:` key appears, instead of ending on the link. `runClaim` returns `claimed` and takes `waitMs` / `pollMs`.
+
+### Changed
+
+- `GET /v1/policies` for an org-scoped key no longer lists a global policy that targets only other orgs' agents (`readablePolicies` takes an agent-to-org lookup). Such a policy never governed the caller; listing it leaked other orgs' agent ids and inflated the console's "N active".
+- The console's agent card shows a dash for spend and calls when the source does not publish them (the hosted engine), instead of `$0.00 / 0` beside a settled payment.
 
 ## [0.5.0] - 2026-10-01
 

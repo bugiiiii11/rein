@@ -105,8 +105,10 @@ export interface AgentView {
   mode: string; // primary wallet enforcement mode
   chain: string;
   address: string;
-  spent: string; // session allowed spend (decimal)
-  calls: number; // allowed calls this session
+  /** Session allowed spend (decimal). Absent when the source does not publish it (the hosted engine). */
+  spent?: string;
+  /** Allowed calls this session. Absent with `spent`. */
+  calls?: number;
   createdAt: string;
   /** Dead-man state (B2). Absent when nobody is watching this agent. */
   liveness?: AgentLivenessView;

@@ -240,9 +240,13 @@ export class PolicyEngine {
     return policy;
   }
 
-  /** The policies a caller may read: the global ones, plus its own org's. */
+  /**
+   * The policies a caller may read: its own org's, plus the global ones that
+   * could govern it (a global policy aimed only at other orgs' agents is not
+   * one of them -- see `readablePolicies`).
+   */
   visiblePolicies(scope?: TenantScope): Policy[] {
-    return readablePolicies(this.policies.list(), scope);
+    return readablePolicies(this.policies.list(), scope, (id) => this.agents.get(id)?.orgId);
   }
 
   /**

@@ -111,6 +111,8 @@ export async function startPersistentEngine(options: {
   pruneIntervalMs?: number;
   /** The anonymous sandbox, forwarded to `buildServer` (needs `auth`). */
   sandbox?: SandboxOptions;
+  /** See `ServerOptions.mainnetOrgs` in the engine. */
+  mainnetOrgs?: readonly string[] | 'any';
 }): Promise<PersistentEngine> {
   if ((options.dir === undefined) === (options.store === undefined)) {
     throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
@@ -143,6 +145,7 @@ export async function startPersistentEngine(options: {
     ...(options.rateLimit ? { rateLimit: options.rateLimit } : {}),
     ...(options.trustProxy !== undefined ? { trustProxy: options.trustProxy } : {}),
     ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+    ...(options.mainnetOrgs ? { mainnetOrgs: options.mainnetOrgs } : {}),
   });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
@@ -194,6 +197,14 @@ export async function sandboxFromEnv(
     options: { ...options, drip },
     describe: `drips ${amount} test USDC from ${faucetAddress(key as `0x${string}`)} (Base Sepolia)`,
   };
+}
+
+/** `REIN_MAINNET_ORGS`: comma-separated org ids, or `any`; unset = the engine's default. */
+export function mainnetOrgsFromEnv(env: NodeJS.ProcessEnv): readonly string[] | 'any' | undefined {
+  const raw = env['REIN_MAINNET_ORGS']?.trim();
+  if (!raw) return undefined;
+  if (raw === 'any') return 'any';
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 /** host[:port]/db of a connection string -- what a boot log may show. */
@@ -274,6 +285,10 @@ if (isMainModule()) {
     // also drips test USDC (Base Sepolia only -- see x402-rails faucet.ts).
     const sandbox = await sandboxFromEnv(process.env);
     if (sandbox && !auth) throw new Error('REIN_SANDBOX=1 needs an API key (REIN_ENGINE_API_KEY)');
+    // REIN_MAINNET_ORGS (S95): which orgs `init --mainnet` may move to mainnet.
+    // Unset with the sandbox on = none (the hosted engine; new orgs wait on
+    // sanctions screening); unset without it = any (a self-hoster's engine).
+    const mainnetOrgs = mainnetOrgsFromEnv(process.env);
     const engine = await startPersistentEngine({
       store,
       port,
@@ -285,6 +300,7 @@ if (isMainModule()) {
       trustProxy: parseTrustProxy(process.env['REIN_TRUST_PROXY']),
       pruneIntervalMs: pruneIntervalFromEnv(process.env),
       ...(sandbox ? { sandbox: sandbox.options } : {}),
+      ...(mainnetOrgs ? { mainnetOrgs } : {}),
     });
     // Without this the process is SIGKILLed on every redeploy and the
     // write-behind tail dies with it — see lifecycle.ts. Installed only after

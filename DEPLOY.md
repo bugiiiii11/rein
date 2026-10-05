@@ -668,7 +668,15 @@ procedure as the engine above, with these differences:
 - `REIN_VENDOR_ORIGIN` = `https://vendor.reinconsole.com`, so quoted resources match what
   agents actually requested rather than the internal host header
 
-**Do NOT set `REIN_VENDOR_MAINNET=1` before Sprint 8.** Without it the mainnet lane is not
+**`REIN_VENDOR_MAINNET` is DISARMED indefinitely (legal decision, 2026-10-05).** M.D.N Tech FZE,
+a UAQ free-zone entity, may not accept USDC as payment for its own services under CBUAE Circular
+2/2024 (Payment Token Services Regulation) Art. 2(7); the exclusion in Art. 2(13) covers only DIFC
+and ADGM. The engine is unaffected (it receives nothing); the RECEIVING entity is the problem, so
+the reference vendor stays on testnet until a licensed UAE opinion says otherwise or receipts move
+to a non-UAE entity. Do not re-arm for a demo without a written rationale in `docs/legal/`.
+The paragraph below describes what arming does, for when that day comes.
+
+Without `REIN_VENDOR_MAINNET=1` the mainnet lane is not
 constructed at all and `/v1/*` 404s, so this process cannot take a real payment even if one
 is sent. Arming it additionally requires `REIN_VENDOR_MAINNET_PAY_TO` (a SEPARATE treasury).
 The mainnet facilitator follows the credentials: with NO CDP keys the lane settles keyless
@@ -816,6 +824,7 @@ Environment:
 | `REIN_ENGINE_API_KEY` | bootstrap admin key; mint narrower keys via `/v1/keys` and stop using it |
 | `REIN_ENGINE_SIGNING_KEY` | a FRESH `openssl genpkey -algorithm ed25519` PEM |
 | `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
+| `REIN_MAINNET_ORGS` | org ids, comma-separated, that `init --mainnet` may move to mainnet, or `any`. Unset on the hosted engine (sandbox on) = NO tenant org, which is the S95 legal posture: a new org waits on sanctions screening. Add an org here after screening its owner's wallet (see `docs/legal/decisions.md`). The gate is the `mainnet: true` flag on `POST /v1/keys`; the engine cannot see a payment's network, so a hand-edited agent file bypasses it -- the gate governs the supported path |
 | `REIN_NOTIFY_ORGS` | the operator's own org id(s), comma-separated. Only their escalations and alarms reach Telegram and the log in full; every other org gets an id-only log line and no Telegram message. Unset = every org, which on a shared engine sends tenants' payment details to the operator |
 | `REIN_ESCALATION_TTL_MS` | `3600000` |
 | `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it, and forgeable if you write anything else. Not a hop count: see "Rate limiting" above |

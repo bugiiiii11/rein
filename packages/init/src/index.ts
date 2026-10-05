@@ -294,6 +294,9 @@ export interface ClaimOptions {
   /** Opens the claim page; defaults to the platform's browser opener. Return false if it could not. */
   open?: (url: string) => boolean;
   log?: (line: string) => void;
+  /** How long to wait for the sign-in before returning; 0 = print the link and return. Default 10 minutes. */
+  waitMs?: number;
+  pollMs?: number;
 }
 
 /**
@@ -302,7 +305,9 @@ export interface ClaimOptions {
  * keep the org. The key never leaves this machine -- only the code, which is
  * good for ten minutes and one use, rides in the URL.
  */
-export async function runClaim(options: ClaimOptions = {}): Promise<{ url: string; orgId: string }> {
+export async function runClaim(
+  options: ClaimOptions = {},
+): Promise<{ url: string; orgId: string; claimed: boolean }> {
   const log = options.log ?? ((line: string) => console.log(line));
   const http = options.fetch ?? globalThis.fetch;
   const { agent } = agentFileIn(options.dir);
@@ -321,8 +326,35 @@ export async function runClaim(options: ClaimOptions = {}): Promise<{ url: strin
   const opened = (options.open ?? openBrowser)(url);
   log(`${opened ? 'Opened' : 'Open'} this link to sign in and keep org ${String(body['orgId'])} (valid 10 minutes, one use):`);
   log(`  ${url}`);
-  return { url, orgId: String(body['orgId']) };
+  // Then wait for the sign-in: the claim is an `owner:` key in the org's key
+  // list, which the sandbox key can read. Without this the terminal's last
+  // word was the link, and a tester had to infer success from the dashboard.
+  const waitMs = options.waitMs ?? CLAIM_WAIT_MS;
+  const pollMs = options.pollMs ?? CLAIM_POLL_MS;
+  const deadline = Date.now() + waitMs;
+  let claimed = false;
+  if (waitMs > 0) log('Waiting for the sign-in (Ctrl+C to stop waiting; the link stays valid)...');
+  while (Date.now() < deadline) {
+    const keys = await engineCall(http, agent.engineUrl, 'GET', '/v1/keys', agent.apiKey);
+    const list = keys.status === 200 && Array.isArray(keys.body) ? (keys.body as { name: string; revokedAt?: string }[]) : [];
+    const owner = list.find((k) => k.name.startsWith('owner:') && !k.revokedAt);
+    if (owner) {
+      claimed = true;
+      log(`Claimed: org ${String(body['orgId'])} is yours (signed in as ${owner.name.slice('owner:'.length)}).`);
+      log('Its keys no longer expire. Next: `npx @reinconsole/init --mainnet` in this folder to pay with real USDC.');
+      break;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  if (!claimed && waitMs > 0) {
+    log('Not claimed yet. Finish the sign-in in the browser; the dashboard will say "Your org" once it is done.');
+  }
+  return { url, orgId: String(body['orgId']), claimed };
 }
+
+/** How long `--claim` waits for the sign-in: the code's own lifetime. */
+const CLAIM_WAIT_MS = 10 * 60_000;
+const CLAIM_POLL_MS = 3_000;
 
 function openBrowser(url: string): boolean {
   // Spawned with an argument vector, never a shell string: the URL is data.
@@ -524,11 +556,20 @@ export async function runMainnet(options: MainnetOptions = {}): Promise<MainnetR
     writeOwnerFile(ownerFile, owner);
   }
 
+  // `mainnet: true` is what the engine gates (ServerOptions.mainnetOrgs): on
+  // the hosted engine a new org is refused until it has been screened.
   const runtime = await engineCall(http, agent.engineUrl, 'POST', '/v1/keys', owner.adminKey, {
     name: 'mainnet-runtime',
     scopes: ['evaluate', 'read'],
     agentIds: [agent.agentId],
+    mainnet: true,
   });
+  if (runtime.status === 403 && field(runtime.body, 'error') === 'mainnet_not_enabled') {
+    throw new InitError(
+      `${String(field(runtime.body, 'message'))}
+${AGENT_FILE} stays on Base Sepolia; run --mainnet again once the org is enabled.`,
+    );
+  }
   const secret = field(runtime.body, 'secret');
   if (runtime.status !== 201 || typeof secret !== 'string') throw refused('the runtime key', runtime);
 

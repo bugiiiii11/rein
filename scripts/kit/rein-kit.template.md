@@ -31,7 +31,9 @@ folder?"** -- answer **Yes**.
 
 ### 2. Switch Claude Code out of auto mode
 
-Press **Shift+Tab** until the status line under the input box **no longer says "auto mode"**.
+Press **Shift+Tab** until the status line under the input box says **"manual mode"** (or shows no
+mode at all) -- the goal is: NOT "auto mode". If Claude Code later offers to "switch to auto mode",
+answer no: the kit only works outside it.
 
 > **Prečo:** Novšie verzie Claude Code štartujú v "auto mode". V ňom bezpečnostná kontrola sama
 > zablokuje inštaláciu balíčkov a volanie nášho servera -- neopýta sa ťa, len to zastaví. Mimo auto

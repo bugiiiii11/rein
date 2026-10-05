@@ -73,6 +73,8 @@ const ApiKeyInput = z.object({
   orgId: OrgId.optional(),
   /** Narrow the new key to named agents (see `ApiKey.agentIds`). */
   agentIds: z.array(AgentId).max(64).optional(),
+  /** The key will drive an agent on mainnet (`ServerOptions.mainnetOrgs`). */
+  mainnet: z.boolean().optional(),
 });
 
 const RotateInput = z.object({ graceMs: z.number().int().nonnegative().optional() });
@@ -152,6 +154,18 @@ export interface ServerOptions {
    * on -- nothing else mints the rows it removes. Default 30 minutes.
    */
   reapIntervalMs?: number;
+  /**
+   * Which orgs may take an agent to mainnet (S95, a legal decision): a tenant
+   * minting a key with `mainnet: true` -- what `init --mainnet` sends -- is
+   * refused with `403 mainnet_not_enabled` unless its org is listed. `'any'`
+   * lifts the gate. Unset: `'any'` on an engine without the sandbox (a
+   * self-hoster's engine is all theirs), NOBODY on one with it (the public
+   * hosted engine, where mainnet for a new org waits on sanctions screening).
+   * Unscoped operator keys are never gated. The engine cannot see which
+   * network a payment is on, so this governs the supported path, not the
+   * wire; see DEPLOY.md.
+   */
+  mainnetOrgs?: readonly string[] | 'any';
 }
 
 /**
@@ -356,6 +370,7 @@ export function buildServer(
       ? new ClaimService(auth, { ...(options.sandbox?.now ? { now: options.sandbox.now } : {}), ...options.claims })
       : undefined;
   const reapIntervalMs = options.reapIntervalMs ?? DEFAULT_REAP_INTERVAL_MS;
+  const mainnetOrgs = options.mainnetOrgs ?? (options.sandbox ? [] : 'any');
   if (claims && auth && reapIntervalMs > 0) {
     const reap = () =>
       reapExpired(engine, auth, {
@@ -722,6 +737,15 @@ export function buildServer(
           );
         }
       }
+    }
+    // Mainnet for a tenant is a legal gate, not a technical one (see
+    // ServerOptions.mainnetOrgs): refused before anything is minted.
+    if (input.mainnet && scope && mainnetOrgs !== 'any' && !mainnetOrgs.includes(scope.orgId)) {
+      throw new AuthError(
+        403,
+        'mainnet_not_enabled',
+        `mainnet is not yet enabled for org ${scope.orgId}: new orgs wait on sanctions screening -- write to reinconsole@proton.me with your org id`,
+      );
     }
     // Reserved: the sandbox's daily cap counts keys by this name, so a caller
     // minting its own "sandbox" keys could exhaust everybody's allowance.

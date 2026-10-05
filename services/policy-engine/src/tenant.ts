@@ -131,13 +131,31 @@ export function visiblePolicies(policies: readonly Policy[], agent: Agent | unde
   return policies.filter((p) => p.orgId === undefined || p.orgId === agent?.orgId);
 }
 
-/** Which policies a CALLER may read: global ones, plus its own org's. */
+/**
+ * Which policies a CALLER may read: its own org's, plus the global ones that
+ * could govern it.
+ *
+ * A global policy (no `orgId`) is a candidate for every agent, so a tenant may
+ * read it -- with one exception. A global policy TARGETED at named agents
+ * governs only those agents; when none of them is in the caller's org it says
+ * nothing about the caller and would only leak another org's agent ids. The
+ * hosted engine held nineteen of those (one per nightly live run, written with
+ * the operator key) and every sandbox owner saw "19 active" on a dashboard that
+ * governed one. `orgOfAgent` resolves a target to its org; without it the old
+ * behaviour stands, so an embedded caller loses nothing.
+ */
 export function readablePolicies(
   policies: readonly Policy[],
   scope: TenantScope | undefined,
+  orgOfAgent?: (agentId: string) => string | undefined,
 ): Policy[] {
   if (!scope) return [...policies];
-  return policies.filter((p) => p.orgId === undefined || p.orgId === scope.orgId);
+  return policies.filter((p) => {
+    if (p.orgId !== undefined) return p.orgId === scope.orgId;
+    const targets = p.appliesTo?.agents ?? [];
+    if (targets.length === 0 || !orgOfAgent) return true;
+    return targets.some((id) => orgOfAgent(id) === scope.orgId);
+  });
 }
 
 /**

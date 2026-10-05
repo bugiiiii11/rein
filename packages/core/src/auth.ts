@@ -125,6 +125,8 @@ export type AuthFailureCode =
   | 'unknown_key_id'
   /** The key is confined to an org, and the named agent is not in it. */
   | 'agent_not_in_scope'
+  /** A tenant asked for a mainnet key and its org is not on the engine's allow-list (`mainnetOrgs`). */
+  | 'mainnet_not_enabled'
   /**
    * The key is confined to an org and the route has no tenant rule, so there
    * is no way to confine the call. Fail closed: an unclassified route is

@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 1 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 5 October 2026.
               </p>
             </div>
           </div>
@@ -68,21 +68,24 @@
           <code class="inline-code">app.reinconsole.com</code>, the sandbox created by
           <code class="inline-code">npx @reinconsole/init</code>, and the reference vendor at
           <code class="inline-code">vendor.reinconsole.com</code>. By using them you accept these terms and our
-          <a class="inline-link" href="privacy">Privacy Policy</a>. If you use them for an organisation, you confirm you
-          may accept these terms on its behalf.
+          <a class="inline-link" href="privacy">Privacy Policy</a>. You must be at least 18 and able to form a binding
+          contract. If you use the services for an organisation, you confirm you may accept these terms on its behalf.
         </p>
 
         <h2>2. The software and the hosted service are different things</h2>
         <p>
-          The <code class="inline-code">@reinconsole/*</code> packages are open-source software under the MIT licence.
+          The <code class="inline-code">@reinconsole/*</code> packages, including the
+          <code class="inline-code">npx @reinconsole/init</code> command, are open-source software under the MIT licence.
           That licence, not these terms, governs the code, including when you run your own engine. These terms govern only
-          the services we host.
+          the services we host, including the sandbox, test-token faucet and engine that the
+          <code class="inline-code">init</code> command connects to by default.
         </p>
 
         <h2>3. What Rein does, and what it does not</h2>
         <p>
           Rein is a control tool. Your agent asks the engine whether a payment is allowed under the policy you set; the
-          engine answers and signs a record of the decision.
+          engine answers and signs a record of the decision. Rein's decisions concern your agent's payments; they are not
+          decisions about you as a person.
         </p>
         <ul>
           <li><b>We never hold your funds or your keys.</b> Payments go directly from your agent's wallet to the seller. Rein is not a bank, a payment service, a money transmitter, an exchange or a custodian, and does not give financial, investment or tax advice.</li>
@@ -96,61 +99,103 @@
           <li>A sandbox runs on the Base Sepolia test network. Test USDC has no value and cannot be exchanged for anything.</li>
           <li>An unclaimed sandbox's keys stop working after 7 days. Sandboxes have limits on how many can be created and how much they can be used, which we may change.</li>
           <li>You claim an org by signing in with GitHub or an Ethereum wallet. One identity can own one org. Claiming lifts the expiry and the sandbox limits.</li>
-          <li>Only a claimed org can be moved to Base mainnet, where payments use real USDC.</li>
+          <li>Only a claimed org can be moved to Base mainnet, where payments use real USDC. We may require checks before enabling mainnet for an org.</li>
+          <li>You confirm that any wallet you use is yours or that you are authorised to use it.</li>
         </ul>
 
         <h2>5. Your responsibilities</h2>
         <ul>
           <li>Keep your keys safe. <code class="inline-code">rein-agent.json</code> holds your agent's wallet key and API key, and your owner file holds your admin and approver keys. They are the only copies; we cannot recover them, and anyone who has them can act as you.</li>
           <li>Fund your agent's wallet yourself, and only with amounts you are prepared to have spent within your policy.</li>
-          <li>Use the services only lawfully. Do not use them to pay for anything illegal, to evade sanctions, or on behalf of anyone subject to sanctions.</li>
+          <li>Use the services only lawfully. Do not use them to pay for anything illegal, to evade sanctions, or on behalf of anyone subject to sanctions. We may screen wallet addresses and connection data against sanctions lists and may refuse or suspend service where a match or a restricted territory is detected.</li>
+          <li>You are responsible for any taxes arising from your agent's payments.</li>
           <li>Do not get around the quotas, for example by creating sandboxes from many addresses. Do not probe, overload or attack the services, or try to read another org's data. Report security issues as described in <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</li>
+          <li>If you use the services for an organisation, and you are not a consumer, you will indemnify us against third-party claims arising from your organisation's breach of these terms.</li>
         </ul>
 
         <h2>6. Third-party services</h2>
         <p>
           Payments are settled by facilitators (such as x402.org, PayAI or Coinbase), on the Base network, and are made to
           sellers we do not control. Sign-in uses GitHub or your wallet. Those services have their own terms, and we are
-          not responsible for them or for what a seller provides in return for a payment.
+          not responsible for them or for what a seller provides in return for a payment. Prices and availability of
+          third-party services may change without our knowledge.
         </p>
 
         <h2>7. Price and availability</h2>
         <p>
           The hosted services are currently free and are provided as a beta, "as is", without any uptime commitment. We
           may change, limit or stop any part of them. While the hosted engine is unavailable, your agent cannot get a decision,
-          so payments that go through the guard are not approved. If we intend to stop the hosted service, we
-          will give reasonable notice on this website, and you can move to a self-hosted engine.
+          so payments that go through the guard are not approved. If we intend to stop the hosted service, we will give at
+          least 30 days' notice on this website and, for claimed orgs, by the contact details we hold, and you can move to
+          a self-hosted engine.
         </p>
 
         <h2>8. The decision log</h2>
         <p>
           Decisions are recorded in a signed, hash-linked log. Records cannot be removed from it individually, because
-          doing so would break its verification for everyone. You can verify your own decisions with the published tools.
+          doing so would break its verification for everyone. The log contains wallet addresses, amounts and decision
+          outcomes, and is retained as described in our <a class="inline-link" href="privacy">Privacy Policy</a>. You can
+          verify your own decisions with the published tools.
         </p>
 
         <h2>9. Suspension and ending</h2>
         <p>
-          You can stop using the services at any time. We may suspend or revoke keys or an org that breaks these terms,
-          threatens the security or stability of the service, or that we are required to act on by law. Sections 3, 5, 8,
-          10 and 11 continue after use ends.
+          You can stop using the services at any time. If you are a consumer, you may stop at any time; because the
+          services are free, there is nothing to refund. We may suspend or revoke keys or an org that breaks these terms,
+          threatens the security or stability of the services, or where we are required to act by law or by sanctions
+          rules. For a claimed org, we will give notice before suspending where it is practicable to do so, and in any
+          case tell you the reason afterwards unless the law prevents it. You may object by email within 14 days and we
+          will review. Suspension does not stop you from exporting your records or moving to a self-hosted engine.
+          Sections 3, 5, 8, 10, 11 and 13 continue after use ends.
         </p>
 
         <h2>10. Liability</h2>
         <p>
-          To the extent the law allows: the services are provided without warranties of any kind; we are not liable for
-          indirect or consequential losses, lost profits, or for payments your agent makes, whether or not they were
-          within your policy; and our total liability is limited to [amount]. Nothing in these terms limits liability that
-          cannot be limited by law. [Counsel: wording and cap.]
+          Rein's promise is this: the hosted engine will evaluate your agent's payment requests against the policy you
+          set, and will approve only requests that your policy allows. To the extent the law allows:
         </p>
+        <ul>
+          <li>(a) The services are provided "as is", without warranties of any kind, express or implied, including fitness for a particular purpose and uninterrupted or error-free operation.</li>
+          <li>(b) We are not liable for payments your agent makes that your policy allowed, because you set that policy. We are not liable for payments made without going through the Rein guard, for payments made by anyone who obtained your keys, for what a seller provides or fails to provide in return for a payment, or for the acts, failures or fees of facilitators, blockchain networks, RPC providers, GitHub or wallet software.</li>
+          <li>(c) If the hosted engine approves a payment that your policy, correctly applied, should have denied, our liability for the resulting loss is limited to the cap in (e). This is the one promise the service makes, and we stand behind it to that extent.</li>
+          <li>(d) We are not liable for indirect or consequential loss, loss of profit, loss of business or loss of data.</li>
+          <li>(e) Our total liability to you for all claims arising from the services in any 12-month period is limited to the greater of USD 100 and the fees you paid us for the services in the 12 months before the event giving rise to the claim.</li>
+          <li>(f) Nothing in these terms excludes or limits liability for fraud, for gross negligence or wilful misconduct, for death or personal injury caused by negligence, or any liability that cannot be excluded or limited by applicable law. If you are a consumer, nothing in these terms removes rights you have under the mandatory law of your country of residence.</li>
+        </ul>
 
         <h2>11. Law and disputes</h2>
-        <p>[Counsel: governing law and forum.]</p>
+        <p>
+          These terms are governed by the federal laws of the United Arab Emirates as applied in the Emirate of Umm Al
+          Quwain. If you have a dispute with us, write to us first and we will try to resolve it informally within 30
+          days. If that fails, you and we agree that the Courts of the Dubai International Financial Centre have exclusive
+          jurisdiction to settle any dispute arising out of or in connection with these terms or the services, and we both
+          opt in to their jurisdiction for that purpose. If you are a consumer resident in the EU, EEA or UK, nothing in
+          this section takes away protections you have under the mandatory law of your country of residence, or your
+          right to bring a claim in the courts of that country.
+        </p>
 
         <h2>12. Changes and contact</h2>
         <p>
-          We will post changes on this page and update the date above, with notice on this website before a material
-          change takes effect. Continuing to use the services after that means you accept the new terms. Contact:
-          <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>.
+          We may change these terms. We will post the new version on this page and update the date above. For a material
+          change we will give at least 14 days' notice on this website and, for claimed orgs, by the contact details we
+          hold, before it takes effect. If you do not agree, stop using the services before that date; continuing to use
+          them after that date means you accept the new terms. Contact:
+          <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>, or by post to the address in section 1.
+        </p>
+
+        <h2>13. General</h2>
+        <p>
+          These terms are the entire agreement between you and us about the hosted services. If any part is found
+          unenforceable, the rest remains in effect. Our failure to enforce a term is not a waiver. You may not assign
+          these terms; we may assign them to a successor of the Rein business, with notice. We are not liable for failure
+          caused by events beyond our reasonable control. These terms are written in English; a translation is for
+          convenience only.
+        </p>
+
+        <h2>14. Intellectual property and feedback</h2>
+        <p>
+          We and our licensors own the hosted services, the Rein name and marks. You own your policies, data and agents.
+          If you send us feedback, we may use it without obligation to you.
         </p>
       </article>
     </main>

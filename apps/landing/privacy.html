@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 1 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 5 October 2026.
               </p>
             </div>
           </div>
@@ -64,7 +64,10 @@
         <p>
           Rein's hosted services are operated by <b>M.D.N Tech FZE</b>, Al Shmookh Business Center, One UAQ, UAQ Free
           Trade Zone, Umm Al Quwain, United Arab Emirates, licence no. 7813 ("we", "us"). We are the controller of the
-          personal data described here. Contact: <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>.
+          personal data described here. Contact: <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>,
+          or by post to the address above. Supervisory authorities: the UAE Data Office; for users in the EU, EEA or UK,
+          your local data protection authority. We have not yet appointed a representative in the EU or UK; we will name
+          one here when we do.
         </p>
 
         <h2>What this policy covers</h2>
@@ -109,6 +112,14 @@
           transaction hash, so the vendor can prove what it was paid for.
         </p>
         <p>
+          <b>Data about other people.</b> Sellers' hostnames and the wallet addresses that pay the reference vendor may
+          relate to people who are not our users; we hold them only as part of the payment record.
+        </p>
+        <p>
+          <b>Application logs.</b> The engine, console and vendor write operational logs, which our host keeps for a
+          limited time set by its plan. For your org, engine logs record only the ids of an escalation, not its details.
+        </p>
+        <p>
           <b>This website</b> sets no cookies, has no forms and runs no analytics. It reads one public status figure from
           the console.
         </p>
@@ -122,10 +133,22 @@
 
         <h2>Legal basis</h2>
         <p>
-          We process this data to provide the service you asked for (performance of a contract), to keep it secure and
-          stop abuse such as the per-address sandbox limit (legitimate interests), and to keep an accurate audit record
-          of payment decisions (legitimate interests, and any legal obligation that applies). [Counsel: confirm the
-          bases under the UAE PDPL and, for users in the EU/UK, the GDPR.]
+          We process the data above because it is necessary to provide the service you asked for: to create and run your
+          sandbox or org, to answer your agent's payment requests, to keep a verifiable record of those decisions, and to
+          keep the service secure, including the per-address sandbox limit and protection against abuse. We also process
+          data where the law requires it, for example to respond to a lawful request from an authority or to comply with
+          sanctions rules.
+        </p>
+        <p>
+          For users in the EU, EEA and UK, the bases under the GDPR are: performance of a contract (Art. 6(1)(b)) for
+          providing the service; our legitimate interests (Art. 6(1)(f)) in keeping the service secure, preventing abuse
+          and keeping an accurate audit record of payment decisions; and compliance with a legal obligation (Art. 6(1)(c))
+          where one applies. We do not rely on consent for any of this processing, and we do not use your data for
+          marketing or profiling.
+        </p>
+        <p>
+          For users in the UAE, we rely on the exceptions in Article 4 of the Personal Data Protection Law for processing
+          necessary to perform our contract with you and to comply with legal obligations.
         </p>
 
         <h2>Who else receives data</h2>
@@ -140,8 +163,16 @@
           <li><b>Blockchain RPC providers</b> (Base): receive wallet addresses when we send test USDC or read the chain.</li>
         </ul>
         <p>
-          Some of these providers are outside your country, including in the United States. [Counsel: transfer
-          mechanism wording.]
+          We will disclose data where the law requires it, for example to a court order or a sanctions authority.
+        </p>
+        <p>
+          <b>International transfers.</b> We are based in the United Arab Emirates. Our database is hosted in the European
+          Union. Some of our providers process data in the United States or in other countries. Where data about users in
+          the EU, EEA or UK leaves those territories, we rely on the European Commission's Standard Contractual Clauses
+          (and the UK Addendum or International Data Transfer Agreement) in our agreements with those providers, or on the
+          EU-US Data Privacy Framework where the provider is certified under it. Where data leaves the UAE, we rely on the
+          same contractual safeguards as permitted by the UAE Personal Data Protection Law. You can ask us for a summary
+          of the safeguards that apply to a given provider.
         </p>
 
         <h2>Public blockchains</h2>
@@ -158,26 +189,49 @@
           <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. The records stay in the decision log.</li>
           <li><b>IP addresses</b>: held in memory only, and discarded when the limit resets or the service restarts.</li>
           <li><b>Sign-in cookies</b>: 7 days at most.</li>
-          <li><b>Backups</b>: [retention period].</li>
+          <li><b>Application logs</b>: kept by our host for a limited time set by its plan, then deleted.</li>
+          <li><b>Backups</b>: today we keep full backups indefinitely. We are moving to a 90-day rolling retention and will update this page when it is in place.</li>
         </ul>
+        <p>If you ask us to delete your data, see "Your rights" for what we delete and what we must keep.</p>
 
         <h2>Your rights</h2>
         <p>
           Depending on where you live, you can ask to access, correct or delete your personal data, to object to or
-          restrict its processing, and to receive a copy. Write to <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>. We can unlink your
-          sign-in identity from your org. We cannot remove entries from the hash-linked decision log or from a public
-          blockchain, for the reasons above. You can also complain to your data protection authority.
+          restrict its processing, and to receive a copy. Write to <b><a href="mailto:reinconsole@proton.me">reinconsole@proton.me</a></b>,
+          or by post to the address above. We will answer within one month. To verify a request we may ask you to sign a
+          message with your owner wallet or to sign in with the GitHub account that claimed the org. You can also complain
+          to your data protection authority.
+        </p>
+        <p>
+          If you ask us to delete your data, we will delete your sign-in identity and any record that links your org to
+          you, so that we can no longer connect the decision log to you. Entries in the decision log itself, which
+          contain wallet addresses, payment amounts and decision outcomes, are kept, because each entry is
+          cryptographically linked to the ones before and after it: removing one would destroy the verifiability of
+          every later record for every user, and the log is the evidence of what the service decided. We treat this as
+          retention necessary for the integrity of the service and for the establishment and defence of legal claims.
+          Records on a public blockchain are outside our control and cannot be deleted by anyone.
+        </p>
+        <p>
+          You can object to processing based on legitimate interests; we will stop unless we have compelling grounds,
+          such as the integrity of the decision log.
+        </p>
+
+        <h2>Automated decisions</h2>
+        <p>
+          The engine's decisions are about your agent's payment requests, made under rules you set. We make no automated
+          decisions about you as a person that have legal or similarly significant effects.
         </p>
 
         <h2>Security</h2>
         <p>
           API keys are stored only as digests. Sessions are signed. The decision log is signed and hash-linked, so tampering
           is detectable. See <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>
-          for how to report a vulnerability.
+          for how to report a vulnerability. If a security incident affects your personal data, we will notify the
+          relevant authority and, where the law requires, you, without undue delay.
         </p>
 
         <h2>Children</h2>
-        <p>The services are not intended for anyone under 18.</p>
+        <p>The services are not intended for anyone under 18. If we learn that we hold personal data about someone under 18, we will delete it.</p>
 
         <h2>Changes</h2>
         <p>

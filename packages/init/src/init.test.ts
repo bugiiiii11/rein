@@ -165,7 +165,8 @@ describe('init --claim', () => {
       const dir = mkdtempSync(join(tmpdir(), 'rein-claim-'));
       writeFileSync(join(dir, AGENT_FILE), JSON.stringify({ engineUrl, orgId: sb.orgId, agentId: sb.agentId, apiKey: sb.apiKey }));
       const opened: string[] = [];
-      const out = await runClaim({ dir, consoleUrl: 'https://console.test', open: (u) => (opened.push(u), true), log: () => undefined });
+      const out = await runClaim({ dir, consoleUrl: 'https://console.test', open: (u) => (opened.push(u), true), log: () => undefined, waitMs: 0 });
+      expect(out.claimed).toBe(false);
       expect(out.orgId).toBe(sb.orgId);
       expect(opened).toEqual([out.url]);
       expect(out.url).toMatch(/^https:\/\/console\.test\/claim\?code=[\w-]+$/);
@@ -177,7 +178,7 @@ describe('init --claim', () => {
 
   it('says what to do when there is no rein-agent.json', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'rein-claim-'));
-    await expect(runClaim({ dir, open: () => true, log: () => undefined })).rejects.toThrow(/run `npx @reinconsole\/init` first/);
+    await expect(runClaim({ dir, open: () => true, log: () => undefined, waitMs: 0 })).rejects.toThrow(/run `npx @reinconsole\/init` first/);
   });
 });
 
@@ -190,7 +191,11 @@ describe('init --mainnet and --approve', () => {
     const auth = new ApiKeyAuth();
     const app = buildServer(new PolicyEngine({ approvals: new ApprovalService({ ttlMs: 60_000 }) }), {
       auth,
-      sandbox: {},
+      // Six sandboxes from one address in this file: over the default per-IP day cap.
+      sandbox: { perIpPerDay: 20 },
+      // With the sandbox on, the default lets NO org onto mainnet (the hosted
+      // engine's legal posture, S95); the gate itself is tested in the engine.
+      mainnetOrgs: 'any',
     });
     await app.listen({ port: 0, host: '127.0.0.1' });
     url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -218,12 +223,25 @@ describe('init --mainnet and --approve', () => {
 
   async function claimed(identity: string) {
     const box = await sandbox();
-    const { url: link } = await runClaim({ dir: box.dir, open: () => true, log: quiet });
+    const { url: link } = await runClaim({ dir: box.dir, open: () => true, log: quiet, waitMs: 0 });
     const code = new URL(link).searchParams.get('code');
     const redeemed = await call('POST', '/v1/claims/redeem', identityKey, { code, identity });
     expect(redeemed.status).toBe(200);
     return box;
   }
+
+  it('--claim waits for the sign-in and says so', async () => {
+    const box = await sandbox();
+    const lines: string[] = [];
+    const waiting = runClaim({ dir: box.dir, open: () => true, log: (l) => lines.push(l), waitMs: 20_000, pollMs: 50 });
+    // The link is printed before the wait begins; redeem it meanwhile.
+    while (!lines.some((l) => l.includes('/claim?code='))) await new Promise((r) => setTimeout(r, 10));
+    const code = new URL(lines.find((l) => l.includes('/claim?code='))!.trim()).searchParams.get('code');
+    expect((await call('POST', '/v1/claims/redeem', identityKey, { code, identity: 'github:777' })).status).toBe(200);
+    const out = await waiting;
+    expect(out.claimed).toBe(true);
+    expect(lines.join('\n')).toMatch(/Claimed: org org_\w+ is yours \(signed in as github:777\)/);
+  });
 
   it('refuses an org nobody has claimed, and writes nothing', async () => {
     const { dir, ownerDir, agent } = await sandbox();
