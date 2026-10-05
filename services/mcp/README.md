@@ -8,6 +8,36 @@ Rein is non-custodial. It governs an agent's authority to spend, not the funds.
 
 ## Install
 
+The fastest start is a free testnet sandbox -- no account, no signup:
+
+```bash
+npx @reinconsole/init
+```
+
+It creates an agent on the hosted engine with a starter policy (Base Sepolia, $0.004 per-call cap),
+a test wallet with a little test USDC, and `rein-agent.json`, then prints this config with the path
+filled in:
+
+```json
+{
+  "mcpServers": {
+    "rein": {
+      "command": "npx",
+      "args": ["-y", "@reinconsole/mcp"],
+      "env": { "REIN_AGENT_FILE": "/path/to/rein-agent.json" }
+    }
+  }
+}
+```
+
+The file supplies the engine URL, agent id, API key and wallet, so keys never sit on a command line
+or in the config. The sandbox lasts 7 days; `npx @reinconsole/init --claim` keeps it by signing in
+with GitHub or an Ethereum wallet.
+
+### Your own engine
+
+Point it at any policy engine with variables instead of the file:
+
 ```json
 {
   "mcpServers": {
@@ -26,11 +56,9 @@ Rein is non-custodial. It governs an agent's authority to spend, not the funds.
 That is advisory mode: paywalls are evaluated against policy and reported, and nothing is ever
 paid. Add `REIN_PAYER_PRIVATE_KEY` to settle allowed payments.
 
-You need a policy engine to point at. `npx -p @reinconsole/policy-engine rein-policy-engine` runs
-one locally on `127.0.0.1:8787`; see
-[@reinconsole/policy-engine](https://www.npmjs.com/package/@reinconsole/policy-engine) for
-registering an agent and writing a policy. The hosted engine at `https://engine.reinconsole.com`
-is keyed and by invitation; set `REIN_ENGINE_API_KEY` to the key you were issued.
+`npx -p @reinconsole/policy-engine rein-policy-engine` runs an engine locally on `127.0.0.1:8787`;
+see [@reinconsole/policy-engine](https://www.npmjs.com/package/@reinconsole/policy-engine) for
+registering an agent and writing a policy.
 
 When the server is up it prints exactly one line to stderr. A harness shows nothing else, so if
 this line is missing the server is not running, and whatever preceded it is why:
@@ -43,8 +71,9 @@ this line is missing the server is not running, and whatever preceded it is why:
 
 | Variable                      | Required               | Meaning                                                                       |
 | ----------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
-| `REIN_ENGINE_URL`             | yes                    | Policy engine base URL.                                                       |
-| `REIN_AGENT_ID`               | yes                    | The one agent this server speaks for. Never a tool argument.                  |
+| `REIN_AGENT_FILE`             | no                     | Path to the `rein-agent.json` that `npx @reinconsole/init` writes. Supplies the four values below; any variable set explicitly overrides its field. |
+| `REIN_ENGINE_URL`             | yes, unless the file   | Policy engine base URL.                                                       |
+| `REIN_AGENT_ID`               | yes, unless the file   | The one agent this server speaks for. Never a tool argument.                  |
 | `REIN_ENGINE_API_KEY`         | if the engine has auth | Bearer secret for the engine.                                                 |
 | `REIN_PAYER_PRIVATE_KEY`      | no                     | Agent wallet key. Omit for advisory mode: policy is checked, nothing is paid. |
 | `REIN_NETWORK_PROFILE`        | no                     | `testnet` (default) or `mainnet`. Which network's 402s this server will pay; the other is refused before a signature exists. An unknown value refuses to boot. |

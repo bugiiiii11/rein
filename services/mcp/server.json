@@ -1,0 +1,62 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bugiiiii11/rein",
+  "title": "Rein",
+  "description": "Spend limits for AI agents that pay with x402: every paywall is policy-checked before a cent moves.",
+  "websiteUrl": "https://reinconsole.com",
+  "repository": {
+    "url": "https://github.com/bugiiiii11/rein",
+    "source": "github",
+    "subfolder": "services/mcp"
+  },
+  "version": "0.5.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@reinconsole/mcp",
+      "version": "0.5.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "REIN_AGENT_FILE",
+          "description": "Path to the rein-agent.json written by `npx @reinconsole/init` (engine URL, agent id, API key, wallet).",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        },
+        {
+          "name": "REIN_ENGINE_URL",
+          "description": "Policy engine base URL. Required unless REIN_AGENT_FILE is set.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "REIN_AGENT_ID",
+          "description": "The one agent this server speaks for. Required unless REIN_AGENT_FILE is set.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "REIN_ENGINE_API_KEY",
+          "description": "Bearer key for the engine, ideally an evaluate key narrowed to this agent.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "REIN_PAYER_PRIVATE_KEY",
+          "description": "Agent wallet key. Omit for advisory mode: policy is checked, nothing is paid.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "REIN_NETWORK_PROFILE",
+          "description": "testnet (default) or mainnet: which network's 402s this server will pay.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

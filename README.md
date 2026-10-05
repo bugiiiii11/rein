@@ -355,6 +355,8 @@ const res = await fetch('https://api.vendor.example/v1/search?q=...');
 
 The guard layers _underneath_ any x402 payment library: the first unpaid request surfaces the 402, the guard evaluates it and either blocks it (so the payment layer never sees the paywall) or releases it upward — and the `X-PAYMENT` retry flows back through to attach the settlement. Or pass a `payer` and the guard settles directly.
 
+Framework examples, each runnable against a free sandbox from `npx @reinconsole/init`: [Vercel AI SDK](examples/vercel-ai-sdk) (a governed `tool()`) and [Coinbase AgentKit](examples/coinbase-agentkit) (an action provider that pays with the AgentKit wallet).
+
 ## The policy engine API
 
 `POST /v1/evaluate` is the hot path (sub-millisecond, signed + chained). Also: register agents, manage policies, flip the kill switch, and read the audit log.
@@ -518,6 +520,9 @@ services/
 apps/
   demo/          @reinconsole/demo           — end-to-end demos: mock (5 scenarios) + real Base Sepolia (guard + gate) + signer tier + gate + graph
   console/       @reinconsole/console        — live web UI: real-time feed, kill switch, audit chain, shadow-spend alerts
+examples/
+  vercel-ai-sdk/                             — spend limits for an AI SDK agent: a tool() that asks Rein before it pays
+  coinbase-agentkit/                         — spend limits for an AgentKit agent: an action provider, the wallet signs
 ```
 
 ## Tech
