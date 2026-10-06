@@ -1,0 +1,82 @@
+{
+  "manifest_version": "0.3",
+  "name": "rein",
+  "display_name": "Rein",
+  "version": "0.5.1",
+  "description": "Spend limits for AI agents that pay with x402: every paywall is policy-checked before a cent moves.",
+  "long_description": "Rein is the control plane for AI agent payments. Every x402 payment the agent attempts through rein_fetch is checked against your policy before anything is signed: per-call caps, budgets, allow and deny lists, human approval and a kill switch. Every decision is signed and receipted. Non-custodial: Rein governs the authority to spend, never the funds. Get a free testnet sandbox and the agent file this server needs with `npx @reinconsole/init`.",
+  "author": {
+    "name": "bugiiiii11",
+    "url": "https://github.com/bugiiiii11"
+  },
+  "homepage": "https://reinconsole.com",
+  "documentation": "https://github.com/bugiiiii11/rein/tree/main/services/mcp#readme",
+  "support": "https://github.com/bugiiiii11/rein/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bugiiiii11/rein"
+  },
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": [
+    "x402",
+    "payments",
+    "spend-control",
+    "ai-agents",
+    "usdc",
+    "base"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "node_modules/@reinconsole/mcp/bin/rein-mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/node_modules/@reinconsole/mcp/bin/rein-mcp.mjs"
+      ],
+      "env": {
+        "REIN_AGENT_FILE": "${user_config.agent_file}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "rein_fetch",
+      "description": "HTTP fetch with x402 payments governed by Rein: a paywall is policy-checked before any money moves."
+    },
+    {
+      "name": "rein_status",
+      "description": "The rules this agent is subject to and its standing against them: policies, spend-breaker counters, engine posture."
+    },
+    {
+      "name": "rein_receipts",
+      "description": "This session's receipts for every payment decision, allowed or not, plus reconciliation against settlement."
+    },
+    {
+      "name": "rein_escalations",
+      "description": "Payments policy escalated to a human; each expires into a denial if nobody signs an approval."
+    },
+    {
+      "name": "rein_heartbeat",
+      "description": "Tell Rein this agent is still working, for dead-man monitoring when it is not buying anything."
+    }
+  ],
+  "user_config": {
+    "agent_file": {
+      "type": "file",
+      "title": "Rein agent file",
+      "description": "Path to the rein-agent.json written by `npx @reinconsole/init` (engine URL, agent id, API key, wallet).",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  }
+}
