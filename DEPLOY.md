@@ -1032,7 +1032,7 @@ claim code survives it. Every check is a row in the `screenings` table, which is
 The operator reads them with an unscoped key:
 
 ```
-curl -s https://engine.reinconsole.com/v1/screenings?orgId=<org> -H "authorization: Bearer $REIN_KEY_READ"
+curl -s https://engine.reinconsole.com/v1/screenings?orgId=<org> -H "authorization: Bearer $REIN_ENGINE_API_KEY"
 ```
 
 | Variable | Service | Default | What it does |
@@ -1047,7 +1047,7 @@ pilot org ids already listed>`. Do it only once the rest of the go-live list in
 `docs/legal/decisions.md` is done.
 
 **Exit checks:** the engine boot log shows `geo-block on` and `sanctions screening on -- ... N
-checks on record`. `GET /v1/screenings` with the read key answers `200`. With a tenant key it
+checks on record`. `GET /v1/screenings` with the unscoped operator key (`REIN_ENGINE_API_KEY` in `.env.engine-ops`; that file's `REIN_KEY_READ` is org-scoped and gets `403`) answers `200`. With a tenant key it
 answers `403 route_not_scopable`.
 
 ## The live workflow (S58)
