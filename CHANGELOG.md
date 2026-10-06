@@ -4,6 +4,12 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Added
+
+- **Sanctions screening** on `@reinconsole/policy-engine` (`ServerOptions.screening`, `REIN_SANCTIONS_SCREENING` on `rein-engine`, on by default with the sandbox). At `POST /v1/claims/redeem`, and at a tenant's `POST /v1/keys` with `mainnet: true`, the engine checks the owner's wallet (for an `eth:` sign-in) and every wallet the org's agents registered against the Chainalysis sanctions oracle on Ethereum, through public RPCs tried in turn (`REIN_SANCTIONS_RPC_URLS` replaces the list). A listed address answers `403 screening_refused` and spends the claim code. If no RPC answers, the answer is `503 screening_unavailable` with `Retry-After: 60` and the code stays valid for a retry. Every check is kept, append-only and never pruned, in a new `screenings` table in `@reinconsole/store`, and unscoped keys read it at `GET /v1/screenings` (`?orgId=` filters). New exports: `ScreeningService`, `ScreeningError`, `InMemoryScreeningStore`, `chainalysisOracle`, `screenerFromEnv`, `ownerWallet`, `CHAINALYSIS_ORACLE`, `DEFAULT_SCREENING_RPCS` and their types.
+- `screened` as a `mainnetOrgs` / `REIN_MAINNET_ORGS` entry: every claimed org that passes screening may go to mainnet without being listed by id. Listed orgs are screened too. It needs `screening`, and `buildServer` throws without it. The hosted default does not change.
+- **A geo-block** on `@reinconsole/policy-engine` (`ServerOptions.geoBlock`, `REIN_GEOBLOCK` on `rein-engine` and the console, on by default with the sandbox on the engine and with sign-in on the console). A request from Cuba, Iran, North Korea, Crimea, Sevastopol, Donetsk or Luhansk answers `451 restricted_territory`. On the engine it runs before the rate limiter and auth, on every route but `/health`, by `req.ip` (so it needs `REIN_TRUST_PROXY=1` behind a proxy). `REIN_GEOBLOCK` takes `off`, `on` or a list of territory codes. The ranges come from DB-IP Lite (CC BY 4.0) and are bundled in the package, so a lookup sends no address anywhere; `scripts/update-geoblock.mjs` regenerates them. New exports: `GeoBlock`, `geoBlockFromEnv`, `clientAddress`, `privateAddress`, `DEFAULT_GEOBLOCK_TERRITORIES`, `GEOBLOCK_STATUS`, `GEOBLOCK_BODY`.
+
 ## [0.5.1] - 2026-10-06
 
 The chain verified whole by the engine, mainnet gated per org, and `@reinconsole/mcp` ready for the MCP Registry. No breaking changes from `0.5.0`.

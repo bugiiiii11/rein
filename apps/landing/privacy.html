@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 5 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 6 October 2026.
               </p>
             </div>
           </div>
@@ -100,6 +100,20 @@
           <li>With an Ethereum wallet: your <b>wallet address</b> and a signed sign-in message. The signature moves no funds.</li>
           <li>Claiming binds your org to that identity. We store it as <code class="inline-code">github:&lt;id&gt;</code> or <code class="inline-code">eth:&lt;address&gt;</code> in the name of the org's owner key. Your username is kept only in your session cookie, not in our database.</li>
         </ul>
+        <p>
+          <b>Sanctions checks.</b> When you claim an org, and again when you move its agent to mainnet, we check your
+          wallet address (if you signed in with one) and every agent wallet in the org against the Chainalysis sanctions
+          oracle, a public list on Ethereum. A listed address is refused. For each address we keep a screening record:
+          the address, the org, whether it is the owner's or an agent's, what triggered the check, the result, the time,
+          and which source answered.
+        </p>
+        <p>
+          <b>Where a request comes from.</b> The engine and the console look up the country or region of each request's
+          IP address in a table that ships with the software, and refuse requests from territories under comprehensive
+          sanctions. The lookup happens in memory: the address is not sent to a lookup service and is not stored.
+          IP geolocation by <a class="inline-link" href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a>,
+          licensed under <a class="inline-link" href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.
+        </p>
         <p><b>When your agent uses the engine</b> (this is the service itself):</p>
         <ul>
           <li>Each payment decision: the outcome, the reason, the rules that matched, a hash of the payment request, and a timestamp and signature.</li>
@@ -160,7 +174,7 @@
           <li><b>GitHub</b>: provides GitHub sign-in, and stores our nightly full database backups in a private repository. Backups run on GitHub Actions.</li>
           <li><b>Telegram</b>: delivers escalation and alert notifications for Rein's own orgs to the Rein operator. Nothing about your org is sent to Telegram.</li>
           <li><b>Payment facilitators</b> (x402.org on testnet; PayAI or Coinbase on mainnet): receive the signed payment when an agent pays the reference vendor, in order to settle it.</li>
-          <li><b>Blockchain RPC providers</b> (Base): receive wallet addresses when we send test USDC or read the chain.</li>
+          <li><b>Blockchain RPC providers</b> (Base and Ethereum): receive wallet addresses when we send test USDC, read the chain, or run a sanctions check.</li>
         </ul>
         <p>
           We will disclose data where the law requires it, for example to a court order or a sanctions authority.
@@ -186,8 +200,9 @@
           <li><b>Decision log</b>: kept indefinitely. Each decision is hash-linked to the one before, so removing one would break the verifiable record for everyone. This is how Rein proves what was and was not allowed.</li>
           <li><b>Spending records, settlements and API key records</b>: kept indefinitely, as part of the same record.</li>
           <li><b>Resolved escalations</b>: pruned after they are no longer needed for enforcement.</li>
+          <li><b>Screening records</b>: kept indefinitely, as the evidence that a sanctions check ran and what it found.</li>
           <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. The records stay in the decision log.</li>
-          <li><b>IP addresses</b>: held in memory only, and discarded when the limit resets or the service restarts.</li>
+          <li><b>IP addresses</b>: held in memory only. The location check uses an address only while it answers the request; the sandbox limit keeps it until the limit resets or the service restarts.</li>
           <li><b>Sign-in cookies</b>: 7 days at most.</li>
           <li><b>Application logs</b>: kept by our host for a limited time set by its plan, then deleted.</li>
           <li><b>Backups</b>: today we keep full backups indefinitely. We are moving to a 90-day rolling retention and will update this page when it is in place.</li>
