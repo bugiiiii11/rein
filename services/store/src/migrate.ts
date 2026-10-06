@@ -57,6 +57,7 @@ const TABLES = [
   'approval_requests',
   'api_keys',
   'settlements',
+  'screenings',
 ] as const;
 
 /** BIGSERIAL columns whose sequence must continue past the copied rows. */
@@ -67,6 +68,7 @@ const SERIALS: ReadonlyArray<readonly [table: string, column: string]> = [
   ['graph_intents', 'seq'],
   ['signer_sessions', 'seq'],
   ['gate_receipts', 'seq'],
+  ['screenings', 'seq'],
 ];
 
 const BATCH = 200;
@@ -331,6 +333,7 @@ function snapshot(store: ReinStore, now: number) {
     policies: store.policies.list().map((p) => p.policyId),
     apiKeys: store.apiKeys.size,
     settlements: store.settlements.count(),
+    screenings: store.screenings.count(),
     publicKeyPem: store.publicKeyPem,
   };
 }

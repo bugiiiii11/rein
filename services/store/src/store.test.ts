@@ -9,6 +9,7 @@ import {
   ApprovalService,
   LivenessMonitor,
   PolicyEngine,
+  ScreeningService,
   signApproval,
   verifyDecisionChain,
 } from '@reinconsole/policy-engine';
@@ -811,5 +812,33 @@ describe('durable tenant attribution', () => {
     const engineB = new PolicyEngine(b);
     expect(engineB.decisions()).toHaveLength(1);
     expect(engineB.decisions({ orgId: ORG })).toEqual([]);
+  });
+});
+
+/**
+ * S98: the screening record is the evidence that a claim or a mainnet move was
+ * checked, so it has to outlive the process that made the check -- in order,
+ * and whole.
+ */
+describe('durable screening record', () => {
+  it('resumes every check in the order it was made', async () => {
+    const dir = tempDir();
+    const first = await open(dir);
+    const screening = new ScreeningService(
+      { describe: 'fake', screen: async (a) => ({ sanctioned: false, source: `fake:${a.slice(2, 6)}` }) },
+      first.screenings,
+    );
+    const orgId = newId('org');
+    await screening.check(orgId, 'claim', [{ address: '0x1111111111111111111111111111111111111111', role: 'owner' }]);
+    await screening.check(orgId, 'mainnet', [
+      { address: '0x2222222222222222222222222222222222222222', role: 'agent', agentId: newId('agt') },
+    ]);
+    const written = first.screenings.list().map((r) => ({ ...r }));
+    await first.close();
+
+    const resumed = await open(dir);
+    expect(resumed.screenings.count()).toBe(2);
+    expect(resumed.screenings.list()).toEqual(written);
+    expect(resumed.screenings.list().map((r) => r.trigger)).toEqual(['claim', 'mainnet']);
   });
 });

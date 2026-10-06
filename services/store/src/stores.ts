@@ -15,8 +15,11 @@ import {
   InMemoryApprovalStore,
   InMemoryLivenessStore,
   InMemoryPolicyStore,
+  InMemoryScreeningStore,
   InMemorySettlementStore,
   InMemorySpendStore,
+  type ScreeningRecord,
+  type ScreeningStorePort,
   type AgentRegistryPort,
   type ApprovalStorePort,
   type LivenessRecord,
@@ -301,6 +304,39 @@ export class PgSettlementStore implements SettlementStorePort {
 
   count(): number {
     return this.mem.count();
+  }
+}
+
+/**
+ * The sanctions-screening record (S98). Append-only and never pruned: it is
+ * what shows, later, that an org's wallets were checked before it was claimed
+ * or moved to mainnet, and what the check said.
+ */
+export class PgScreeningStore implements ScreeningStorePort {
+  private readonly mem = new InMemoryScreeningStore();
+
+  private constructor(private readonly db: Db) {}
+
+  static async open(db: Db): Promise<PgScreeningStore> {
+    const store = new PgScreeningStore(db);
+    const rows = await db.query<{ doc: unknown }>('SELECT doc FROM screenings ORDER BY seq');
+    for (const row of rows.rows) {
+      store.mem.record((typeof row.doc === 'string' ? JSON.parse(row.doc) : row.doc) as ScreeningRecord);
+    }
+    return store;
+  }
+
+  async record(rec: ScreeningRecord): Promise<void> {
+    await this.db.query('INSERT INTO screenings (id, doc) VALUES ($1, $2)', [rec.id, JSON.stringify(rec)]);
+    this.mem.record(rec);
+  }
+
+  list(): readonly ScreeningRecord[] {
+    return this.mem.list();
+  }
+
+  count(): number {
+    return this.mem.list().length;
   }
 }
 

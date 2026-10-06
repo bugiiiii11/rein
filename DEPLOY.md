@@ -824,7 +824,7 @@ Environment:
 | `REIN_ENGINE_API_KEY` | bootstrap admin key; mint narrower keys via `/v1/keys` and stop using it |
 | `REIN_ENGINE_SIGNING_KEY` | a FRESH `openssl genpkey -algorithm ed25519` PEM |
 | `REIN_TELEGRAM_BOT_TOKEN` + `REIN_TELEGRAM_CHAT_ID` | both or neither |
-| `REIN_MAINNET_ORGS` | org ids, comma-separated, that `init --mainnet` may move to mainnet, or `any`. Unset on the hosted engine (sandbox on) = NO tenant org, which is the S95 legal posture: a new org waits on sanctions screening. Add an org here after screening its owner's wallet (see `docs/legal/decisions.md`). The gate is the `mainnet: true` flag on `POST /v1/keys`; the engine cannot see a payment's network, so a hand-edited agent file bypasses it -- the gate governs the supported path |
+| `REIN_MAINNET_ORGS` | org ids, comma-separated, that `init --mainnet` may move to mainnet, or `any`. Unset on the hosted engine (sandbox on) = NO tenant org, which is the S95 legal posture: a new org waits on sanctions screening. Add an org here after screening its owner's wallet (see `docs/legal/decisions.md`), or add `screened` to admit every claimed org that passes the automatic screening (see "Sanctions screening and the geo-block"). The gate is the `mainnet: true` flag on `POST /v1/keys`; the engine cannot see a payment's network, so a hand-edited agent file bypasses it -- the gate governs the supported path |
 | `REIN_NOTIFY_ORGS` | the operator's own org id(s), comma-separated. Only their escalations and alarms reach Telegram and the log in full; every other org gets an id-only log line and no Telegram message. Unset = every org, which on a shared engine sends tenants' payment details to the operator |
 | `REIN_ESCALATION_TTL_MS` | `3600000` |
 | `REIN_TRUST_PROXY` | `1` -- per-IP rate limits are meaningless behind a proxy without it, and forgeable if you write anything else. Not a hop count: see "Rate limiting" above |
@@ -1004,6 +1004,51 @@ top bar says "Public demo" signed out and "Your org" once signed in. Rehearsed l
 `npx @reinconsole/init --no-demo`, then `--claim`, then SIWE through a stub extension wallet, then
 Claim, then the owner dashboard, then `--mainnet`, then an escalation, then `--approve --yes`, all
 against a local engine and console.
+
+## Sanctions screening and the geo-block (S98)
+
+These implement the legal decision of 2026-10-05 (`docs/legal/decisions.md`). Both are ON by
+default wherever strangers are served: the engine turns them on with `REIN_SANDBOX=1`, and the
+console turns its geo-block on with sign-in. No variable is needed to get the hosted posture.
+
+**Geo-block.** A request from a refused territory gets `451 restricted_territory`. On the
+engine this applies to every route except `/health`, and runs before the rate limiter and auth.
+On the console it applies to every request, the UI included. The ranges are bundled in
+`services/policy-engine/src/geo-data.ts`, cut from DB-IP's free databases (CC BY 4.0), so a
+lookup sends no address anywhere. Regenerate them monthly with
+`node scripts/update-geoblock.mjs`, then commit and redeploy both services. The boot line names
+the edition: `geo-block on -- CU, IR, KP, UA-43, UA-40, UA-14, UA-09 (DB-IP edition 2026-10)`.
+The engine reads the client from `req.ip`, so it needs `REIN_TRUST_PROXY=1` (already required).
+Without it the boot logs a WARNING, because every request would look like the proxy's and
+nothing would ever be refused. The console walks `X-Forwarded-For` through private peers itself
+and needs no variable.
+
+**Screening.** At `POST /v1/claims/redeem` and at a tenant's `POST /v1/keys` with
+`mainnet: true`, the engine checks the owner's wallet (for an Ethereum sign-in) and every wallet
+the org's agents registered. It reads the Chainalysis sanctions oracle on Ethereum through public
+RPCs, tried in turn. A hit answers `403 screening_refused` and logs `[rein] SANCTIONS HIT ...`.
+If no RPC answers, the response is `503 screening_unavailable` with `Retry-After: 60`, and a
+claim code survives it. Every check is a row in the `screenings` table, which is never pruned.
+The operator reads them with an unscoped key:
+
+```
+curl -s https://engine.reinconsole.com/v1/screenings?orgId=<org> -H "authorization: Bearer $REIN_KEY_READ"
+```
+
+| Variable | Service | Default | What it does |
+|---|---|---|---|
+| `REIN_GEOBLOCK` | engine, console | on with the sandbox (engine) / sign-in (console) | `off`, `on`, or territory codes, e.g. `CU,IR,KP,SY,UA-43`. A code with no generated ranges refuses the boot |
+| `REIN_SANCTIONS_SCREENING` | engine | on with the sandbox | `off` or `on` |
+| `REIN_SANCTIONS_RPC_URLS` | engine | publicnode, llamarpc, drpc | Ethereum RPCs for the oracle, comma-separated, https only |
+| `REIN_MAINNET_ORGS` | engine | none with the sandbox | Add `screened` to admit every CLAIMED org that passes screening (the self-serve setting). Listed org ids still work beside it and are screened too |
+
+**Going self-serve on mainnet** is one variable on the engine: `REIN_MAINNET_ORGS=screened,<the
+pilot org ids already listed>`. Do it only once the rest of the go-live list in
+`docs/legal/decisions.md` is done.
+
+**Exit checks:** the engine boot log shows `geo-block on` and `sanctions screening on -- ... N
+checks on record`. `GET /v1/screenings` with the read key answers `200`. With a tenant key it
+answers `403 route_not_scopable`.
 
 ## The live workflow (S58)
 

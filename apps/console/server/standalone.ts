@@ -13,6 +13,8 @@ import { createApiHandler, resolveConsolePosture } from './api';
 import { createAccountHandler } from './account';
 import { createOwnerBridge } from './owners';
 import { createSignIn, signInFromEnv } from './signin';
+import { createGeoGate } from './geo';
+import { geoBlockFromEnv } from '@reinconsole/policy-engine';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -126,6 +128,21 @@ if (signIn) {
   console.log(`[rein] sign-in on (${signIn.githubEnabled ? 'GitHub + ' : ''}Ethereum)`);
 }
 const account = createAccountHandler(signIn, owners);
+// REIN_GEOBLOCK (S98): on by default wherever sign-in is, which is where a
+// stranger claims an org; `off` or a territory list overrides.
+let geoBlock: ReturnType<typeof geoBlockFromEnv>;
+try {
+  geoBlock = geoBlockFromEnv(process.env, signIn !== undefined);
+} catch (err) {
+  console.error(`[rein] ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
+const geoGate = createGeoGate(geoBlock);
+console.log(
+  geoBlock
+    ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})`
+    : '[rein] geo-block off',
+);
 
 const handle = createApiHandler(world, {
   ...posture,
@@ -158,6 +175,7 @@ async function serveFile(path: string): Promise<{ body: Buffer; type: string } |
 }
 
 const server = createServer(async (req, res) => {
+  if (geoGate(req, res)) return;
   if (account(req, res)) return;
   if (handle(req, res)) return;
 

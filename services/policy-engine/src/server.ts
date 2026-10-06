@@ -48,6 +48,8 @@ import {
 } from './sandbox.js';
 import { ClaimError, ClaimService, reservedKeyName, type ClaimOptions } from './claims.js';
 import { DEFAULT_REAP_INTERVAL_MS, reapExpired } from './reaper.js';
+import { GEOBLOCK_BODY, GEOBLOCK_STATUS, type GeoBlock } from './geoblock.js';
+import { ScreeningError, ownerWallet, type ScreeningService, type ScreeningSubject } from './screening.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
 
@@ -161,12 +163,32 @@ export interface ServerOptions {
    * lifts the gate. Unset: `'any'` on an engine without the sandbox (a
    * self-hoster's engine is all theirs), NOBODY on one with it (the public
    * hosted engine, where mainnet for a new org waits on sanctions screening).
+   * The entry {@link MAINNET_SCREENED} opens it to every CLAIMED org whose
+   * wallets pass `screening` (S98) -- the self-serve setting, which needs
+   * `screening`. Wherever `screening` is on, a listed org is screened too,
+   * and a hit refuses it whatever the list says.
    * Unscoped operator keys are never gated. The engine cannot see which
    * network a payment is on, so this governs the supported path, not the
    * wire; see DEPLOY.md.
    */
   mainnetOrgs?: readonly string[] | 'any';
+  /**
+   * Refuse requests from sanctioned territories with `451` (geoblock.ts).
+   * Applied to every route but `/health`, ahead of auth, by `req.ip` -- so
+   * behind a proxy it needs `trustProxy`, or it sees only the proxy. Off
+   * unless given; the hosted bin turns it on with the sandbox.
+   */
+  geoBlock?: GeoBlock;
+  /**
+   * Wallet sanctions screening at claim and at mainnet (screening.ts), plus
+   * the operator's `GET /v1/screenings`. Off unless given; the hosted bin
+   * turns it on with the sandbox.
+   */
+  screening?: ScreeningService;
 }
+
+/** The `mainnetOrgs` entry that admits any claimed org that passes screening. */
+export const MAINNET_SCREENED = 'screened';
 
 /**
  * Request body ceiling. Every body this API accepts is a handful of small JSON
@@ -183,6 +205,11 @@ const BODY_LIMIT_BYTES = 65_536;
  * is the read side only, so it bounds nothing a handler does.
  */
 const REQUEST_TIMEOUT_MS = 30_000;
+
+const ScreeningsQuery = z.object({
+  orgId: OrgId.optional(),
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+});
 
 /** Page size for `GET /v1/decisions` when the caller names none. */
 const DECISIONS_DEFAULT_LIMIT = 500;
@@ -365,12 +392,37 @@ export function buildServer(
   if (options.sandbox && !auth) throw new TypeError('the sandbox needs auth: it issues API keys');
   const sandbox =
     options.sandbox && auth ? new SandboxService(engine, auth, options.sandbox) : undefined;
+  const screening = options.screening;
+  // Whose wallets a check covers: the owner's, when they signed in with
+  // Ethereum, and every wallet the org's agents registered (screening.ts).
+  const subjectsOf = (orgId: string, owner: string | undefined): ScreeningSubject[] => {
+    const wallet = ownerWallet(owner);
+    return [
+      ...(wallet ? [{ address: wallet, role: 'owner' as const }] : []),
+      ...engine.agents
+        .list()
+        .filter((a) => a.orgId === orgId)
+        .flatMap((a) => a.wallets.map((w) => ({ address: w.address, role: 'agent' as const, agentId: a.id }))),
+    ];
+  };
   const claims =
     auth && (options.sandbox || options.claims)
-      ? new ClaimService(auth, { ...(options.sandbox?.now ? { now: options.sandbox.now } : {}), ...options.claims })
+      ? new ClaimService(
+          auth,
+          { ...(options.sandbox?.now ? { now: options.sandbox.now } : {}), ...options.claims },
+          screening
+            ? async (orgId, identity) => {
+                await screening.check(orgId, 'claim', subjectsOf(orgId, identity));
+              }
+            : undefined,
+        )
       : undefined;
   const reapIntervalMs = options.reapIntervalMs ?? DEFAULT_REAP_INTERVAL_MS;
   const mainnetOrgs = options.mainnetOrgs ?? (options.sandbox ? [] : 'any');
+  const mainnetScreened = mainnetOrgs !== 'any' && mainnetOrgs.includes(MAINNET_SCREENED);
+  if (mainnetScreened && !screening) {
+    throw new TypeError(`mainnetOrgs "${MAINNET_SCREENED}" needs screening: it is what admits an org`);
+  }
   if (claims && auth && reapIntervalMs > 0) {
     const reap = () =>
       reapExpired(engine, auth, {
@@ -420,6 +472,10 @@ export function buildServer(
     if (err instanceof ClaimError) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
+    if (err instanceof ScreeningError) {
+      if (err.status === 503) reply.header('Retry-After', '60');
+      return reply.status(err.status).send({ error: err.code, message: err.message });
+    }
     if (TenantError.is(err)) {
       return reply.status(err.status).send({ error: err.code, message: err.message });
     }
@@ -442,6 +498,20 @@ export function buildServer(
     }
     return reply.status(500).send({ error: 'internal_error', message });
   });
+
+  // The geo-block runs FIRST, ahead of the limiter and auth: a refused
+  // territory is refused whatever it holds, and learns nothing about which
+  // routes exist. `/health` stays open -- a platform probe is not a client.
+  const geoBlock = options.geoBlock;
+  if (geoBlock) {
+    app.addHook('onRequest', async (req, reply) => {
+      if ((req.url ?? '/').split('?')[0] === '/health') return;
+      if (geoBlock.territoryOf(req.ip) !== undefined) {
+        return reply.status(GEOBLOCK_STATUS).send(GEOBLOCK_BODY);
+      }
+      return;
+    });
+  }
 
   // Auth runs before routing, so an unknown path cannot leak whether it exists.
   // Unauthenticated is 401 with a WWW-Authenticate challenge — never a silent
@@ -528,6 +598,19 @@ export function buildServer(
     app.post('/v1/owners/session', async (req, reply) =>
       reply.status(201).send(await claims.session(req.body)),
     );
+  }
+
+  // --- The screening record (see screening.ts) ---
+  // Deliberately absent from TENANT_ROUTES: it is the operator's audit trail
+  // across every org, so no org-scoped key reaches it.
+  if (screening) {
+    app.get('/v1/screenings', (req) => {
+      const q = ScreeningsQuery.parse(req.query ?? {});
+      return screening.list({
+        ...(q.orgId !== undefined ? { orgId: q.orgId } : {}),
+        ...(q.limit !== undefined ? { limit: q.limit } : {}),
+      });
+    });
   }
 
   // --- Agents ---
@@ -739,13 +822,25 @@ export function buildServer(
       }
     }
     // Mainnet for a tenant is a legal gate, not a technical one (see
-    // ServerOptions.mainnetOrgs): refused before anything is minted.
-    if (input.mainnet && scope && mainnetOrgs !== 'any' && !mainnetOrgs.includes(scope.orgId)) {
-      throw new AuthError(
-        403,
-        'mainnet_not_enabled',
-        `mainnet is not yet enabled for org ${scope.orgId}: new orgs wait on sanctions screening -- write to reinconsole@proton.me with your org id`,
-      );
+    // ServerOptions.mainnetOrgs): refused before anything is minted. Listed,
+    // or claimed under `screened`, decides whether the org may ask; the
+    // screening below decides whether it gets it.
+    if (input.mainnet && scope) {
+      const owner = claims?.ownerOf(scope.orgId);
+      const admitted =
+        mainnetOrgs === 'any' ||
+        mainnetOrgs.includes(scope.orgId) ||
+        (mainnetScreened && owner !== undefined);
+      if (!admitted) {
+        throw new AuthError(
+          403,
+          'mainnet_not_enabled',
+          mainnetScreened
+            ? `mainnet needs a claimed org: run \`npx @reinconsole/init --claim\` for org ${scope.orgId}, sign in, then run --mainnet again`
+            : `mainnet is not yet enabled for org ${scope.orgId}: new orgs wait on sanctions screening -- write to reinconsole@proton.me with your org id`,
+        );
+      }
+      if (screening) await screening.check(scope.orgId, 'mainnet', subjectsOf(scope.orgId, owner));
     }
     // Reserved: the sandbox's daily cap counts keys by this name, so a caller
     // minting its own "sandbox" keys could exhaust everybody's allowance.

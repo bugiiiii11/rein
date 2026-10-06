@@ -10,6 +10,7 @@ import {
   PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
+  PgScreeningStore,
   PgSettlementStore,
   PgSpendStore,
 } from './stores.js';
@@ -23,6 +24,7 @@ export {
   PgApprovalStore,
   PgLivenessStore,
   PgPolicyStore,
+  PgScreeningStore,
   PgSettlementStore,
   PgSpendStore,
 } from './stores.js';
@@ -85,6 +87,12 @@ export interface ReinStore {
   agents: PgAgentRegistry;
   /** Settlement facts behind `engine.reconcile()` — see PgSettlementStore. */
   settlements: PgSettlementStore;
+  /**
+   * The sanctions-screening record (S98) -- pass to
+   * `new ScreeningService(screener, s.screenings)`. What a server takes under
+   * `screening` is that service; this is only its durable half.
+   */
+  screenings: PgScreeningStore;
   /**
    * Dead-man expectations and sightings (B2). Deliberately NOT named
    * `liveness`: what the engine takes under that key is a `LivenessMonitor`,
@@ -194,6 +202,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
     const policies = await PgPolicyStore.open(db);
     const spend = await PgSpendStore.open(db);
     const settlements = await PgSettlementStore.open(db);
+    const screenings = await PgScreeningStore.open(db);
     const liveness = await PgLivenessStore.open(db);
     const approvals = await PgApprovalStore.open(db);
     const apiKeys = await PgApiKeyStore.open(db);
@@ -257,6 +266,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       policies,
       agents,
       settlements,
+      screenings,
       livenessStore: liveness,
       approvalStore: approvals,
       apiKeys,

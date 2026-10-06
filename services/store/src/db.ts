@@ -62,6 +62,9 @@ import { PgNetworkDb, type Db, type NetworkDbOptions } from './pg-db.js';
  *   life. The doc holds sha256 digests only, never a secret (see
  *   ApiKeyRecord): this table is the one place where losing the database is
  *   supposed to cost an operator nothing but the ability to say who is who.
+ * - `screenings` is the sanctions-screening record (S98): one row per address
+ *   checked at a claim or a mainnet move, append-only, in `seq` order. It is
+ *   the evidence that a check ran and what it said, so it is never pruned.
  * - `gate_*` hold @reinconsole/gate's vendor-side state: receipts (JSONB docs),
  *   burned replay slots (sha256 of the presented header), and the
  *   quoted/refused counters (settled derives from receipts).
@@ -212,6 +215,12 @@ CREATE TABLE IF NOT EXISTS settlements (
   chain     TEXT,
   amount    TEXT,
   source    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS screenings (
+  seq BIGSERIAL PRIMARY KEY,
+  id  TEXT NOT NULL UNIQUE,
+  doc JSONB NOT NULL
 );
 `;
 

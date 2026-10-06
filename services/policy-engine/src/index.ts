@@ -72,6 +72,7 @@ export {
   livenessFromEnv,
   resolveHost,
   parseTrustProxy,
+  MAINNET_SCREENED,
   type ServerOptions,
 } from './server.js';
 export {
@@ -179,3 +180,29 @@ export {
   type ClaimRedeemed,
   type OwnerSession,
 } from './claims.js';
+export {
+  GeoBlock,
+  geoBlockFromEnv,
+  clientAddress,
+  privateAddress,
+  DEFAULT_GEOBLOCK_TERRITORIES,
+  GEOBLOCK_STATUS,
+  GEOBLOCK_BODY,
+} from './geoblock.js';
+export {
+  ScreeningService,
+  ScreeningError,
+  InMemoryScreeningStore,
+  chainalysisOracle,
+  screenerFromEnv,
+  ownerWallet,
+  CHAINALYSIS_ORACLE,
+  DEFAULT_SCREENING_RPCS,
+  type SanctionsScreener,
+  type ScreenVerdict,
+  type ScreeningRecord,
+  type ScreeningResult,
+  type ScreeningStorePort,
+  type ScreeningSubject,
+  type ScreeningTrigger,
+} from './screening.js';

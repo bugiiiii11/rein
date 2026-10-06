@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { ApiKey } from '@reinconsole/core';
 import type { ApiKeyAuth } from '@reinconsole/core/auth';
+import { ScreeningError } from './screening.js';
 
 /**
  * Claiming a sandbox (Stage 4, Sprint 13): one sign-in keeps an anonymous
@@ -113,9 +114,16 @@ export class ClaimService {
   /** Redeems one at a time, so two identities cannot both win the same org. */
   private chain: Promise<unknown> = Promise.resolve();
 
+  /**
+   * `guard` runs after a redeem has been found valid and before anything is
+   * bound -- the sanctions screening (screening.ts) on the hosted engine. It
+   * refuses by throwing. A refusal on the merits spends the code; an
+   * unavailable check (503) leaves it, so the same link works on a retry.
+   */
   constructor(
     private readonly auth: ApiKeyAuth,
     options: ClaimOptions = {},
+    private readonly guard?: (orgId: string, identity: string) => Promise<void>,
   ) {
     this.codeTtlMs = options.codeTtlMs ?? DEFAULT_CLAIM_CODE_TTL_MS;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_OWNER_SESSION_TTL_MS;
@@ -181,6 +189,14 @@ export class ClaimService {
     if (this.ownerOf(orgId) !== undefined) {
       this.codes.delete(code);
       throw new ClaimError(409, 'already_claimed', 'this org is already claimed');
+    }
+    if (this.guard) {
+      try {
+        await this.guard(orgId, identity);
+      } catch (err) {
+        if (!(err instanceof ScreeningError && err.status === 503)) this.codes.delete(code);
+        throw err;
+      }
     }
     // The code is spent before anything is written: a failure below leaves an
     // org half-lifted at worst, never a code that can be replayed.

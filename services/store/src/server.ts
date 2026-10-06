@@ -43,9 +43,14 @@ import {
   rateLimitFromEnv,
   resolveHost,
   sandboxOptionsFromEnv,
+  geoBlockFromEnv,
+  screenerFromEnv,
+  ScreeningService,
   type ApiKeyAuth,
+  type GeoBlock,
   type RateLimitOptions,
   type SandboxOptions,
+  type SanctionsScreener,
 } from '@reinconsole/policy-engine';
 import { openReinStore, type ReinStore } from './index.js';
 import { installShutdown, pruneIntervalFromEnv, startPeriodicPrune } from './lifecycle.js';
@@ -113,6 +118,10 @@ export async function startPersistentEngine(options: {
   sandbox?: SandboxOptions;
   /** See `ServerOptions.mainnetOrgs` in the engine. */
   mainnetOrgs?: readonly string[] | 'any';
+  /** See `ServerOptions.geoBlock` in the engine. */
+  geoBlock?: GeoBlock;
+  /** Screens with this, recording into the store's `screenings` table. */
+  screener?: SanctionsScreener;
 }): Promise<PersistentEngine> {
   if ((options.dir === undefined) === (options.store === undefined)) {
     throw new TypeError('startPersistentEngine: pass exactly one of { dir } or { store }');
@@ -146,6 +155,8 @@ export async function startPersistentEngine(options: {
     ...(options.trustProxy !== undefined ? { trustProxy: options.trustProxy } : {}),
     ...(options.sandbox ? { sandbox: options.sandbox } : {}),
     ...(options.mainnetOrgs ? { mainnetOrgs: options.mainnetOrgs } : {}),
+    ...(options.geoBlock ? { geoBlock: options.geoBlock } : {}),
+    ...(options.screener ? { screening: new ScreeningService(options.screener, store.screenings) } : {}),
   });
   try {
     await app.listen({ port: options.port, host: options.host ?? '127.0.0.1' });
@@ -289,6 +300,19 @@ if (isMainModule()) {
     // Unset with the sandbox on = none (the hosted engine; new orgs wait on
     // sanctions screening); unset without it = any (a self-hoster's engine).
     const mainnetOrgs = mainnetOrgsFromEnv(process.env);
+    // S98, the same legal decision: where the sandbox serves strangers, the
+    // engine refuses sanctioned territories (REIN_GEOBLOCK) and screens wallets
+    // at claim and at mainnet (REIN_SANCTIONS_SCREENING). Both default ON with
+    // the sandbox, so the hosted posture never rests on remembering a variable.
+    const geoBlock = geoBlockFromEnv(process.env, sandbox !== undefined);
+    const screener = screenerFromEnv(process.env, sandbox !== undefined);
+    const trustProxy = parseTrustProxy(process.env['REIN_TRUST_PROXY']);
+    if (geoBlock && trustProxy === false) {
+      console.warn(
+        '[rein] WARNING: the geo-block is on but REIN_TRUST_PROXY is off -- behind a proxy every request ' +
+          'comes from the proxy, and nothing will ever be refused. Set REIN_TRUST_PROXY=1 on Railway.',
+      );
+    }
     const engine = await startPersistentEngine({
       store,
       port,
@@ -297,10 +321,12 @@ if (isMainModule()) {
       liveness,
       ...(auth ? { auth } : {}),
       ...(rateLimit ? { rateLimit } : {}),
-      trustProxy: parseTrustProxy(process.env['REIN_TRUST_PROXY']),
+      trustProxy,
       pruneIntervalMs: pruneIntervalFromEnv(process.env),
       ...(sandbox ? { sandbox: sandbox.options } : {}),
       ...(mainnetOrgs ? { mainnetOrgs } : {}),
+      ...(geoBlock ? { geoBlock } : {}),
+      ...(screener ? { screener } : {}),
     });
     // Without this the process is SIGKILLed on every redeploy and the
     // write-behind tail dies with it — see lifecycle.ts. Installed only after
@@ -325,6 +351,16 @@ if (isMainModule()) {
       : `data dir ${dir}`;
     console.log(`[rein] ${where} — ${resumed}; signing key ${store.keySource}`);
     if (sandbox) console.log(`[rein] sandbox on -- ${sandbox.describe}`);
+    console.log(
+      geoBlock
+        ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})`
+        : '[rein] geo-block off',
+    );
+    console.log(
+      screener
+        ? `[rein] sanctions screening on -- ${screener.describe}; ${store.screenings.count()} checks on record`
+        : '[rein] sanctions screening off',
+    );
   } catch (err) {
     // The store is open by now, so a refused bind must not leak the handle.
     await store.close().catch(() => undefined);
