@@ -46,6 +46,15 @@ one app that SERVES `.md` is `apps/landing`, which deploys on Vercel, not here),
 `.github/` is CI, `.claude/` is agent config, and `scripts/` holds the CI package
 smoke, which the root `build` script never runs.
 
+**A push that fails CI is never deployed later (S99).** "Wait for CI" is on, so a red
+push is skipped, and Railway does not retry it once a later push goes green. The later
+push is judged on its own: S99 pushed `14fbd36` (lockfile) and `614748b` (`DEPLOY.md`
+only) after the red S98 push, and all three services skipped it, which fits the watch
+patterns being matched against the HEAD commit's files alone. Railway still posted a
+green commit status on GitHub. After any red push, check the running build -- a route the
+push added, or its boot line -- and if it is not there, run "Deploy Latest Commit"
+(Ctrl+K on the service) on each service the push touched.
+
 `deploy-config.test.ts` pins all of this, and derives the workspace roots from
 `pnpm-workspace.yaml` -- so adding a fourth workspace glob and forgetting the watch
 list fails the suite instead of failing production.
