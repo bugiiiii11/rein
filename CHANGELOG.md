@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-07
+
+Sanctions screening and a geo-block on the engine, and the signer's replay burn keyed by the signed content. `Policy` loses two fields that were never read (`denyFloor`, `escalation`); stored policies that carry them still load.
+
 ### Fixed
 
 - `@reinconsole/signer` burns a spent voucher by `decision.hash`, the content the engine signed, instead of `decision.id`. The id is outside the canonical form, so a copy of a used decision under a fresh id passed `verifyVoucher` and the replay check and was signed again; at-most-once then rested on the EIP-3009 nonce alone. The id is still consulted on the read side so burns recorded before the upgrade keep refusing. `SessionStorePort.burnDecision` / `unburnDecision` / `isDecisionUsed` now take that key.
