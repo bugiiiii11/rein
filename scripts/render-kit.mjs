@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * Render a tester's one-file Claude Code kit from scripts/kit/rein-kit.template.md
+ * (or, with `--kit signer`, rein-kit-signer.template.md -- the custody tier, S102)
  * and the `.env.invitee-<slug>` that `invitee-setup.sh` wrote (S80).
  *
- *   node scripts/render-kit.mjs <slug> <Name> [--version 0.3.0-rc.1] [--out file] [--force]
+ *   node scripts/render-kit.mjs <slug> <Name> [--kit signer] [--version 0.3.0-rc.1] [--out file] [--force]
  *
  * Writes `../rein-kit-<slug>.md`, OUTSIDE the repo: a kit carries the tester's
  * agent key, and the repo is public. Only the AGENT key goes in -- the admin
@@ -22,12 +23,32 @@ const flag = (name) => {
   return i === -1 ? undefined : args.splice(i, 2)[1];
 };
 const outFlag = flag('--out');
+const kitKind = flag('--kit') ?? 'guard';
 const force = args.includes('--force');
 const version = flag('--version') ?? JSON.parse(readFileSync(join(root, 'packages/sdk/package.json'), 'utf8')).version;
 const [slug, name] = args.filter((a) => a !== '--force');
 
-if (!slug || !name || !/^[a-z0-9-]+$/.test(slug)) {
-  console.error('usage: node scripts/render-kit.mjs <slug> <Name> [--version X] [--force]');
+if (!slug || !name || !/^[a-z0-9-]+$/.test(slug) || !['guard', 'signer'].includes(kitKind)) {
+  console.error('usage: node scripts/render-kit.mjs <slug> <Name> [--kit guard|signer] [--version X] [--force]');
+  process.exit(1);
+}
+
+// The signer kit's replay test re-issues a spent voucher under a fresh id, which
+// only a signer that burns by decision HASH refuses (CHANGELOG: Unreleased at
+// S102). Rendering it against an older release would hand a tester a kit whose
+// headline test fails on purpose.
+const MIN_SIGNER_KIT_VERSION = '0.5.2';
+const numeric = (v) => v.split('-')[0].split('.').map(Number);
+const older = (a, b) => {
+  const [x, y] = [numeric(a), numeric(b)];
+  for (let i = 0; i < 3; i += 1) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  return false;
+};
+if (kitKind === 'signer' && older(version, MIN_SIGNER_KIT_VERSION)) {
+  console.error(
+    `the signer kit needs @reinconsole/signer >= ${MIN_SIGNER_KIT_VERSION} on npm (the hash-keyed replay burn); ` +
+      `${version} would sign the re-id'd voucher in test 2. Release first, then pass --version.`,
+  );
   process.exit(1);
 }
 
@@ -49,14 +70,16 @@ if (!agentId?.startsWith('agt_') || !apiKey?.startsWith('rk_')) {
   process.exit(1);
 }
 
-const out = outFlag ? resolve(outFlag) : resolve(root, '..', `rein-kit-${slug}.md`);
+const outName = kitKind === 'signer' ? `rein-kit-signer-${slug}.md` : `rein-kit-${slug}.md`;
+const out = outFlag ? resolve(outFlag) : resolve(root, '..', outName);
 if (existsSync(out) && !force) {
   console.error(`${out} exists -- pass --force to replace it`);
   process.exit(1);
 }
 
 const values = { NAME: name, AGENT_ID: agentId, API_KEY: apiKey, VERSION: version };
-const kit = readFileSync(join(root, 'scripts/kit/rein-kit.template.md'), 'utf8').replace(
+const templateName = kitKind === 'signer' ? 'rein-kit-signer.template.md' : 'rein-kit.template.md';
+const kit = readFileSync(join(root, 'scripts/kit', templateName), 'utf8').replace(
   /\{\{([A-Z_]+)\}\}/g,
   (_, key) => {
     if (!(key in values)) throw new Error(`template placeholder {{${key}}} has no value`);
@@ -64,4 +87,4 @@ const kit = readFileSync(join(root, 'scripts/kit/rein-kit.template.md'), 'utf8')
   },
 );
 writeFileSync(out, kit);
-console.log(`wrote ${out} (${name}, ${agentId}, packages ${version})`);
+console.log(`wrote ${out} (${kitKind} kit, ${name}, ${agentId}, packages ${version})`);
