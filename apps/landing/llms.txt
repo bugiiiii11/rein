@@ -1,6 +1,6 @@
 # Rein
 
-> The control plane for AI agent payments. Rein governs an agent's authority to spend — it never holds the funds. Set the rules, watch every payment, score every counterparty. Non-custodial, MIT, 0.5.1 on npm, live on Base mainnet (approved orgs' agents pay real USDC under policy; free testnet sandbox via `npx @reinconsole/init`).
+> The control plane for AI agent payments. Rein governs an agent's authority to spend — it never holds the funds. Set the rules, watch every payment, score every counterparty. Non-custodial, MIT, 0.6.0 on npm, live on Base mainnet (approved orgs' agents pay real USDC under policy; free testnet sandbox via `npx @reinconsole/init`).
 
 Rein sits between an agent and the x402 payment rails. Every payment an agent attempts is checked
 against a declarative policy before the payment is constructed: allowed payments are receipted,
