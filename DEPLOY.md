@@ -911,8 +911,12 @@ self-hosters and tests.
 - **Schema `rein`, never `public`.** Supabase exposes `public` through its Data
   API, and tables created over a direct connection have RLS off -- the decision
   chain would be readable with the project's anon key. `REIN_DB_SCHEMA=rein`
-  keeps every table out of the API's reach; turning the Data API off entirely
-  (Project Settings -> Data API) is belt and braces.
+  keeps every table out of the API's reach. Posture set 2026-10-07 (S101): Data
+  API ON with `public` the ONLY exposed schema, `rein` unticked, "Automatically
+  expose new tables" OFF, 0 tables exposed. With NO exposed schema PostgREST
+  restarts every 32 s logging `schema "pg_pgrst_no_exposed_schemas" does not
+  exist`, which the dashboard counts as Postgres errors; that noise is why the
+  API is on rather than empty.
 - **Session pooler, port 5432** (or the direct connection if Railway has IPv6
   egress). NOT the transaction pooler (6543): the driver holds one session with
   `search_path` set on it and runs `BEGIN ... COMMIT` across statements.
