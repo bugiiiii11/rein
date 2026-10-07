@@ -34,6 +34,7 @@ const SITES = [
   ['apps/landing/get-started.html', /the full ([\d,]+) \(~/],
   ['apps/landing/get-started.html', /([\d,]+) offline tests/],
   ['apps/landing/index.html', /(?<=OFFLINE TEST SUITE<\/span>\s*\n\s*<span class="proof-value">)([\d,]+)(?=<\/span>)/],
+  ['apps/landing/whitepaper.html', /npm with ([\d,]+) offline tests and/],
 ];
 
 const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -43,7 +44,10 @@ const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
  * number too, and it was stale for the same reason the passing count was: it
  * lived only in prose.
  */
-const LIVE_SITES = [['README.md', /plus ([\d,]+) live network tests/]];
+const LIVE_SITES = [
+  ['README.md', /plus ([\d,]+) live network tests/],
+  ['apps/landing/whitepaper.html', /offline tests and ([\d,]+) live tests/],
+];
 
 function expectedTestPackages() {
   const globs = (readFileSync('pnpm-workspace.yaml', 'utf8').match(/^\s*-\s*'([^']+)'/gm) ?? [])

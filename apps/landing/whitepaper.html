@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      document.documentElement.classList.add('js');
+    </script>
+    <title>Rein whitepaper — the control plane for AI agent payments</title>
+    <meta name="description" content="How Rein governs an AI agent's authority to spend over x402 without holding the funds: the policy model, the signed decision chain, Guard, Gate and Graph, the sandbox-to-mainnet journey, security review and compliance posture." />
+    <meta property="og:title" content="Rein whitepaper" />
+    <meta property="og:description" content="How Rein governs an AI agent's authority to spend over x402 without holding the funds: policy, signed decisions, Guard, Gate, Graph, security and compliance." />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://www.reinconsole.com/whitepaper" />
+    <meta property="og:image" content="https://reinconsole.com/og-card.png?v=2" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://reinconsole.com/og-card.png?v=2" />
+    <link rel="canonical" href="https://www.reinconsole.com/whitepaper" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "TechArticle",
+            "headline": "Rein whitepaper: the control plane for AI agent payments",
+            "description": "How Rein governs an AI agent's authority to spend over x402 without holding the funds: the policy model, the signed decision chain, Guard, Gate and Graph, the sandbox-to-mainnet journey, security review and compliance posture.",
+            "url": "https://www.reinconsole.com/whitepaper",
+            "datePublished": "2026-10-07",
+            "dateModified": "2026-10-07",
+            "about": {
+              "@type": "SoftwareApplication",
+              "name": "Rein",
+              "url": "https://www.reinconsole.com/"
+            },
+            "publisher": {
+              "@id": "https://www.reinconsole.com/#org"
+            }
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Rein",
+                "item": "https://www.reinconsole.com/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Whitepaper",
+                "item": "https://www.reinconsole.com/whitepaper"
+              }
+            ]
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.reinconsole.com/#org",
+            "name": "M.D.N Tech FZE",
+            "brand": "Rein",
+            "url": "https://www.reinconsole.com/"
+          }
+        ]
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="/fonts/fonts.css" />
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <div class="sky" aria-hidden="true"></div>
+
+    <header class="nav">
+      <a class="brand" href="/" aria-label="Rein — home">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span class="brand-name">REIN</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/#planes">Guard · Gate · Graph</a>
+        <a href="/#proof">Proof</a>
+        <a href="/#trust">Trust</a>
+        <a href="get-started">Get started</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+      <a class="btn btn-primary nav-cta" href="get-started">Get started</a>
+    </header>
+
+    <main>
+      <div class="page-wrap">
+        <header class="page-hero">
+          <nav class="eyebrow qa-crumbs reveal" aria-label="Breadcrumb"><span class="idx">§</span><span class="tick"></span><a href="/">Rein</a><span class="sep">/</span>Whitepaper</nav>
+          <h1 class="reveal d1">The control plane for <span class="grad">AI agent payments</span></h1>
+          <div class="page-stage">
+            <div class="hero-floor" aria-hidden="true"></div>
+            <div class="hero-haze" aria-hidden="true"></div>
+            <div class="panel answer-panel reveal d2">
+              <div class="panel-scan" aria-hidden="true"></div>
+              <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Abstract · October 2026 · version 0.5.1</span></div>
+              <p class="answer-body">
+            Rein governs an agent's authority to spend over the x402 protocol and <b>never holds the funds</b>. Every
+            payment an agent attempts is turned into an intent and checked against a declarative policy before anything
+            is signed. Allowed payments are receipted, denied ones never exist, and payments past an envelope are parked
+            for a human whose approval is an <b>Ed25519 signature, not a click</b>. Each verdict is a signed, hash-chained
+            decision that anyone holding the engine's public key can verify offline. Rein is open source (MIT), ships as
+            12 packages on npm, and runs as a hosted engine on Base mainnet and Base Sepolia. Three planes make up the
+            product: <b>Guard</b> (spend control on the agent that pays), <b>Gate</b> (monetization middleware on the API
+            that earns) and <b>Graph</b> (a reputation ledger that feeds evidence back into both).
+              </p>
+            </div>
+          </div>
+        </header>
+      </div>
+
+      <article class="qa">
+
+        <h2 id="contents">Contents</h2>
+        <ol class="toc">
+          <li><a href="#problem">The problem</a></li>
+          <li><a href="#principles">Design principles</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#guard">Guard: policy and the signed decision chain</a></li>
+          <li><a href="#gate">Gate: the vendor side</a></li>
+          <li><a href="#graph">Graph: reputation on ERC-8004</a></li>
+          <li><a href="#journey">From sandbox to mainnet</a></li>
+          <li><a href="#security">Security</a></li>
+          <li><a href="#compliance">Compliance</a></li>
+          <li><a href="#status">Status and roadmap</a></li>
+          <li><a href="#links">Links and addresses</a></li>
+        </ol>
+        <p class="print-hide">Also available as a <a class="inline-link" href="rein-whitepaper.pdf">PDF</a>.</p>
+
+        <h2 id="problem">The problem</h2>
+        <p>
+          Agents now pay for what they use. The x402 protocol lets a server answer any HTTP request with
+          <code class="inline-code">402 Payment Required</code>, and lets a client settle that price in USDC on its own,
+          inside the request. An agent with a wallet key can therefore buy data, compute and tools without a human in the
+          loop. The protocol defines how a server asks and how a client pays. It says nothing about how much a client may
+          pay, to whom, or how often.
+        </p>
+        <p>The tools operators already have do not close that gap:</p>
+        <ul>
+          <li><b>A wallet balance</b> is a ceiling, not a policy. It cannot tell a good purchase from a bad one, and it is refilled the moment an agent needs to keep working.</li>
+          <li><b>A prompt</b> is advice. An agent that is told to spend at most ten dollars can be talked, tricked or confused out of it, and nothing records that it was.</li>
+          <li><b>An API key</b> grants access, not a budget. Revoking it stops the agent entirely, which is the wrong size of control for most incidents.</li>
+          <li><b>A custodial wallet service</b> fixes the budget by taking the funds, which moves the risk rather than removing it.</li>
+        </ul>
+        <p>
+          What an operator needs is a layer that sits between the agent and the rails, decides before a signature exists,
+          keeps an audit record nobody can quietly edit, and does all of that without ever holding the money. That is
+          what Rein does.
+        </p>
+
+        <h2 id="principles">Design principles</h2>
+        <p>Four rules shape every part of the system. Each one is enforced in code, not in documentation.</p>
+        <ol>
+          <li><b>Non-custodial.</b> Funds never pass through Rein. The engine evaluates and signs decisions; it watches no chain and moves no money. The payment itself is signed on the agent's side, by the agent's own key or by a session-key signer the operator runs.</li>
+          <li><b>Fail closed.</b> An unreachable engine denies rather than allows. A 402 that offers nothing Rein can govern is refused rather than paid. A screening oracle that does not answer refuses the claim rather than waving it through. An escalation that nobody signs expires into a deny.</li>
+          <li><b>Denials happen before a payment exists.</b> The policy check runs after the price is known and before anything is signed. A refused payment leaves nothing on chain: nothing to send, nothing to refund, nothing to dispute.</li>
+          <li><b>An approval is a signature, not a click.</b> Releasing a parked payment requires an Ed25519 signature over the decision by a registered approver key. Telegram, the console and the MCP server deliver the challenge and carry no authority of their own.</li>
+        </ol>
+        <p>
+          A fifth rule follows from the first four: the audit record must be as trustworthy as the decision. Every verdict
+          is hashed over its predecessor and signed by the engine, so the log can be verified by anyone who holds the
+          engine's public key, including people who do not trust the operator.
+        </p>
+
+        <h2 id="architecture">Architecture</h2>
+        <p>
+          Rein is a policy engine with a thin client on each side of a payment. The agent side wraps
+          <code class="inline-code">fetch</code>; the vendor side wraps an HTTP handler; the engine in the middle holds
+          agents, policies and the signed decision log. Everything ships as TypeScript for Node 22 or later, under the
+          MIT licence, as twelve packages on npm.
+        </p>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Package</th><th>Role</th></tr></thead>
+          <tbody>
+            <tr><td><code>@reinconsole/core</code></td><td>The schemas every other package derives from: intents, decisions, policies, API keys</td></tr>
+            <tr><td><code>@reinconsole/policy-engine</code></td><td>The referee. Evaluates intents, appends the hash-chained signed decision log, parks escalations, serves the HTTP API</td></tr>
+            <tr><td><code>@reinconsole/store</code></td><td>Persistence on embedded PGlite or network Postgres, and the <code>rein-engine</code> binary that boots a persistent engine</td></tr>
+            <tr><td><code>@reinconsole/sdk</code></td><td>The Guard. Wraps an agent's <code>fetch</code> so every x402 paywall is evaluated before it is paid</td></tr>
+            <tr><td><code>@reinconsole/mcp</code></td><td>The Guard as an MCP server, for agents that live in a harness rather than a codebase</td></tr>
+            <tr><td><code>@reinconsole/init</code></td><td><code>npx @reinconsole/init</code>: a sandbox on the hosted engine in one command, plus <code>--claim</code> and <code>--mainnet</code></td></tr>
+            <tr><td><code>@reinconsole/x402-rails</code></td><td>The real rails: EIP-3009 payer, facilitator clients, on-chain indexer, pinned network profiles for Base and Base Sepolia</td></tr>
+            <tr><td><code>@reinconsole/mock-rails</code></td><td>A simulated ledger, facilitator and vendor so the whole stack runs offline</td></tr>
+            <tr><td><code>@reinconsole/signer</code></td><td>The custody tier: a session-key signer that signs a payment only against a valid engine voucher</td></tr>
+            <tr><td><code>@reinconsole/gate</code></td><td>The vendor side. Prices an API per call over x402, verifies and settles, keeps receipts</td></tr>
+            <tr><td><code>@reinconsole/graph</code></td><td>Reputation. Scores are pure functions of an append-only evidence ledger</td></tr>
+            <tr><td><code>@reinconsole/erc8004</code></td><td>On-chain agent identity and score publication per ERC-8004</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>A single payment moves through the system in six steps.</p>
+        <ol>
+          <li>The agent's wrapped <code class="inline-code">fetch</code> hits a vendor and receives <code class="inline-code">402 Payment Required</code> with the price, asset and network.</li>
+          <li>The Guard turns the 402 into an <b>intent</b> (vendor, resource, amount, asset, chain, task context) and submits it to the engine.</li>
+          <li>The engine checks the kill switch, evaluates the first applicable policy, hashes the intent, appends a signed decision and, on allow, records the spend. This runs serialized, so two concurrent payments cannot both slip under one budget.</li>
+          <li>On deny or escalate the Guard raises <code class="inline-code">PaymentBlockedError</code> and nothing is signed. On allow it hands the intent and the signed decision to the payer.</li>
+          <li>The payer signs an EIP-3009 <code class="inline-code">TransferWithAuthorization</code> for exactly the allowed amount, on the pinned network, and the Guard retries the request with the payment header. A facilitator settles it on Base.</li>
+          <li>The Guard reports the settlement back to the engine, which joins it against the allowance. An allowance that never settles, or a settlement for more than was allowed, surfaces in reconciliation.</li>
+        </ol>
+        <figure class="figure">
+          <svg viewBox="0 0 760 340" role="img" aria-label="The engine decides, the agent key pays, the engine never touches funds" font-family="var(--font-mono)" font-size="13">
+            <defs>
+              <marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0 0L10 5L0 10z" fill="var(--ink-faint)" />
+              </marker>
+            </defs>
+            <text x="24" y="26" font-family="var(--font-display)" font-size="15" font-weight="600" fill="var(--ink)">The engine decides, the agent key pays, the engine never touches funds</text>
+            <!-- agent process -->
+            <rect x="24" y="52" width="292" height="168" rx="8" fill="var(--bg-3)" stroke="var(--line-strong)" stroke-width="1.25" />
+            <text x="40" y="74" font-weight="600" fill="var(--ink)">Agent process</text>
+            <text x="40" y="92" font-size="11.5" fill="var(--ink-dim)">holds the wallet key</text>
+            <rect x="40" y="104" width="260" height="48" rx="8" fill="rgba(91,140,255,0.12)" stroke="#5b8cff" stroke-width="2" />
+            <text x="170" y="124" text-anchor="middle" font-weight="600" fill="var(--ink)">Guard (SDK or MCP)</text>
+            <text x="170" y="142" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">reads the 402, builds the intent</text>
+            <rect x="40" y="164" width="260" height="40" rx="8" fill="none" stroke="var(--line-strong)" stroke-width="1.25" />
+            <text x="170" y="188" text-anchor="middle" fill="var(--ink)">Payer: signs only if allowed</text>
+            <!-- engine -->
+            <rect x="444" y="52" width="292" height="168" rx="8" fill="none" stroke="var(--line-strong)" stroke-width="1.25" />
+            <text x="460" y="74" font-weight="600" fill="var(--ink)">Policy engine</text>
+            <text x="460" y="100" fill="var(--ink)">Evaluates the first policy</text>
+            <text x="460" y="120" fill="var(--ink)">Signs and chains the decision</text>
+            <text x="460" y="140" fill="var(--ink)">Records spend, parks escalations</text>
+            <text x="460" y="160" fill="var(--ink)">Reconciles settlements</text>
+            <text x="460" y="190" font-size="11.5" fill="var(--ink-dim)">never sees a wallet key,</text>
+            <text x="460" y="206" font-size="11.5" fill="var(--ink-dim)">never talks to a chain</text>
+            <!-- vendor -->
+            <rect x="24" y="270" width="292" height="56" rx="8" fill="none" stroke="var(--line-strong)" stroke-width="1.25" />
+            <text x="170" y="294" text-anchor="middle" font-weight="600" fill="var(--ink)">Vendor API (Gate)</text>
+            <text x="170" y="312" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">answers 402, verifies, settles</text>
+            <!-- facilitator -->
+            <rect x="444" y="270" width="292" height="56" rx="8" fill="none" stroke="var(--line-strong)" stroke-width="1.25" />
+            <text x="590" y="294" text-anchor="middle" font-weight="600" fill="var(--ink)">Facilitator</text>
+            <text x="590" y="312" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">settles USDC on Base</text>
+            <!-- connectors -->
+            <g fill="none" stroke="var(--ink-faint)" stroke-width="1.25">
+              <path d="M316 118H444" marker-end="url(#arch-arrow)" />
+              <path d="M444 138H316" marker-end="url(#arch-arrow)" />
+              <path d="M94 270V220" marker-end="url(#arch-arrow)" />
+              <path d="M246 220V270" marker-end="url(#arch-arrow)" />
+              <path d="M316 298H444" marker-end="url(#arch-arrow)" />
+            </g>
+            <text x="380" y="110" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">intent</text>
+            <text x="380" y="154" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">signed decision</text>
+            <text x="86" y="249" text-anchor="end" font-size="11.5" fill="var(--ink-dim)">402 price</text>
+            <text x="254" y="249" font-size="11.5" fill="var(--ink-dim)">paid request</text>
+            <text x="380" y="290" text-anchor="middle" font-size="11.5" fill="var(--ink-dim)">settle</text>
+          </svg>
+          <figcaption>One x402 payment through Rein. The Guard also reports the settlement back to the engine, which is how reconciliation learns what was actually paid.</figcaption>
+        </figure>
+        <p>
+          The engine never sees a wallet key and never talks to a chain. The payer runs in the agent's process, or in a
+          signer the operator controls.
+        </p>
+
+        <h2 id="guard">Guard: policy and the signed decision chain</h2>
+        <p>
+          Guard is the plane on the paying side. It has two halves: a declarative policy that says what an agent may pay,
+          and a decision log that proves what the engine answered.
+        </p>
+        <h3>The policy model</h3>
+        <p>
+          A policy is a JSON document of rules. Each rule holds exactly one verdict (<code class="inline-code">allow</code>,
+          <code class="inline-code">deny</code> or <code class="inline-code">escalate</code>) and a set of predicates that
+          are ANDed together. The predicates read the intent and the agent's spend history:
+        </p>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Predicate</th><th>What it checks</th></tr></thead>
+          <tbody>
+            <tr><td><code>amountGt</code></td><td>The price of this one payment</td></tr>
+            <tr><td><code>rollingSum { window, gt }</code></td><td>Cumulative spend in a rolling window (<code>1h</code>, <code>24h</code>, <code>7d</code>)</td></tr>
+            <tr><td><code>txCount { window, gt }</code></td><td>Payment count in a rolling window</td></tr>
+            <tr><td><code>vendorHostIn</code>, <code>resourceIn</code></td><td>Vendor host and resource path, with globs</td></tr>
+            <tr><td><code>vendorFirstSeen</code></td><td>Whether this agent has paid this vendor before</td></tr>
+            <tr><td><code>vendorReputationLt</code></td><td>The vendor's Graph score, 0 to 100</td></tr>
+            <tr><td><code>amountVsResourceMedian { gt: "3x" }</code></td><td>The price against the median paid for the same resource</td></tr>
+            <tr><td><code>taskBudget { gt }</code>, <code>taskIdMissing</code></td><td>Cumulative spend attributed to one task, and whether the intent carries a task id at all</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>
+          Precedence is fixed: deny beats escalate, escalate beats allow, and the policy's
+          <code class="inline-code">default</code> (deny unless set otherwise) decides anything no rule matched. Policies
+          target agents, labels and chains through <code class="inline-code">appliesTo</code>; the first applicable policy
+          wins, and an agent with no policy is denied. In a multi-tenant engine the org boundary is applied before
+          <code class="inline-code">appliesTo</code>, so one tenant's catch-all policy can never govern another.
+        </p>
+        <p>
+          A policy can also carry <b>breakers</b>: rolling envelopes of <code class="inline-code">txCount</code> or
+          <code class="inline-code">valueCap</code> over a window. A breaker never denies. The payment that would carry an
+          agent past the envelope is escalated to a human, and the breaker resets only by a signed approval or by the
+          window passing. A frozen agent (the kill switch, <code class="inline-code">POST /v1/agents/:id/freeze</code>) is
+          denied before any policy is read.
+        </p>
+        <h3>Escalation</h3>
+        <p>
+          An escalated payment is parked as an approval request with a time-to-live (ten minutes by default). Resolving it
+          requires an Ed25519 signature over <code class="inline-code">{ decisionId, intentHash, verdict }</code> by an
+          approver key registered with the engine; the verdict is inside the signed bytes, so an approval cannot be
+          replayed as a rejection. The engine stores only the public half of each approver key. Telegram delivers the
+          challenge with no buttons and no authority. The resolution appends a new allow or deny decision for the same
+          intent rather than rewriting the original, and a request nobody signs expires into a deny.
+        </p>
+        <h3>The decision chain</h3>
+        <p>
+          Every evaluation appends one decision: the intent hash, the outcome, the rules that matched, the policy and its
+          version, the previous decision's hash, and the time. The record is hashed with SHA-256 over its predecessor's
+          hash and signed with the engine's Ed25519 key. The first link's predecessor is the literal string
+          <code class="inline-code">genesis</code>.
+        </p>
+        <p>
+          That structure gives three properties. A decision cannot be altered without breaking every hash after it. A
+          decision cannot be removed without leaving a gap. And nobody but the engine can mint one, because the signature
+          is checked against the engine's public key, which <code class="inline-code">GET /health</code> publishes.
+          <code class="inline-code">GET /v1/chain/verify</code> walks the log incrementally and reports whether it is
+          intact; the same check runs in <code class="inline-code">node:crypto</code> alone, with no Rein code, so an
+          operator can verify a log they do not trust the host to keep honest.
+        </p>
+        <p>
+          The engine's signing key lives in a <code class="inline-code">0700</code> data directory by default. In
+          production it is supplied from a secret manager through <code class="inline-code">REIN_ENGINE_SIGNING_KEY</code>;
+          the engine then stores only the public half, refuses to boot with a different key rather than fork the chain,
+          and refuses to boot without one rather than mint a new chain nobody asked for.
+        </p>
+
+        <h2 id="gate">Gate: the vendor side</h2>
+        <p>
+          Gate is the plane on the earning side. <code class="inline-code">@reinconsole/gate</code> wraps an HTTP handler
+          and prices it per call over x402. An unpaid request receives <code class="inline-code">402 Payment Required</code>
+          with the accepted price, asset and network; a request carrying a payment header is verified, screened, settled
+          through the rails and receipted. The vendor keeps its own wallet and its own facilitator relationship; Gate adds
+          the protocol, the checks and the record.
+        </p>
+        <p>Gate makes the checks the protocol leaves to the implementer:</p>
+        <ul>
+          <li><b>The network is pinned.</b> Base and Base Sepolia each have a profile with the chain id, the real USDC contract and the EIP-712 domain. A payment on any other network, or in a token that merely calls itself USDC, is refused.</li>
+          <li><b>Settlement is at most once.</b> An ambiguous settlement failure is never retried blindly; the EIP-3009 nonce burn makes a double settle impossible, and a nonce race on the facilitator's side is retried once after a pause.</li>
+          <li><b>Transport failures get two retries</b> with backoff; a settlement that may have happened gets none, and the caller sees <code class="inline-code">settle_unknown</code>.</li>
+        </ul>
+        <p>
+          The same rails serve the agent side. <code class="inline-code">@reinconsole/x402-rails</code> holds the EIP-3009
+          payer, the facilitator clients (x402.org for testnet; PayAI without an API key, or Coinbase CDP, for mainnet)
+          and an on-chain indexer that can report settlements to the engine independently of the agent that paid.
+        </p>
+        <p>
+          A reference vendor runs at <code class="inline-code">vendor.reinconsole.com</code>. It sells two testnet routes,
+          <code class="inline-code">/testnet/v1/ping</code> at $0.001 and
+          <code class="inline-code">/testnet/v1/scores/vendor/:host</code> at $0.005, so a new agent can make a governed
+          payment within minutes of installing. Its mainnet lane is switched off: Rein's operating entity does not itself
+          charge on mainnet, a legal posture described under <a class="inline-link" href="#compliance">Compliance</a>.
+        </p>
+
+        <h2 id="graph">Graph: reputation on ERC-8004</h2>
+        <p>
+          Graph is the plane that closes the loop. Both Guard and Gate produce evidence: decisions made, payments settled,
+          disputes raised. <code class="inline-code">@reinconsole/graph</code> keeps that evidence in an append-only ledger
+          and computes scores from it on demand. A score is never stored; it is a pure function of the ledger, so it can be
+          recomputed and challenged by anyone who holds the evidence. Reads are open on purpose, because a reputation
+          nobody can read governs nothing. Writes require an API key with the <code class="inline-code">report</code> scope.
+        </p>
+        <p>
+          The scores feed back into enforcement. A Guard policy can refuse or escalate a payment to a vendor whose score is
+          below a threshold (<code class="inline-code">vendorReputationLt</code>), or a vendor this agent has never paid
+          before (<code class="inline-code">vendorFirstSeen</code>). Only allowed decisions count as evidence; a denial,
+          an escalation or an expiry is reputation-neutral, so being governed strictly never costs an agent its standing.
+        </p>
+        <p>
+          <code class="inline-code">@reinconsole/erc8004</code> connects Graph to ERC-8004, the Ethereum standard for
+          trustless agent identity and reputation. It registers an agent in the Identity Registry and publishes its Rein
+          score to the Reputation Registry under the tag <code class="inline-code">rein-score</code>, so the score can be
+          read on chain by parties that run no Rein software. Today this is live on Base Sepolia: Rein's demo agent (#7393)
+          and the reference vendor (#9587) are registered, and the demo agent's score is on chain. The Identity Registry
+          address on Base mainnet is pinned, but mainnet identities wait until the vendor is permitted to charge there.
+        </p>
+        <p>
+          Graph is deliberately the smallest of the three planes. Its scope is frozen at what is described here while
+          Guard and Gate harden; expanding it is a roadmap item, not a current build.
+        </p>
+
+        <h2 id="journey">From sandbox to mainnet</h2>
+        <p>
+          The hosted engine at <code class="inline-code">engine.reinconsole.com</code> takes a new agent from nothing to a
+          governed mainnet payment in three steps, each a longer commitment than the last.
+        </p>
+        <ol>
+          <li><b>Sandbox.</b> <code class="inline-code">npx @reinconsole/init</code> generates a wallet on the operator's machine, creates an org, an agent, a starter policy and a key scoped to that org on the hosted engine, and writes them to <code class="inline-code">rein-agent.json</code> (mode <code class="inline-code">0600</code>, added to <code class="inline-code">.gitignore</code>). It then makes two governed calls against the reference vendor: one the policy allows (a $0.001 ping, settled with test USDC the faucet dripped), and one it refuses (a $0.005 call over the $0.004 cap) before any money moves. The sandbox is testnet-only, expires in seven days and is reaped after thirty. A single person needs no account, no funds and no permission.</li>
+          <li><b>Claim.</b> <code class="inline-code">npx @reinconsole/init --claim</code> keeps the sandbox. The CLI asks the engine for a one-time code, opens the console, and the operator signs in with GitHub (no scopes requested) or an Ethereum wallet (Sign-In with Ethereum, which moves no funds). The engine binds the org to that identity, one org per identity and one owner per org, and lifts the expiry on its keys. Later sign-ins get a 12-hour read key for the console.</li>
+          <li><b>Mainnet.</b> <code class="inline-code">npx @reinconsole/init --mainnet</code> moves a claimed agent to Base mainnet. It generates an approver key for the owner, registers it with the engine, and mints a runtime key limited to <code class="inline-code">evaluate</code> and <code class="inline-code">read</code> for that one agent. The engine grants that key only to an org that has been claimed and has passed sanctions screening, and only when the hosted operator has enabled the screened path. Payments on mainnet then run under the same policy, the same breakers and the same signed chain, with a human approval required for anything the policy escalates.</li>
+        </ol>
+        <p>
+          The hosted engine runs the published <code class="inline-code">@reinconsole/store</code> binary against Postgres
+          (Supabase, EU West) with the signing key held outside the data directory. Its decision chain is exported and
+          verified nightly. The console at <code class="inline-code">app.reinconsole.com</code> is read-only by design; it
+          carries no credential that could sign, approve or edit a policy.
+        </p>
+        <p>
+          Nothing here requires the hosted engine.
+          <code class="inline-code">REIN_DATA_DIR=./rein-data npx -p @reinconsole/store rein-engine</code> boots the same
+          engine on a laptop or a server, on embedded PGlite by default or on any Postgres via
+          <code class="inline-code">DATABASE_URL</code>. A self-hosted engine sends Rein nothing and makes no outbound call
+          unless Telegram approvals are configured. Exposing it beyond loopback requires an API key; a public bind without
+          one is a startup error.
+        </p>
+
+        <h2 id="security">Security</h2>
+        <p>
+          A flaw in Rein is not a crash. It is a payment that should not have happened, or one that should have and was
+          silently blocked. The threat model and the review record are public in the repository's
+          <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>;
+          this section summarises the parts that shape the design.
+        </p>
+        <h3>Two tiers of enforcement</h3>
+        <p>
+          <b>SDK mode is advisory and bypassable by design.</b> An agent that holds its own wallet key can always pay around
+          the Guard. Rein makes that bypass observable rather than pretending to prevent it: reconciliation joins what the
+          engine allowed against what settled on chain, and a settlement with no allowance behind it surfaces as
+          unexplained spend. For many deployments this is enough, because the agent's code is the operator's own.
+        </p>
+        <p>
+          <b>Signer mode is the custody tier.</b> <code class="inline-code">@reinconsole/signer</code> holds the wallet key
+          in a process the operator controls, and signs a payment only against a valid voucher: the
+          <code class="inline-code">{ intent, decision }</code> pair the engine produced. The signer checks the session
+          token, that the agent matches the session, that the wallet is in custody, that the intent hash and the decision
+          hash recompute, that the engine's Ed25519 signature verifies, that the outcome is allow, that the decision is at
+          most five minutes old, that it has not been used before, that the vendor's requirement matches the intent, and
+          that per-payment and per-session caps hold. The voucher is burned before the signature is released. Session
+          grants are capped, expiring and revocable, with a ten-day lifetime ceiling that cannot be switched off; a longer
+          grant is refused at creation rather than clamped. The signer's admin surface refuses to start without an admin
+          token.
+        </p>
+        <h3>Keys and tenancy</h3>
+        <p>
+          API keys carry scopes (<code class="inline-code">read</code>, <code class="inline-code">evaluate</code>,
+          <code class="inline-code">approve</code>, <code class="inline-code">report</code>,
+          <code class="inline-code">identity</code>, <code class="inline-code">admin</code>); any route not explicitly
+          classified requires <code class="inline-code">admin</code>. A key may be scoped to an org and narrowed to
+          specific agents, and a narrowed key cannot mint, rotate or revoke its way to a wider one. Org scope is a hard
+          boundary: another org's agents, policies, decisions and escalations are answered exactly as a non-existent
+          object is, so a scoped caller cannot enumerate what it cannot reach. The engine stores a key's SHA-256 digest
+          only; the secret is returned once, at issuance.
+        </p>
+        <p>
+          The engine's signing key is Ed25519. With <code class="inline-code">REIN_ENGINE_SIGNING_KEY</code> set, the
+          private half never touches the database, a plaintext copy left by an earlier boot is erased and the space
+          reclaimed, and a mismatched key refuses to continue the chain. Wallet private keys are never persisted by the
+          engine and no engine endpoint accepts one; a path that does is, by definition, a vulnerability.
+        </p>
+        <h3>Review history</h3>
+        <p>
+          Before the hosted stack reached mainnet (September 2026), four reviewers covered authentication and tenancy, the
+          decision and approval core, the payment rails, and the deployment surface. Five issues were found and all five
+          fixed in the same change, each pinned by a test that was confirmed to fail with the defect restored:
+        </p>
+        <ul>
+          <li>The evaluation clock was the caller's: a future-dated intent saw an empty spend history. The engine now reads its own clock.</li>
+          <li>The vendor set the scale of its own price through <code class="inline-code">extra.decimals</code>. Decimals now come from the resolved asset, and the signer cross-checks against the decision, not the requirement.</li>
+          <li>Any token could call itself USDC. The symbol is now consulted last and never for an address; the payer refuses anything but the pinned profile's USDC.</li>
+          <li>The network pin did not survive advisory mode. The released 402 now carries only the offer that was evaluated.</li>
+          <li>A narrowed key could rotate its org's wider key and read the new secret. Rotate and revoke now enforce the same narrowing as issuance.</li>
+        </ul>
+        <p>
+          CI runs <code class="inline-code">pnpm audit --prod --audit-level=high</code> on every push, and an advisory
+          accepted without a fix must be listed in <code class="inline-code">SECURITY.md</code> with a date and a reason.
+          None is accepted at the time of writing. Rate limits are a capacity control, not a security boundary: a throttled
+          request was never judged by policy and is reported as a rate limit, never as a denial. Vulnerabilities are
+          reported privately through GitHub's advisory channel; acknowledgement within three working days, assessment
+          within ten.
+        </p>
+
+        <h2 id="compliance">Compliance</h2>
+        <p>
+          Rein is operated by M.D.N Tech FZE, a free-zone company in Umm Al Quwain, United Arab Emirates. The service is
+          free, in beta, and provided as is. Four decisions define its legal posture.
+        </p>
+        <p>
+          <b>No fee, no custody.</b> Rein takes no cut of any payment and holds no funds. If a fee is ever introduced it
+          will be a separate, visible x402 charge for the decision itself, never a share of the payment it governs.
+        </p>
+        <p>
+          <b>The reference vendor does not charge on mainnet.</b> Selling paid routes for real USDC would put the operating
+          entity in the business of accepting payments, which UAE payment-services rules treat differently from publishing
+          software. The vendor's mainnet lane is therefore switched off and its testnet lane is free to use. Agents that
+          run Rein pay third-party vendors; Rein is not a party to those payments.
+        </p>
+        <p>
+          <b>Sanctions screening before mainnet.</b> An org is screened at two moments: when it is claimed, and when it asks
+          for a mainnet key. The engine checks the owner's Ethereum wallet (a GitHub sign-in has none) and every wallet the
+          org's agents registered against the Chainalysis sanctions oracle on Ethereum mainnet, a public contract that
+          anyone can query and re-run without a key. A hit refuses the request with
+          <code class="inline-code">403 screening_refused</code> and spends the claim code. An oracle that does not answer
+          refuses with <code class="inline-code">503 screening_unavailable</code> and keeps the code, so the check fails
+          closed rather than open. Every check is written to an append-only <code class="inline-code">screenings</code>
+          record that only the operator can read.
+        </p>
+        <p>
+          <b>A geo-block on the hosted service.</b> The engine and the console refuse requests from Cuba, Iran, North Korea,
+          and the Crimea, Sevastopol, Donetsk and Luhansk regions of Ukraine with
+          <code class="inline-code">451 restricted_territory</code>. The lookup runs locally against a bundled copy of the
+          DB-IP Lite database (CC BY 4.0), refreshed monthly; no request leaves the service to decide. A VPN can defeat it
+          and a misfiled range can over-block, which is why it is one layer of several rather than the control itself.
+        </p>
+        <p>
+          The hosted engine stores what it needs to enforce a policy and prove a decision: agents, policies, spend,
+          settlements, key digests and the decision log. API keys are stored as SHA-256 digests, so a stolen database
+          authenticates nothing. The decision log is kept indefinitely because it is hash-linked; removing a record would
+          break the proof for everything after it. IP addresses are held in memory only. The full data inventory, the
+          processors involved and the retention periods are set out in the
+          <a class="inline-link" href="privacy">privacy policy</a>; the <a class="inline-link" href="terms">terms</a>
+          govern use. Both are under legal review and marked as drafts until that review completes. Users must be at
+          least 18.
+        </p>
+
+        <h2 id="status">Status and roadmap</h2>
+        <p>
+          As of October 2026, version 0.5.1 is on npm with 1,167 offline tests and 17 live tests that spend real testnet
+          USDC nightly. The repository is public under MIT. Releases are published through npm Trusted Publishing with
+          provenance attestations; no npm token exists anywhere in the pipeline, and every package rejects token-based
+          publishing.
+        </p>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Area</th><th>Shipped</th><th>Not yet</th></tr></thead>
+          <tbody>
+            <tr><td>Guard</td><td>Policy predicates, breakers, task budgets, kill switch, signed approvals with TTL, hash-chained Ed25519 decision log, chain verification, reconciliation, liveness monitoring, scoped API keys, multi-tenancy</td><td>Budget subtrees for sub-agent delegation</td></tr>
+            <tr><td>Agent surfaces</td><td>SDK guard, MCP server (five tools, read-only by construction), <code>init</code> sandbox, claim and mainnet flows, installable Agent Skill, <code>llms.txt</code></td><td>Signing through a remote KMS or HSM</td></tr>
+            <tr><td>Gate and rails</td><td>x402 v1 and v2, EIP-3009 payer, pinned Base and Base Sepolia profiles, x402.org, PayAI and CDP facilitators, at-most-once settlement, on-chain indexer</td><td>Any network beyond Base; the payer refuses one without a pinned profile by design</td></tr>
+            <tr><td>Graph</td><td>Evidence ledger, pure-function scores, reputation predicates in policy, ERC-8004 identity and score publication on Base Sepolia</td><td>ERC-8004 identities on mainnet; a hosted Graph service</td></tr>
+            <tr><td>Hosted service</td><td>Engine on Postgres with external signing key, read-only console, GitHub and SIWE sign-in, sanctions screening, geo-block, nightly chain export and verified backup</td><td>Self-serve mainnet for every screened org (enabled per org today); final terms and privacy after legal review</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>
+          The near-term plan is a monitored soft open of the hosted engine, then structured logs and metrics,
+          high-availability Postgres, and remote key signing. Rein is pre-1.0; security fixes land on the latest minor
+          release and there is no long-term support branch.
+        </p>
+
+        <h2 id="links">Links and addresses</h2>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Resource</th><th>Where</th></tr></thead>
+          <tbody>
+            <tr><td>Source and issues</td><td><a class="inline-link" href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">github.com/bugiiiii11/rein</a></td></tr>
+            <tr><td>Packages</td><td><a class="inline-link" href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npmjs.com/org/reinconsole</a></td></tr>
+            <tr><td>Get started</td><td><a class="inline-link" href="get-started">The runbook</a>, <a class="inline-link" href="agent-quickstart.md">agent quickstart</a>, <a class="inline-link" href="llms.txt">llms.txt</a></td></tr>
+            <tr><td>Hosted engine, console, vendor</td><td><a class="inline-link" href="https://engine.reinconsole.com/health" target="_blank" rel="noopener">engine.reinconsole.com</a>, <a class="inline-link" href="https://app.reinconsole.com" target="_blank" rel="noopener">app.reinconsole.com</a>, <a class="inline-link" href="https://vendor.reinconsole.com" target="_blank" rel="noopener">vendor.reinconsole.com</a></td></tr>
+            <tr><td>MCP Registry</td><td><code>io.github.bugiiiii11/rein</code>, also on <a class="inline-link" href="https://glama.ai/mcp/servers/bugiiiii11/rein" target="_blank" rel="noopener">Glama</a> and <a class="inline-link" href="https://smithery.ai/servers/bugiiiii/rein" target="_blank" rel="noopener">Smithery</a></td></tr>
+            <tr><td>Protocols</td><td><a class="inline-link" href="https://www.x402.org" target="_blank" rel="noopener">x402</a>, <a class="inline-link" href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>, <a class="inline-link" href="https://eips.ethereum.org/EIPS/eip-3009" target="_blank" rel="noopener">EIP-3009</a></td></tr>
+            <tr><td>Security policy</td><td><a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a></td></tr>
+            <tr><td>Legal</td><td><a class="inline-link" href="terms">Terms</a>, <a class="inline-link" href="privacy">Privacy</a></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>Contract addresses the software pins:</p>
+        <div class="table-scroll">
+        <table>
+          <thead><tr><th>Contract</th><th>Network</th><th>Address</th></tr></thead>
+          <tbody>
+            <tr><td>USDC</td><td>Base (8453)</td><td><code>0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></td></tr>
+            <tr><td>USDC</td><td>Base Sepolia (84532)</td><td><code>0x036CbD53842c5426634e7929541eC2318f3dCF7e</code></td></tr>
+            <tr><td>ERC-8004 Identity Registry</td><td>Base</td><td><code>0x8004A169FB4a3325136EB29fA0ceB6D2e539a432</code></td></tr>
+            <tr><td>ERC-8004 Identity Registry</td><td>Base Sepolia</td><td><code>0x8004A818BFB912233c491871b3d84c89A494BD9e</code></td></tr>
+            <tr><td>ERC-8004 Reputation Registry</td><td>Base Sepolia</td><td><code>0x8004B663056A597Dffe9eCcC1965A193B7388713</code></td></tr>
+            <tr><td>Chainalysis sanctions oracle</td><td>Ethereum mainnet</td><td><code>0x40C57923924B5c5c5455c48D93317139ADDaC8fb</code></td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <h2 class="print-hide">Next</h2>
+        <div class="qa-next">
+          <a href="get-started">Try it in five minutes, offline<span>the runbook</span></a>
+          <a href="run-rein-locally">Can I run Rein without trusting your servers?<span>read</span></a>
+          <a href="cap-ai-agent-spending">How do I cap what my AI agent spends?<span>read</span></a>
+        </div>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <svg class="brand-mark sm" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+          <circle cx="7" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <circle cx="25" cy="16" r="5" stroke="currentColor" stroke-width="2.2" />
+          <path d="M12 16 H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+          <path d="M16 12 V20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <span>MIT © Rein contributors</span>
+      </div>
+      <nav class="footer-links">
+        <a href="/">Overview</a>
+        <a href="get-started">Get started</a>
+        <a href="agent-quickstart.md">For agents</a>
+        <a href="https://github.com/bugiiiii11/rein" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/org/reinconsole" target="_blank" rel="noopener">npm</a>
+        <a href="https://app.reinconsole.com" target="_blank" rel="noopener">Console</a>
+        <a href="cap-ai-agent-spending">Cap agent spend</a>
+        <a href="x402-spend-limits">x402 limits</a>
+        <a href="ai-agent-kill-switch">Kill switch</a>
+        <a href="run-rein-locally">Run locally</a>
+        <a href="whitepaper">Whitepaper</a>
+        <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
+        <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
+      </nav>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>

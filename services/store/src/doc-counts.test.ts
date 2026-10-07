@@ -34,6 +34,7 @@ const SITES: Array<[string, RegExp]> = [
     'apps/landing/index.html',
     /OFFLINE TEST SUITE<\/span>\s*\n\s*<span class="proof-value">([\d,]+)<\/span>/,
   ],
+  ['apps/landing/whitepaper.html', /npm with ([\d,]+) offline tests and/],
 ];
 
 describe('published test counts', () => {
@@ -46,7 +47,7 @@ describe('published test counts', () => {
     }
   });
 
-  it('all six agree with each other', () => {
+  it('all sites agree with each other', () => {
     const counts = SITES.map(([file, pattern]) => {
       // `?.[1]?.` on BOTH hops, not just the match: a pattern with no capture
       // group hands back undefined at index 1 while the match itself succeeded.
