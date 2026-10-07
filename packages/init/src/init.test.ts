@@ -7,6 +7,7 @@ import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { ApprovalService, buildServer, PolicyEngine } from '@reinconsole/policy-engine';
 import {
   AGENT_FILE,
+  TESTNET_AGENT_FILE,
   ownerFilePath,
   runApprove,
   runClaim,
@@ -205,6 +206,12 @@ describe('init --mainnet and --approve', () => {
   });
   afterAll(() => stop());
 
+  const MAINNET_WALLET = {
+    address: '0x4444444444444444444444444444444444444444',
+    privateKey: `0x${'55'.repeat(32)}`,
+  } as const;
+  const generateWallet = () => ({ ...MAINNET_WALLET });
+
   const call = async (method: string, path: string, key: string, body?: unknown) => {
     const res = await fetch(`${url}${path}`, {
       method,
@@ -245,21 +252,26 @@ describe('init --mainnet and --approve', () => {
 
   it('refuses an org nobody has claimed, and writes nothing', async () => {
     const { dir, ownerDir, agent } = await sandbox();
-    await expect(runMainnet({ dir, ownerDir, log: quiet })).rejects.toThrow(/needs a claimed org/);
+    await expect(runMainnet({ dir, ownerDir, generateWallet, log: quiet })).rejects.toThrow(/needs a claimed org/);
     expect(existsSync(ownerFilePath(agent.orgId, ownerDir))).toBe(false);
     expect(JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8')).network).toBe('base-sepolia');
   });
 
   it('moves a claimed org to mainnet: owner keys out of the agent file, a narrowed key in', async () => {
     const { dir, ownerDir, agent } = await claimed('github:101');
-    const result = await runMainnet({ dir, ownerDir, log: quiet });
+    const result = await runMainnet({ dir, ownerDir, generateWallet, log: quiet });
     expect(result.changed).toBe(true);
 
     const written = JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8'));
     expect(written.network).toBe('base');
     expect(written.expiresAt).toBeUndefined();
-    expect(written.wallet).toEqual(agent.wallet);
     expect(written.apiKey).not.toBe(agent.apiKey);
+    // A fresh wallet on a NEW agent in the same org; the sandbox file is kept.
+    expect(written.wallet).toEqual(MAINNET_WALLET);
+    expect(written.agentId).not.toBe(agent.agentId);
+    expect(written.orgId).toBe(agent.orgId);
+    expect(JSON.parse(readFileSync(join(dir, TESTNET_AGENT_FILE), 'utf8'))).toEqual(agent);
+    expect(existsSync(join(dir, 'rein-agent.mainnet-pending.json'))).toBe(false);
 
     const owner = JSON.parse(readFileSync(result.ownerFile, 'utf8'));
     expect(owner.adminKey).toBe(agent.apiKey);
@@ -272,14 +284,25 @@ describe('init --mainnet and --approve', () => {
     const runtime = (await call('GET', '/v1/keys', owner.adminKey)).body.find(
       (k: { name: string }) => k.name === 'mainnet-runtime',
     );
-    expect(runtime).toMatchObject({ scopes: ['evaluate', 'read'], agentIds: [agent.agentId] });
+    expect(runtime).toMatchObject({ scopes: ['evaluate', 'read'], agentIds: [written.agentId] });
+
+    // The engine knows the new wallet (so the mainnet screen saw it), and the
+    // sandbox policy now governs the new agent too, rules unchanged.
+    const agents = (await call('GET', '/v1/agents', owner.adminKey)).body;
+    const mainnet = agents.find((a: { id: string }) => a.id === written.agentId);
+    expect(mainnet.wallets).toEqual([{ chain: 'base', address: MAINNET_WALLET.address, mode: 'sdk' }]);
+    const policies = (await call('GET', '/v1/policies', owner.adminKey)).body;
+    const starter = policies.find((p: any) => p.appliesTo.agents?.includes(agent.agentId));
+    const copied = policies.find((p: any) => p.appliesTo.agents?.includes(written.agentId));
+    expect(copied.rules).toEqual(starter.rules);
+    expect(copied.policyId).not.toBe(starter.policyId);
     expect(runtime.expiresAt).toBeUndefined();
     const policy = { policyId: 'pol_loosen', appliesTo: { agents: [agent.agentId] }, rules: [], default: 'allow' };
     expect((await call('POST', '/v1/policies', written.apiKey, policy)).status).toBe(403);
-    expect((await call('POST', '/v1/keys', written.apiKey, { name: 'x', scopes: ['admin'], agentIds: [agent.agentId] })).status).toBe(403);
+    expect((await call('POST', '/v1/keys', written.apiKey, { name: 'x', scopes: ['admin'], agentIds: [written.agentId] })).status).toBe(403);
 
     // Idempotent, and the testnet demo will not run against a mainnet file.
-    expect((await runMainnet({ dir, ownerDir, log: quiet })).changed).toBe(false);
+    expect((await runMainnet({ dir, ownerDir, generateWallet, log: quiet })).changed).toBe(false);
     expect((await runInit({ dir, engineUrl: url, chain: chain(0n), log: quiet })).allowed).toBeUndefined();
     await expect(runInit({ dir, engineUrl: url, chain: chain(0n), force: true, log: quiet })).rejects.toThrow(
       /wallet's only key/,
@@ -293,27 +316,36 @@ describe('init --mainnet and --approve', () => {
       if (target.endsWith('/v1/keys') && init?.method === 'POST') return new Response('{"error":"boom"}', { status: 503 });
       return fetch(input, init);
     };
-    await expect(runMainnet({ dir, ownerDir, fetch: failOnce, log: quiet })).rejects.toThrow(/runtime key \(HTTP 503\)/);
+    await expect(runMainnet({ dir, ownerDir, generateWallet, fetch: failOnce, log: quiet })).rejects.toThrow(/runtime key \(HTTP 503\)/);
     const first = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
     expect(first.approver.keyId).toMatch(/^apk_/);
 
-    await runMainnet({ dir, ownerDir, log: quiet });
+    // The resumed run brings a DIFFERENT generator: it must not be asked.
+    const never = () => {
+      throw new Error('a resumed run generated a second wallet');
+    };
+    await runMainnet({ dir, ownerDir, generateWallet: never, log: quiet });
     const second = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
     expect(second.approver).toEqual(first.approver);
     expect((await call('GET', '/v1/approvers', first.adminKey)).body).toHaveLength(1);
+    // One mainnet agent, one copied policy -- not one per attempt.
+    expect((await call('GET', '/v1/agents', first.adminKey)).body).toHaveLength(2);
+    expect((await call('GET', '/v1/policies', first.adminKey)).body).toHaveLength(2);
+    expect(JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8')).wallet).toEqual(MAINNET_WALLET);
   });
 
   it('answers an escalation with the approver key, only after --yes', async () => {
     const { dir, ownerDir, agent } = await claimed('eth:0x00000000000000000000000000000000000000a1');
-    await runMainnet({ dir, ownerDir, log: quiet });
+    await runMainnet({ dir, ownerDir, generateWallet, log: quiet });
     const owner = JSON.parse(readFileSync(ownerFilePath(agent.orgId, ownerDir), 'utf8'));
-    // The owner adds a review rule to the org's policy -- with the owner's key.
-    const [starter] = (await call('GET', '/v1/policies', owner.adminKey)).body;
-    const review = { ...starter, rules: [...starter.rules, { id: 'review', escalate: { amountGt: '0.002' } }] };
+    // The owner adds a review rule to the mainnet agent's policy -- with the owner's key.
+    const { apiKey: runtimeKey, agentId } = JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8'));
+    const policies = (await call('GET', '/v1/policies', owner.adminKey)).body;
+    const governing = policies.find((p: any) => p.appliesTo.agents?.includes(agentId));
+    const review = { ...governing, rules: [...governing.rules, { id: 'review', escalate: { amountGt: '0.002' } }] };
     expect((await call('POST', '/v1/policies', owner.adminKey, review)).status).toBe(200);
-    const runtimeKey = JSON.parse(readFileSync(join(dir, AGENT_FILE), 'utf8')).apiKey;
     const parked = await call('POST', '/v1/evaluate', runtimeKey, {
-      agentId: agent.agentId,
+      agentId,
       vendor: { host: 'api.vendor.com', address: '0xabc' },
       resource: '/v1/search',
       amount: '0.003',

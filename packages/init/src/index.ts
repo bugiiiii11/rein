@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, rmSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign } from 'node:crypto';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { canonicalApproval } from '@reinconsole/core';
 import { createGuard, PaymentBlockedError, type Payer } from '@reinconsole/sdk';
 
@@ -453,6 +453,18 @@ function readOwnerFile(path: string): OwnerFile {
   }
 }
 
+function readJson<T>(path: string): T {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch (err) {
+    throw new InitError(`${path} is not readable JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function writePending(path: string, pending: MainnetPending): void {
+  writeFileSync(path, JSON.stringify(pending, null, 2) + '\n', { mode: 0o600 });
+}
+
 function writeOwnerFile(path: string, owner: OwnerFile): void {
   writeFileSync(path, JSON.stringify(owner, null, 2) + '\n', { mode: 0o600 });
 }
@@ -462,7 +474,24 @@ export interface MainnetOptions {
   /** Where the owner's credentials go (default `~/.rein`). */
   ownerDir?: string;
   fetch?: typeof globalThis.fetch;
+  /** The mainnet agent's fresh wallet; injected so tests never touch a chain. */
+  generateWallet?: InitChain['generateWallet'];
   log?: (line: string) => void;
+}
+
+/** The sandbox's file, kept beside the new one: its testnet wallet key exists nowhere else. */
+export const TESTNET_AGENT_FILE = 'rein-agent.base-sepolia.json';
+/**
+ * A mainnet move in progress: the fresh wallet and what has been registered
+ * for it so far. Written BEFORE the wallet is registered, so an interrupted run
+ * resumes with the same wallet and agent instead of minting a second of each.
+ */
+const MAINNET_PENDING_FILE = 'rein-agent.mainnet-pending.json';
+interface MainnetPending {
+  orgId: string;
+  wallet: AgentFile['wallet'];
+  agentId?: string;
+  policyIds?: string[];
 }
 
 export interface MainnetResult {
@@ -482,16 +511,25 @@ export interface MainnetResult {
  *    approver key, so a failure below can never leave a registered approver
  *    nobody can sign for, or an admin key that exists nowhere;
  * 3. register the approver's public half (`POST /v1/approvers`);
- * 4. mint the agent a runtime key -- this agent only, `evaluate` + `read`: it
+ * 4. generate a FRESH wallet, register a new mainnet agent in the same org
+ *    with it, and copy every policy that governed the sandbox agent onto it;
+ * 5. mint that agent a runtime key -- this agent only, `evaluate` + `read`: it
  *    spends within the policy and reads its own receipts, and cannot change
  *    the policy, mint keys or sign an approval;
- * 5. rewrite `rein-agent.json` with that key and `network: 'base'`.
+ * 6. keep the sandbox file as `rein-agent.base-sepolia.json` and rewrite
+ *    `rein-agent.json` for the new agent, its wallet and `network: 'base'`.
+ *
+ * A fresh wallet (founder decision, S103) rather than the sandbox's: the
+ * testnet key has sat in a file through a whole sandbox run and may have been
+ * shared or pasted while experimenting, and real USDC deserves a key that never
+ * was. A new AGENT rather than the same agent with a new wallet, because the
+ * engine screens the wallets an org's agents REGISTERED when the mainnet key is
+ * minted (screening.ts) and has no route to add one to an existing agent --
+ * registering it is what puts the mainnet wallet in front of the screen.
  *
  * The engine does not know which chain a payment is on (an intent says `base`
  * for both), so "claimed orgs only" is this check plus the 7-day expiry on
- * every unclaimed key -- not an engine-side network rule. The wallet key is
- * kept: it was generated on this machine and never left it, and its address is
- * where the owner sends real USDC.
+ * every unclaimed key -- not an engine-side network rule.
  */
 export async function runMainnet(options: MainnetOptions = {}): Promise<MainnetResult> {
   const log = options.log ?? ((line: string) => console.log(line));
@@ -556,12 +594,59 @@ export async function runMainnet(options: MainnetOptions = {}): Promise<MainnetR
     writeOwnerFile(ownerFile, owner);
   }
 
+  const pendingFile = join(dirname(file), MAINNET_PENDING_FILE);
+  let pending: MainnetPending;
+  if (existsSync(pendingFile)) {
+    pending = readJson<MainnetPending>(pendingFile);
+    if (pending.orgId !== agent.orgId) {
+      throw new InitError(`${pendingFile} belongs to org ${pending.orgId}, not ${agent.orgId}`);
+    }
+  } else {
+    const generate = options.generateWallet ?? (await import('@reinconsole/x402-rails')).generateWallet;
+    pending = { orgId: agent.orgId, wallet: generate() };
+    writePending(pendingFile, pending);
+  }
+
+  if (!pending.agentId) {
+    const registered = await engineCall(http, agent.engineUrl, 'POST', '/v1/agents', owner.adminKey, {
+      name: 'mainnet',
+      wallets: [{ chain: 'base', address: pending.wallet.address, mode: 'sdk' }],
+    });
+    const id = field(registered.body, 'id');
+    if (registered.status !== 200 || typeof id !== 'string') throw refused('the mainnet agent', registered);
+    pending.agentId = id;
+    writePending(pendingFile, pending);
+  }
+  const agentId = pending.agentId;
+
+  if (!pending.policyIds) {
+    const listed = await engineCall(http, agent.engineUrl, 'GET', '/v1/policies', owner.adminKey);
+    if (listed.status !== 200 || !Array.isArray(listed.body)) throw refused('the policy list', listed);
+    type Listed = { policyId: string; orgId?: string; appliesTo?: { agents?: string[] } };
+    const governing = (listed.body as Listed[]).filter((p) => p.appliesTo?.agents?.includes(agent.agentId));
+    const policyIds: string[] = [];
+    for (const { orgId: _org, ...policy } of governing) {
+      const suffix = policyIds.length ? `_${policyIds.length}` : '';
+      const copy = {
+        ...policy,
+        policyId: `pol_mainnet_${agentId.slice(4).toLowerCase()}${suffix}`,
+        appliesTo: { ...policy.appliesTo, agents: [agentId] },
+      };
+      const added = await engineCall(http, agent.engineUrl, 'POST', '/v1/policies', owner.adminKey, copy);
+      if (added.status !== 200) throw refused('the mainnet policy', added);
+      policyIds.push(copy.policyId);
+    }
+    pending.policyIds = policyIds;
+    writePending(pendingFile, pending);
+  }
+
   // `mainnet: true` is what the engine gates (ServerOptions.mainnetOrgs): on
-  // the hosted engine a new org is refused until it has been screened.
+  // the hosted engine a new org is refused until it has been screened -- and
+  // the screen covers the wallet registered above.
   const runtime = await engineCall(http, agent.engineUrl, 'POST', '/v1/keys', owner.adminKey, {
     name: 'mainnet-runtime',
     scopes: ['evaluate', 'read'],
-    agentIds: [agent.agentId],
+    agentIds: [agentId],
     mainnet: true,
   });
   if (runtime.status === 403 && field(runtime.body, 'error') === 'mainnet_not_enabled') {
@@ -574,8 +659,11 @@ ${AGENT_FILE} stays on Base Sepolia; run --mainnet again once the org is enabled
   if (runtime.status !== 201 || typeof secret !== 'string') throw refused('the runtime key', runtime);
 
   const { expiresAt: _claimed, ...kept } = agent;
-  const next: AgentFile = { ...kept, apiKey: secret, network: 'base' };
+  const next: AgentFile = { ...kept, agentId, apiKey: secret, network: 'base', wallet: pending.wallet };
+  // The sandbox file first: it is the only copy of the testnet wallet key.
+  writeFileSync(join(dirname(file), TESTNET_AGENT_FILE), JSON.stringify(agent, null, 2) + '\n', { mode: 0o600 });
   writeFileSync(file, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+  rmSync(pendingFile, { force: true });
   log(`${AGENT_FILE} is now on Base mainnet.`);
   printMainnet(log, file, next, ownerFile);
   return { file, ownerFile, agent: next, changed: true };
@@ -584,7 +672,8 @@ ${AGENT_FILE} stays on Base Sepolia; run --mainnet again once the org is enabled
 function printMainnet(log: (l: string) => void, file: string, agent: AgentFile, ownerFile: string): void {
   log(`
   ${file}
-    network base; its key spends and reads for agent ${agent.agentId} only
+    network base; its key spends and reads for agent ${agent.agentId} only, from a
+    NEW wallet made for mainnet (the sandbox file is kept as ${TESTNET_AGENT_FILE})
   ${ownerFile}
     YOUR keys: the org admin key (changes the policy) and the approver key (signs
     approvals). Keep this file where your agent cannot read it, and back it up --

@@ -1,0 +1,9 @@
+# Product decisions
+
+Founder decisions on how the product behaves, with the reason. Legal decisions live in `docs/legal/decisions.md`.
+
+## 2026-10-08 -- from Matt's whitepaper review (S103)
+
+- **`init --mainnet` uses a fresh wallet.** The sandbox's testnet key has sat in a file through a whole sandbox run and may have been shared or pasted while experimenting; real USDC gets a key that never was. The engine has no route to add a wallet to an existing agent, and screening covers the wallets an org's agents registered, so `--mainnet` registers a NEW agent in the same org with the new wallet and copies the sandbox policy onto it. The sandbox file is kept as `rein-agent.base-sepolia.json`. Ships in the release after 0.6.0.
+- **An allow consumes budget at decision time, paid or not.** The engine cannot see the chain, so reserving at the allow is what keeps "overspent 0" true: counting only at settlement would let parallel requests all be allowed before any settlement report arrives. The cost is bounded: budgets are rolling windows (per hour, per 24 hours), so an allow that never settles stops counting when its window passes. Worst case is a false deny for up to one window, never an overspend. Possible later refinement, not built: release the reservation when the payment authorization's `validBefore` passes with no settlement.
+- **The beta mainnet test runs against third-party x402 sellers, not the reference vendor.** The reference vendor's mainnet lane stays disarmed (legal, 2026-10-05). A tester's mainnet run is two steps: (1) a DENY -- a budget set below one call's price, the engine refuses, no money moves, cost $0; (2) one paid call of about $0.001-$0.01 to a Base mainnet x402 seller from the PayAI catalog (the same discovery the mainnet runner uses, `services/x402-rails/src/discovery.ts`), then the receipt read back from the engine with the org admin key.

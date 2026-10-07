@@ -53,13 +53,19 @@ This works only on a claimed org. It:
    key and a new approver key. The admin key can change the policy, and the approver key signs
    approvals;
 2. registers the public half of the approver key with the engine;
-3. replaces the key in `rein-agent.json` with one that can only spend and read for this agent;
-4. switches `rein-agent.json` to `network: base`.
+3. generates a **new wallet** for mainnet and registers a new agent with it in the same org, and
+   copies the sandbox agent's policy onto that agent;
+4. mints a key that can only spend and read for the new agent;
+5. keeps the sandbox file as `rein-agent.base-sepolia.json` and rewrites `rein-agent.json` for the
+   new agent, its wallet and `network: base`.
 
 Your agent reads `rein-agent.json`, so it can no longer change its own policy or approve its own
 escalations. Keep the owner file somewhere your agent cannot read, and back it up: it is the only
-copy. The wallet stays the same. Fund it by sending USDC on Base to its address. The starter policy
-still applies, now in real USDC: at most $0.004 per call and $0.05 per 24 hours.
+copy. The mainnet wallet is new: the testnet key sat in a file through a whole sandbox run, and real
+USDC gets a key that never did. Fund it by sending USDC on Base to the address `--mainnet` prints.
+Because it is registered with the engine, the hosted engine screens it before mainnet is enabled. The
+starter policy still applies, now in real USDC: at most $0.004 per call and $0.05 per 24 hours. If a
+run is interrupted, run `--mainnet` again: it resumes with the same wallet and agent.
 
 The hosted engine does not know which network a payment is on, because a payment intent names `base`
 on both. So `--mainnet` enforces the claimed-org rule in the client, backed by the engine's 7-day

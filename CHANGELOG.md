@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Changed
+
+- `init --mainnet` on `@reinconsole/init` moves the org to mainnet on a **fresh wallet**: it generates one, registers a new agent with it in the same org (so the hosted engine screens that wallet when the mainnet key is minted), copies every policy that governed the sandbox agent onto the new agent, and keeps the sandbox file as `rein-agent.base-sepolia.json`. An interrupted run resumes from `rein-agent.mainnet-pending.json` with the same wallet and agent. Previously the sandbox's testnet wallet carried over. `MainnetOptions.generateWallet` and `TESTNET_AGENT_FILE` are new.
+
 ## [0.6.0] - 2026-10-07
 
 Sanctions screening and a geo-block on the engine, and the signer's replay burn keyed by the signed content. `Policy` loses two fields that were never read (`denyFloor`, `escalation`); stored policies that carry them still load.
