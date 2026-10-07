@@ -108,7 +108,9 @@
             is signed. Allowed payments are receipted, denied ones never exist, and payments past an envelope are parked
             for a human whose approval is an <b>Ed25519 signature, not a click</b>. Each verdict is a signed, hash-chained
             decision that anyone holding the engine's public key can verify offline. Rein is open source (MIT), ships as
-            12 packages on npm, and runs as a hosted engine on Base mainnet and Base Sepolia. Three planes make up the
+            12 packages on npm, and runs as a hosted engine. The payer it ships supports Base Sepolia and Base mainnet;
+            mainnet is opened org by org after sanctions screening, and the engine itself judges an intent without
+            reading the chain it will settle on. Three planes make up the
             product: <b>Guard</b> (spend control on the agent that pays), <b>Gate</b> (monetization middleware on the API
             that earns) and <b>Graph</b> (a reputation ledger that feeds evidence back into both).
               </p>

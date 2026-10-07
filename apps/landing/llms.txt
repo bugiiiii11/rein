@@ -7,7 +7,7 @@ against a declarative policy before the payment is constructed: allowed payments
 denied ones never exist, and payments past an envelope are escalated to a human for a signed
 approval. Three planes: **Guard** (spend control on the agent that pays), **Gate** (monetization
 middleware on the API that earns), **Graph** (a reputation ledger that feeds evidence back into
-enforcement on both sides).
+enforcement on both sides when embedded beside an engine; on-chain via ERC-8004 on Base Sepolia today).
 
 Four things are load-bearing and worth knowing before you integrate:
 
