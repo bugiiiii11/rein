@@ -24,9 +24,13 @@ Screened by hand before S98 (record date, wallet, result, list version):
 
 | Date | Org | Wallet | Result |
 |------|-----|--------|--------|
-| 2026-10-05 | pilot org (row kept in the private sanctions runbook) | see runbook | NOT sanctioned. Chainalysis on-chain sanctions oracle `0x40C57923924B5c5c5455c48D93317139ADDaC8fb` on Ethereum mainnet, `isSanctioned(address)` = false, read via ethereum-rpc.publicnode.com. Repeat before mainnet-enable of any new org; the free REST API (api key from go.chainalysis.com, `GET https://public.chainalysis.com/api/v1/address/<addr>`) is the formal source |
+| 2026-10-05 | pilot org (row kept in the private legal register) | see register | NOT sanctioned. Chainalysis on-chain sanctions oracle `0x40C57923924B5c5c5455c48D93317139ADDaC8fb` on Ethereum mainnet, `isSanctioned(address)` = false, read via ethereum-rpc.publicnode.com. Repeat before mainnet-enable of any new org; the free REST API (api key from go.chainalysis.com, `GET https://public.chainalysis.com/api/v1/address/<addr>`) is the formal source |
+
+## Runbooks (2026-10-08)
+
+`docs/legal/runbooks/`: `data-subject-requests.md`, `erasure.md`, `breach.md`, `sanctions.md`. They hold procedure only. Every record they produce (requests, erasures, incidents, hand screens, hits) goes in the private legal register in the founder's vault, never in this repo.
 
 ## Still open
 
-- Erasure tombstone for key names plus a deletion runbook; 18+ confirmation at claim; encrypted dumps with 90-day rotation; runbooks for data-subject requests, breach, sanctions hits and erasure; `docs/legal/ropa.md`.
+- An operator route for erasure (revoke + tombstone the owner key name in one engine call); today `erasure.md` does it with SQL and an engine restart. 18+ confirmation at claim; encrypted dumps with 90-day rotation; `docs/legal/ropa.md`.
 - Before public GA: EU and UK representatives, a DPA template for business customers, removal of the DRAFT banner.
