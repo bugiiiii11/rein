@@ -142,13 +142,6 @@ export const AppliesTo = z.object({
 });
 export type AppliesTo = z.infer<typeof AppliesTo>;
 
-export const Escalation = z.object({
-  approvers: z.array(z.string()).default([]),
-  timeoutAction: PolicyDefault.default('deny'),
-  timeoutMin: z.number().int().positive().default(15),
-});
-export type Escalation = z.infer<typeof Escalation>;
-
 /**
  * A declarative, versioned, immutable-once-active policy. Evaluation order in
  * the engine is: explicit DENY > ESCALATE > ALLOW > `default`.
@@ -177,8 +170,11 @@ export const Policy = z.object({
    */
   breakers: z.array(Breaker).default([]),
   default: PolicyDefault.default('deny'),
-  /** Below this amount, fail-open is permitted during a policy-service outage. */
-  denyFloor: DecimalString.default('0.05'),
-  escalation: Escalation.optional(),
+  // There is deliberately no fail-open floor and no escalation timeout
+  // action here. Both were once declared (`denyFloor`, `escalation.timeoutAction`
+  // / `timeoutMin`), never read, and contradicted what the engine does: an
+  // unreachable engine signs nothing, and a parked escalation that reaches its
+  // TTL is denied. Unknown keys are stripped on parse, so a stored policy that
+  // still carries them is unaffected.
 });
 export type Policy = z.infer<typeof Policy>;

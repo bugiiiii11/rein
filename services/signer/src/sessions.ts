@@ -103,14 +103,17 @@ export interface SessionStorePort {
   /** Add to the session's cumulative signed-for total. */
   recordSpend(id: string, amount: string): MaybePromise<void>;
   /**
-   * Check-and-burn a decision id: returns false when already burned. The
-   * check-and-set MUST happen synchronously at call time (before any awaits
-   * inside the impl) so two concurrent signs racing one voucher cannot both
-   * see it fresh; a durable impl then persists the burn before resolving.
+   * Check-and-burn a voucher key: returns false when already burned. The
+   * signer passes `decision.hash` — the bytes the engine signed — never
+   * `decision.id`, which is outside the canonical form and so free for a
+   * replayer to change. The check-and-set MUST happen synchronously at call
+   * time (before any awaits inside the impl) so two concurrent signs racing
+   * one voucher cannot both see it fresh; a durable impl then persists the
+   * burn before resolving.
    */
-  burnDecision(decisionId: string): MaybePromise<boolean>;
+  burnDecision(key: string): MaybePromise<boolean>;
   /** Release a burn after a failed signing leg — the voucher stays usable. */
-  unburnDecision(decisionId: string): MaybePromise<void>;
+  unburnDecision(key: string): MaybePromise<void>;
   /**
    * Drop a session record entirely — token hash, spend accounting, and all.
    * OPTIONAL (like GateStorePort.releaseReplay): stores that can't delete
@@ -119,7 +122,7 @@ export interface SessionStorePort {
    * SessionSigner.deleteSession, which refuses to delete an ACTIVE grant (a
    * kill must be a loud revocation, not a vanished row). Idempotent: deleting
    * an absent id is the desired end state, not an error. Voucher burns are
-   * NOT touched — they are keyed by decision id and TTL-pruned separately.
+   * NOT touched — they are keyed by decision hash and TTL-pruned separately.
    */
   delete?(id: string): MaybePromise<void>;
 
@@ -129,7 +132,7 @@ export interface SessionStorePort {
   list(): readonly Session[];
   /** Cumulative amount this session has released signatures for. */
   spent(id: string): string;
-  isDecisionUsed(decisionId: string): boolean;
+  isDecisionUsed(key: string): boolean;
 }
 
 /**

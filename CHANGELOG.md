@@ -4,6 +4,15 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Fixed
+
+- `@reinconsole/signer` burns a spent voucher by `decision.hash`, the content the engine signed, instead of `decision.id`. The id is outside the canonical form, so a copy of a used decision under a fresh id passed `verifyVoucher` and the replay check and was signed again; at-most-once then rested on the EIP-3009 nonce alone. The id is still consulted on the read side so burns recorded before the upgrade keep refusing. `SessionStorePort.burnDecision` / `unburnDecision` / `isDecisionUsed` now take that key.
+- `parseTrustProxy` on `@reinconsole/policy-engine` refuses an IPv4-mapped `REIN_TRUST_PROXY` entry whose prefix is shorter than the 96 mapping bits (`::ffff:10.0.0.0/8` trusts nearly all of IPv6, not the 10/8 range it reads as). Write the IPv4 CIDR, or keep the mapping bits.
+
+### Removed
+
+- `denyFloor` and `escalation` (`approvers`, `timeoutAction`, `timeoutMin`) from the `Policy` schema in `@reinconsole/core`, and the `Escalation` export. They were declared and never read, and they described a fail-open floor and a timeout action the engine does not have: an unreachable engine signs nothing, and a parked escalation that reaches its TTL is denied. Unknown keys are stripped on parse, so stored policies that still carry them load unchanged.
+
 ### Added
 
 - **Sanctions screening** on `@reinconsole/policy-engine` (`ServerOptions.screening`, `REIN_SANCTIONS_SCREENING` on `rein-engine`, on by default with the sandbox). At `POST /v1/claims/redeem`, and at a tenant's `POST /v1/keys` with `mainnet: true`, the engine checks the owner's wallet (for an `eth:` sign-in) and every wallet the org's agents registered against the Chainalysis sanctions oracle on Ethereum, through public RPCs tried in turn (`REIN_SANCTIONS_RPC_URLS` replaces the list). A listed address answers `403 screening_refused` and spends the claim code. If no RPC answers, the answer is `503 screening_unavailable` with `Retry-After: 60` and the code stays valid for a retry. Every check is kept, append-only and never pruned, in a new `screenings` table in `@reinconsole/store`, and unscoped keys read it at `GET /v1/screenings` (`?orgId=` filters). New exports: `ScreeningService`, `ScreeningError`, `InMemoryScreeningStore`, `chainalysisOracle`, `screenerFromEnv`, `ownerWallet`, `CHAINALYSIS_ORACLE`, `DEFAULT_SCREENING_RPCS` and their types.

@@ -361,6 +361,13 @@ describe('parseTrustProxy', () => {
   it('takes an explicit IP or CIDR list, for a proxy that is not on a private range', () => {
     expect(parseTrustProxy('10.9.0.0/16')).toBe('10.9.0.0/16');
     expect(parseTrustProxy('loopback, 192.0.2.7')).toBe('loopback,192.0.2.7');
+    expect(parseTrustProxy('::ffff:10.0.0.0/104')).toBe('::ffff:10.0.0.0/104');
+    expect(parseTrustProxy('::ffff:10.0.0.1')).toBe('::ffff:10.0.0.1');
+  });
+
+  it('refuses an IPv4-mapped entry whose prefix drops the mapping bits', () => {
+    expect(() => parseTrustProxy('::ffff:10.0.0.0/8')).toThrow(/trusts far more than it says/);
+    expect(() => parseTrustProxy('loopback,::ffff:a00:0/95')).toThrow(/10\.0\.0\.0\/8/);
   });
 
   it('keeps `all` for a chain whose peers cannot be named, and it is the forgeable one', () => {

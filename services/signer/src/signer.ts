@@ -288,7 +288,12 @@ export class SessionSigner {
       throw this.refuse('decision_stale', 'decision is too old to act on — re-evaluate', ctx);
     }
 
-    if (this.store.isDecisionUsed(decision.id)) {
+    // The burn is keyed on `decision.hash`, the content the engine signed.
+    // `id` sits OUTSIDE the canonical form, so a copy of a spent voucher
+    // under a fresh id still passes verifyVoucher — keyed on the id, it
+    // would sign again. (The id is still consulted so burns recorded by an
+    // older signer keep refusing through a restart within maxDecisionAge.)
+    if (this.store.isDecisionUsed(decision.hash) || this.store.isDecisionUsed(decision.id)) {
       throw this.refuse('decision_replayed', 'this decision already released a signature', ctx);
     }
 
@@ -317,7 +322,7 @@ export class SessionSigner {
     // (the store's check-and-set is sync at call time); a durable store also
     // persists the burn before the key is touched — a crash after signing
     // cannot resurrect the voucher on restart.
-    if (!(await this.store.burnDecision(decision.id))) {
+    if (!(await this.store.burnDecision(decision.hash))) {
       throw this.refuse('decision_replayed', 'this decision already released a signature', ctx);
     }
     let result: SignResult;
@@ -330,7 +335,7 @@ export class SessionSigner {
       // burn row stays — the voucher dies unspent, which fails CLOSED
       // (re-evaluate for a new one) — and the caller sees the ORIGINAL error.
       try {
-        await this.store.unburnDecision(decision.id);
+        await this.store.unburnDecision(decision.hash);
       } catch {
         // burn stays; fails closed
       }

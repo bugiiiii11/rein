@@ -149,6 +149,24 @@ One hardening change with no exploit path: `.dockerignore` excluded `.env` but n
 so a local `docker build .` would have copied the operator credentials into the image.
 Railway builds from git, where those files are ignored, so no published image was affected.
 
+**2026-10-07 -- fact-check of the whitepaper against the code.** One finding with a path,
+fixed and pinned by a test confirmed to fail with the defect restored, and one cleanup.
+
+- **The replay burn was keyed on a field the signature does not cover.** The signer burned a
+  spent voucher by `decision.id`, but `id` is outside the canonical form the engine signs, so
+  a copy of a used decision carrying a fresh id still passed `verifyVoucher` and the replay
+  check, and was signed again. At-most-once then rested on the EIP-3009 nonce alone, which
+  the agent does not control but the signer should not be leaning on. The burn is now keyed
+  on `decision.hash`, the bytes the engine signed; the id is still consulted on the read side
+  so burns recorded by an older signer keep refusing through an upgrade. The hosted estate
+  runs no signer service; the custody tier is self-hosted, so no live deployment was exposed
+  by the operator.
+- **The policy schema promised a fail-open floor.** `denyFloor` ("fail-open during an
+  outage") and `escalation.timeoutAction` / `timeoutMin` were declared, defaulted, and never
+  read. The engine has no such behaviour: an unreachable engine signs nothing, and a parked
+  escalation that reaches its TTL is denied. Removed from the schema; stored policies that
+  carry them are stripped on parse.
+
 Findings we are especially interested in: anything that releases a signature without a
 valid engine-signed allow voucher, replays a spent voucher, evades a session or budget cap,
 forges or breaks the decision hash chain, or turns an escalation into an approval without a

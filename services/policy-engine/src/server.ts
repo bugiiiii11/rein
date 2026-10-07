@@ -1286,6 +1286,24 @@ export function parseTrustProxy(raw: string | undefined): boolean | string {
     );
   }
   const entries = value.split(',').map((entry) => entry.trim());
+  // `::ffff:10.0.0.0/8` reads as "the 10/8 range, spelled as IPv6", but the
+  // prefix counts IPv6 bits: it trusts all of ::/8, which is close to every
+  // address there is. (The 2026 proxy-addr advisory was this very confusion
+  // inside the library; the fixed library now takes the spelling literally,
+  // so the misconfiguration has to be refused here.) A mapped entry must keep
+  // the 96 mapping bits -- or be written as the IPv4 CIDR it means.
+  const shortMapped = entries.find((entry) => {
+    const m = /^::ffff:[0-9a-f.:]+\/([0-9]+)$/.exec(entry);
+    return m !== null && Number(m[1]) < 96;
+  });
+  if (shortMapped) {
+    throw new Error(
+      `REIN_TRUST_PROXY entry ${shortMapped} trusts far more than it says.\n` +
+        '  The prefix of an IPv4-mapped address counts IPv6 bits, so /8 there is\n' +
+        '  nearly every address. Write the IPv4 CIDR itself (10.0.0.0/8), or keep\n' +
+        '  the mapping bits (::ffff:10.0.0.0/104).',
+    );
+  }
   if (entries.every((entry) => TRUST_ENTRY.test(entry))) return entries.join(',');
   throw new Error(
     `REIN_TRUST_PROXY=${raw} is not a trust spec.\n` +

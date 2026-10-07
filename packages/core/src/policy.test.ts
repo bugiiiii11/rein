@@ -16,8 +16,6 @@ describe('Policy schema', () => {
       { id: 'price-sanity', escalate: { amountVsResourceMedian: { gt: '3x' } } },
     ],
     default: 'deny',
-    denyFloor: '0.05',
-    escalation: { approvers: ['ops-channel'], timeoutAction: 'deny', timeoutMin: 15 },
   };
 
   it('parses the documented treasury policy verbatim', () => {
@@ -30,8 +28,17 @@ describe('Policy schema', () => {
   it('applies sensible defaults for a minimal policy', () => {
     const parsed = Policy.parse({ policyId: 'pol_min' });
     expect(parsed.default).toBe('deny');
-    expect(parsed.denyFloor).toBe('0.05');
     expect(parsed.rules).toEqual([]);
+  });
+
+  it('strips the retired fail-open and timeout fields a stored policy may still carry', () => {
+    const parsed = Policy.parse({
+      policyId: 'pol_old',
+      denyFloor: '0.05',
+      escalation: { approvers: ['ops-channel'], timeoutAction: 'allow', timeoutMin: 15 },
+    });
+    expect(parsed).not.toHaveProperty('denyFloor');
+    expect(parsed).not.toHaveProperty('escalation');
   });
 });
 

@@ -186,6 +186,20 @@ describe('SessionSigner', () => {
     );
   });
 
+  it('refuses a used decision re-issued under a fresh id', async () => {
+    // `id` is outside the canonical form the engine signs, so a copy of a spent
+    // voucher with a new id still verifies. The burn must therefore be keyed on
+    // the signed content (the hash), never on the id.
+    const w = await makeWorld();
+    const { intent, decision } = await evaluateFor(w.engine, w.agentId);
+    await w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision });
+    const reissued = { ...decision, id: `${decision.id}-copy` };
+    await expectRefusal(
+      w.signer.sign({ sessionToken: w.token, requirement: makeRequirement(), intent, decision: reissued }),
+      'decision_replayed',
+    );
+  });
+
   it('lets exactly one of two concurrent requests spend the same voucher', async () => {
     const w = await makeWorld();
     const { intent, decision } = await evaluateFor(w.engine, w.agentId);

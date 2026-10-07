@@ -25,7 +25,6 @@ describe('end to end: the reputation loop closes on the engine', () => {
       appliesTo: {},
       rules: [{ id: 'reputation-gate', deny: { vendorReputationLt: 40 } }],
       default: 'allow',
-      denyFloor: '0.05',
     });
 
     const intentTo = (host: string, createdAt: Date) => ({
