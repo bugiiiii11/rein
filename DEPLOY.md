@@ -930,7 +930,7 @@ self-hosters and tests.
 
 **Cutover (founder + Claude, one sitting):**
 
-1. Create the Supabase project in Railway's region (EU West), Free plan. Copy
+1. Create the Supabase project in Railway's region (EU Central, Frankfurt), Free plan. Copy
    the **session pooler** connection string (Connect -> Session pooler).
 2. Pause the pilot: no runner runs, no `live.yml` dispatch, during the window.
 3. On the `rein-engine` service set `DATABASE_URL=<session pooler string>`,
