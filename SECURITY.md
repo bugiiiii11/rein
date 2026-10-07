@@ -196,6 +196,23 @@ orgs that it cannot see — whole-chain verification is an operator's job. And a
 written before org attribution existed carries none, so it is shown to unscoped operators
 only: an unattributed row cannot be proven to belong to whichever tenant asks for it first.
 
+## The hosted engine's verification key
+
+Every decision `engine.reinconsole.com` signs verifies against this Ed25519 key. Pin it from here
+(or from the kit or config that delivered it), not from the engine's own `GET /health`: reading the
+key you are about to trust from the server you are verifying is trust on first use, not a pin.
+`/health` publishes the same key, so compare the two and refuse to start on a mismatch.
+
+```
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAjlmTGpYwcT7XftjkskXT4xFcKQB9HWnXUZAvRwMxLPQ=
+-----END PUBLIC KEY-----
+```
+
+The key does not rotate on deploys (`REIN_ENGINE_SIGNING_KEY` is external, DEPLOY.md). If it ever
+changes, this section changes in the same commit, and the old key stays listed with the date it
+was retired so decisions signed before then still verify.
+
 ## Security model in one paragraph
 
 Rein is non-custodial: funds never pass through it, and it governs authority rather than

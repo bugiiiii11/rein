@@ -21,7 +21,14 @@ import { createGuard } from '@reinconsole/sdk';
 const signer = new SessionSigner({
   enginePublicKeyPem, // the engine's decision-verification key, pinned at boot
 });
+```
 
+Pin `enginePublicKeyPem` from configuration you control, not from the engine's `GET /health` at boot:
+a key read from the server you are about to verify is trust on first use. The hosted engine's key is
+published in [SECURITY.md](https://github.com/bugiiiii11/rein/blob/main/SECURITY.md#the-hosted-engines-verification-key);
+read `/health` only to refuse to start if it presents a different one.
+
+```ts
 // The wallet key enters here and never leaves.
 signer.registerWallet(agentId, privateKey);
 

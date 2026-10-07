@@ -32,9 +32,13 @@ and you skip step 4. Claude Code first asks **"Do you trust this folder?"** -- a
 
 ### 2. Switch Claude Code out of auto mode
 
-Press **Shift+Tab** until the status line under the input box says **"manual mode"** (or shows no
-mode at all) -- the goal is: NOT "auto mode". If Claude Code later offers to "switch to auto mode",
-answer no: the kit only works outside it.
+Press **Shift+Tab** until the status line under the input box says **"manual mode on"**. Claude Code
+will keep showing "Tip: switch to auto mode" under its answers -- ignore it, never accept it: the kit
+only works outside auto mode.
+
+**When VS Code opens a diff that says "Save file to continue":** Claude Code is asking whether it may
+write the file. Do not click in the diff -- answer in the Claude Code terminal and pick **1 (Yes)**,
+not 2 ("accept edits", which stops asking for the rest of the session).
 
 > **Prečo:** V "auto mode" bezpečnostná kontrola sama zablokuje inštaláciu balíčkov a volanie nášho
 > servera. Mimo auto mode sa Claude Code pri každom príkaze opýta a ty ho schváliš.
@@ -109,7 +113,9 @@ Rules:
   **once**; if you must rerun within the hour after the earlier kit, a `hour-budget` refusal on test 1
   is correct behaviour, not a bug -- wait an hour.
 - If a command is refused by an "auto mode" classifier, STOP and tell {{NAME}} to press Shift+Tab until
-  the status line no longer says "auto mode" (Part A, step 2), then retry the same command.
+  the status line says "manual mode on" (Part A, step 2), then retry the same command.
+- The first time you create a file, VS Code may open a diff saying "Save file to continue". Tell
+  {{NAME}} to answer in the Claude Code terminal with option 1 (Yes).
 - Keep your messages to {{NAME}} short. After each step, say done / failed and what comes next.
 
 ## B1. Pre-flight checks
@@ -174,7 +180,7 @@ Create them exactly as given.
 // The custody process. It is the ONLY program that reads wallet.json.
 // Run it in the background and leave it running:  node signer.mjs
 //
-// It pins the engine's verification key, takes the wallet into custody, mints
+// It checks the engine's key against the one pinned below, takes the wallet into custody, mints
 // ONE capped session for the agent (session.json) and an operator credential
 // for the kill switch (signer-admin.json), then serves POST /v1/sign.
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -185,10 +191,17 @@ const { engineUrl, agentId } = JSON.parse(readFileSync('rein-agent.json', 'utf8'
 const { privateKey } = JSON.parse(readFileSync('wallet.json', 'utf8'));
 const SIGNER_URL = 'http://127.0.0.1:8788';
 
-// The engine's public key, read once at boot. Every voucher the agent brings
-// must carry a signature that verifies against it -- offline, no call back.
+// The engine's public key, PINNED: it came with this kit, not from the network.
+// Every voucher the agent brings must carry a signature that verifies against
+// it -- offline, no call back. /health is read only to refuse a mismatch with a
+// clear message (a rotated key, or something answering in the engine's place).
+const ENGINE_PUBLIC_KEY = `{{ENGINE_PUBLIC_KEY}}`;
 const health = await (await fetch(`${engineUrl}/health`)).json();
-const signer = new SessionSigner({ enginePublicKeyPem: health.publicKey });
+if (health.publicKey?.trim() !== ENGINE_PUBLIC_KEY.trim()) {
+  console.error('signer: the engine at ' + engineUrl + ' does NOT present the pinned key -- refusing to start. Tell the Rein team.');
+  process.exit(1);
+}
+const signer = new SessionSigner({ enginePublicKeyPem: ENGINE_PUBLIC_KEY });
 const address = signer.registerWallet(agentId, privateKey);
 
 signer.onEvent((e) => {
@@ -212,7 +225,7 @@ const { session, token } = await signer.createSession({
 writeFileSync('session.json', JSON.stringify({ signerUrl: SIGNER_URL, sessionId: session.id, sessionToken: token }, null, 2));
 
 console.log(`signer: wallet ${address} in custody (never leaves this process)`);
-console.log(`signer: engine key pinned from ${engineUrl}/health`);
+console.log(`signer: engine key pinned (shipped with the kit; ${engineUrl}/health matches)`);
 console.log(`signer: session ${session.id} minted -> session.json (cap $0.003, max $0.002 per payment, 1 h)`);
 console.log(`signer: operator credential -> signer-admin.json`);
 console.log(`signer: listening on ${SIGNER_URL} -- leave this running`);

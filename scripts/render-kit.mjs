@@ -12,6 +12,7 @@
  * existing kit without --force, since a sent kit is the tester's record of
  * what they were asked to run. The version defaults to @reinconsole/sdk's.
  */
+import { createPublicKey } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +79,31 @@ if (existsSync(out) && !force) {
 }
 
 const values = { NAME: name, AGENT_ID: agentId, API_KEY: apiKey, VERSION: version };
+if (kitKind === 'signer') {
+  // The signer pins the engine key the KIT carries (Matt, S103: reading it from
+  // /health at the tester's boot is trust-on-first-use, not a pin). Read here,
+  // on the operator's machine, and delivered with the kit -- a channel the
+  // engine's network path does not control.
+  const engineUrl = env.REIN_ENGINE_URL || 'https://engine.reinconsole.com';
+  const health = await (await fetch(`${engineUrl}/health`)).json();
+  if (typeof health.publicKey !== 'string' || !health.publicKey.includes('BEGIN PUBLIC KEY')) {
+    console.error(`${engineUrl}/health returned no public key`);
+    process.exit(1);
+  }
+  // The operator's own copy of the signing key, when present (gitignored, repo
+  // root), is the real anchor: the live engine must present ITS public half.
+  const keyFile = join(root, 'engine-signing-key.pem');
+  if (existsSync(keyFile)) {
+    const own = createPublicKey(readFileSync(keyFile)).export({ type: 'spki', format: 'pem' }).toString().trim();
+    if (own !== health.publicKey.trim()) {
+      console.error(`${engineUrl}/health presents a key that is NOT engine-signing-key.pem's -- not rendering`);
+      process.exit(1);
+    }
+  } else {
+    console.warn(`no engine-signing-key.pem here: pinning the key ${engineUrl}/health presents now, unchecked`);
+  }
+  values.ENGINE_PUBLIC_KEY = health.publicKey.trim();
+}
 const templateName = kitKind === 'signer' ? 'rein-kit-signer.template.md' : 'rein-kit.template.md';
 const kit = readFileSync(join(root, 'scripts/kit', templateName), 'utf8').replace(
   /\{\{([A-Z_]+)\}\}/g,
