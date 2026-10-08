@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "rein",
   "display_name": "Rein",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Spend limits for AI agents that pay with x402: every paywall is policy-checked before a cent moves.",
   "long_description": "Rein is the control plane for AI agent payments. Every x402 payment the agent attempts through rein_fetch is checked against your policy before anything is signed: per-call caps, budgets, allow and deny lists, human approval and a kill switch. Every decision is signed and receipted. Non-custodial: Rein governs the authority to spend, never the funds. Get a free testnet sandbox and the agent file this server needs with `npx @reinconsole/init`.",
   "author": {
