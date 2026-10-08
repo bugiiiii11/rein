@@ -172,6 +172,7 @@ export {
   Identity,
   OWNER_KEY_PREFIX,
   SESSION_KEY_PREFIX,
+  ERASED_IDENTITY,
   DEFAULT_CLAIM_CODE_TTL_MS,
   DEFAULT_OWNER_SESSION_TTL_MS,
   reservedKeyName,
@@ -179,6 +180,7 @@ export {
   type ClaimStarted,
   type ClaimRedeemed,
   type OwnerSession,
+  type ErasedOwner,
 } from './claims.js';
 export {
   GeoBlock,

@@ -275,6 +275,20 @@ export class ApiKeyAuth {
   }
 
   /**
+   * Revoke a key and replace its name, in one write -- an erasure request
+   * (claims.ts `erase`), where the name is the only place a person's identity
+   * is kept. An already-revoked key keeps its original `revokedAt`, so a
+   * tombstone never rewrites when a key stopped working.
+   */
+  async tombstone(keyId: string, name: string): Promise<ApiKey | undefined> {
+    const record = this.store.get(keyId);
+    if (!record) return undefined;
+    const erased = ApiKeyRecord.parse({ ...record, name, revokedAt: record.revokedAt ?? new Date(this.now()) });
+    await this.write(erased);
+    return toPublicApiKey(erased);
+  }
+
+  /**
    * Make an expiring key permanent -- what claiming a sandbox is (Sprint 13).
    * Revoked keys stay revoked: lifting an expiry never resurrects anything.
    * Answers undefined for an unknown key, the record unchanged when there was

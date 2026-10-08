@@ -974,7 +974,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA rein GRANT SELECT ON TABLES TO rein_backup;
 
 ## Sign-in and claims on the console (Sprint 13, S87-S88)
 
-**Engine:** the claim routes (`POST /v1/claims`, `/v1/claims/redeem`, `/v1/owners/session`) are on
+**Engine:** the claim routes (`POST /v1/claims`, `/v1/claims/redeem`, `/v1/owners/session`, `/v1/owners/erase`) are on
 whenever `REIN_SANDBOX=1` is. No new variable is needed, but the engine has to be redeployed from a
 commit that has them. To check: call `POST /v1/claims` with the operator's unscoped admin key. It
 should return `403 claim_needs_org_admin`. A `404` means the engine is still on the old build.

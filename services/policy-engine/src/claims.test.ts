@@ -28,7 +28,27 @@ async function world() {
     app.inject({ method: 'POST', url: '/v1/claims/redeem', headers: bearer(key), payload: { code, identity } });
   const session = (identity: string, key = consoleKey) =>
     app.inject({ method: 'POST', url: '/v1/owners/session', headers: bearer(key), payload: { identity } });
-  return { app, auth, bearer, sandbox, start, redeem, session, advance: (ms: number) => (now += ms) };
+  const operator = (await auth.issue({ name: 'ops-admin', scopes: ['admin'] })).secret;
+  const erase = (identity: string, key = operator) =>
+    app.inject({ method: 'POST', url: '/v1/owners/erase', headers: bearer(key), payload: { identity } });
+  const claimed = async (identity: string) => {
+    const sb = await sandbox();
+    expect((await redeem((await start(sb.apiKey)).json().code, identity)).statusCode).toBe(200);
+    return sb;
+  };
+  return {
+    app,
+    auth,
+    bearer,
+    operator,
+    sandbox,
+    start,
+    redeem,
+    session,
+    erase,
+    claimed,
+    advance: (ms: number) => (now += ms),
+  };
 }
 
 describe('claiming a sandbox', () => {
@@ -254,13 +274,94 @@ describe('owner sessions', () => {
 });
 
 describe('the route table with claims on', () => {
-  it('leaves exactly redeem and sessions unclassified -- the operator-only pair', async () => {
+  it('leaves exactly redeem, sessions and erase unclassified -- the operator-only routes', async () => {
     const { app } = await world();
     await app.ready();
     const unclassified = registeredRoutes(app)
       .filter((r) => !tenantRoute(r.method, r.path.replace(/:[^/]+/g, 'x')))
       .map((r) => `${r.method} ${r.path}`);
-    expect(unclassified.sort()).toEqual(['POST /v1/claims/redeem', 'POST /v1/owners/session']);
+    expect(unclassified.sort()).toEqual([
+      'POST /v1/claims/redeem',
+      'POST /v1/owners/erase',
+      'POST /v1/owners/session',
+    ]);
+    await app.close();
+  });
+});
+
+describe('erasing an owner', () => {
+  it('revokes and renames every key carrying the identity, with no restart', async () => {
+    const { app, auth, bearer, operator, session, erase, claimed } = await world();
+    const sb = await claimed(GH);
+    const signedIn = (await session(GH)).json().apiKey as string;
+
+    const res = await erase(GH);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ orgIds: [sb.orgId], owners: 1, sessions: 1 });
+
+    // Nothing the engine serves names the person any more.
+    const keys = await app.inject({ method: 'GET', url: '/v1/keys', headers: bearer(operator) });
+    expect(keys.body).not.toContain('4242');
+    const erased = auth.list().filter((k) => k.name.endsWith(':erased'));
+    expect(erased.map((k) => k.name).sort()).toEqual(['owner:erased', 'session:erased']);
+    expect(erased.every((k) => k.revokedAt !== undefined)).toBe(true);
+
+    // The identity can no longer sign in, and its live session stopped working.
+    expect((await session(GH)).json().error).toBe('not_an_owner');
+    const read = await app.inject({ method: 'GET', url: '/v1/agents', headers: bearer(signedIn) });
+    expect(read.json().error).toBe('key_revoked');
+    // The org's own keys are untouched.
+    const agents = await app.inject({ method: 'GET', url: '/v1/agents', headers: bearer(sb.apiKey) });
+    expect(agents.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('leaves the org unclaimed, so its admin key can claim it again', async () => {
+    const { app, start, redeem, erase, claimed } = await world();
+    const sb = await claimed(GH);
+    await erase(GH);
+    const again = await start(sb.apiKey);
+    expect(again.statusCode).toBe(201);
+    expect((await redeem(again.json().code, ETH)).json()).toMatchObject({ orgId: sb.orgId, alreadyOwned: false });
+    await app.close();
+  });
+
+  it('also erases a released org: a revoked owner key still names the person', async () => {
+    const { app, auth, erase, claimed } = await world();
+    await claimed(GH);
+    const owner = auth.list().find((k) => k.name === `owner:${GH}`)!;
+    const revokedAt = (await auth.revoke(owner.id))!.revokedAt;
+
+    expect((await erase(GH)).json()).toMatchObject({ owners: 1 });
+    const after = auth.get(owner.id)!;
+    expect(after.name).toBe('owner:erased');
+    // A tombstone does not rewrite when the key stopped working.
+    expect(after.revokedAt).toEqual(revokedAt);
+    await app.close();
+  });
+
+  it('answers zeros the second time, and for an identity it never saw', async () => {
+    const { app, erase, claimed } = await world();
+    await claimed(GH);
+    await erase(GH);
+    expect((await erase(GH)).json()).toEqual({ orgIds: [], owners: 0, sessions: 0 });
+    expect((await erase(ETH)).json()).toEqual({ orgIds: [], owners: 0, sessions: 0 });
+    await app.close();
+  });
+
+  it('is for the operator alone: the console and an org admin key are refused', async () => {
+    const { app, auth, erase, claimed } = await world();
+    const sb = await claimed(GH);
+    const consoleKey = (await auth.issue({ name: 'console-2', scopes: ['identity'] })).secret;
+    expect((await erase(GH, consoleKey)).json().error).toBe('insufficient_scope');
+    expect((await erase(GH, sb.apiKey)).json().error).toBe('route_not_scopable');
+    expect(auth.list().some((k) => k.name === `owner:${GH}` && !k.revokedAt)).toBe(true);
+    await app.close();
+  });
+
+  it('refuses a body that is not an identity', async () => {
+    const { app, erase } = await world();
+    expect((await erase('erased')).statusCode).toBe(400);
     await app.close();
   });
 });

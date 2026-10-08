@@ -39,6 +39,12 @@ import { ScreeningError } from './screening.js';
 
 export const OWNER_KEY_PREFIX = 'owner:';
 export const SESSION_KEY_PREFIX = 'session:';
+/**
+ * What an erased identity's keys are renamed to. `erased` can never be an
+ * {@link Identity} (the schema admits only `github:<id>` and `eth:<address>`),
+ * so a tombstone cannot be mistaken for, or signed in as, a real owner.
+ */
+export const ERASED_IDENTITY = 'erased';
 export const DEFAULT_CLAIM_CODE_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_OWNER_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -57,6 +63,8 @@ export const RedeemInput = z.object({
 });
 
 export const SessionInput = z.object({ identity: Identity });
+
+export const EraseInput = z.object({ identity: Identity });
 
 export class ClaimError extends Error {
   constructor(
@@ -93,6 +101,15 @@ export interface ClaimRedeemed {
   lifted: number;
   /** True when this identity already owned this org -- a repeated redeem is not an error. */
   alreadyOwned: boolean;
+}
+
+export interface ErasedOwner {
+  /** Orgs the identity owned, or had owned and released. */
+  orgIds: string[];
+  /** `owner:` keys renamed, revoked or not. */
+  owners: number;
+  /** `session:` keys renamed (each revoked if it was still live). */
+  sessions: number;
 }
 
 export interface OwnerSession {
@@ -213,8 +230,16 @@ export class ClaimService {
   }
 
   /** A short-lived read key for the owner's org -- what the console renders with. */
-  async session(body: unknown): Promise<OwnerSession> {
+  session(body: unknown): Promise<OwnerSession> {
     const { identity } = SessionInput.parse(body);
+    // On the same chain as redeem and erase: a sign-in racing an erasure must
+    // not mint a `session:` key after the erasure has passed it.
+    const run = this.chain.then(() => this.mintSession(identity));
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async mintSession(identity: string): Promise<OwnerSession> {
     const orgId = this.ownedBy(identity);
     if (orgId === undefined) {
       throw new ClaimError(404, 'not_an_owner', 'this identity has not claimed an org');
@@ -227,6 +252,47 @@ export class ClaimService {
       expiresAt,
     });
     return { orgId, apiKey: issued.secret, expiresAt: expiresAt.toISOString() };
+  }
+
+  /**
+   * Erase an identity (a data-subject request, `docs/legal/runbooks/erasure.md`):
+   * every key whose name carries it -- the owner key, a released org's revoked
+   * one, live and lapsed session keys -- is revoked and renamed to
+   * `owner:erased` / `session:erased` in one write each. The key list is
+   * persist-then-cache, so the running engine forgets the name with the write;
+   * no restart.
+   *
+   * The org itself is left alone: its keys, agents, policies and decisions
+   * stay, and with no live owner key it reads as unclaimed, so whoever holds
+   * its admin key may claim it again. Nothing about the person is left to tie
+   * it back to them.
+   *
+   * Serialized with redeem and session, so neither a claim nor a sign-in can
+   * mint a key carrying the identity while the pass is writing. A second
+   * erase of the same identity finds nothing and answers zeros.
+   */
+  erase(body: unknown): Promise<ErasedOwner> {
+    const { identity } = EraseInput.parse(body);
+    const run = this.chain.then(() => this.tombstoneAll(identity));
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async tombstoneAll(identity: string): Promise<ErasedOwner> {
+    const owner = OWNER_KEY_PREFIX + identity;
+    const session = SESSION_KEY_PREFIX + identity;
+    const result: ErasedOwner = { orgIds: [], owners: 0, sessions: 0 };
+    for (const key of this.auth.list()) {
+      if (key.name === owner) {
+        await this.auth.tombstone(key.id, OWNER_KEY_PREFIX + ERASED_IDENTITY);
+        result.owners += 1;
+        if (key.orgId !== undefined && !result.orgIds.includes(key.orgId)) result.orgIds.push(key.orgId);
+      } else if (key.name === session) {
+        await this.auth.tombstone(key.id, SESSION_KEY_PREFIX + ERASED_IDENTITY);
+        result.sessions += 1;
+      }
+    }
+    return result;
   }
 
   private owners(): ApiKey[] {

@@ -598,6 +598,11 @@ export function buildServer(
     app.post('/v1/owners/session', async (req, reply) =>
       reply.status(201).send(await claims.session(req.body)),
     );
+    // An erasure request (docs/legal/runbooks/erasure.md). Absent from
+    // TENANT_ROUTES and from the `identity` rule in requiredScope, so only an
+    // unscoped ADMIN key reaches it -- the operator, not the console: the
+    // console can say who signed in, never who is to be forgotten.
+    app.post('/v1/owners/erase', async (req) => claims.erase(req.body));
   }
 
   // --- The screening record (see screening.ts) ---

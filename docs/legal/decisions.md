@@ -32,5 +32,5 @@ Screened by hand before S98 (record date, wallet, result, list version):
 
 ## Still open
 
-- An operator route for erasure (revoke + tombstone the owner key name in one engine call); today `erasure.md` does it with SQL and an engine restart. 18+ confirmation at claim; encrypted dumps with 90-day rotation; `docs/legal/ropa.md`.
+- 18+ confirmation at claim; encrypted dumps with 90-day rotation; `docs/legal/ropa.md`.
 - Before public GA: EU and UK representatives, a DPA template for business customers, removal of the DRAFT banner.
