@@ -334,8 +334,21 @@ export async function runClaim(
   const deadline = Date.now() + waitMs;
   let claimed = false;
   if (waitMs > 0) log('Waiting for the sign-in (Ctrl+C to stop waiting; the link stays valid)...');
+  let unreachable = false;
   while (Date.now() < deadline) {
-    const keys = await engineCall(http, agent.engineUrl, 'GET', '/v1/keys', agent.apiKey);
+    // A network blip is not an answer: keep waiting until the deadline. Exiting
+    // on one `fetch failed` made a tester rerun --claim and hold two links (S106).
+    let keys: { status: number; body: unknown };
+    try {
+      keys = await engineCall(http, agent.engineUrl, 'GET', '/v1/keys', agent.apiKey);
+    } catch (err) {
+      if (!(err instanceof InitError)) throw err;
+      if (!unreachable) log(`The engine did not answer (${err.message}); still waiting, the link stays valid.`);
+      unreachable = true;
+      await new Promise((r) => setTimeout(r, pollMs));
+      continue;
+    }
+    unreachable = false;
     const list = keys.status === 200 && Array.isArray(keys.body) ? (keys.body as { name: string; revokedAt?: string }[]) : [];
     const owner = list.find((k) => k.name.startsWith('owner:') && !k.revokedAt);
     if (owner) {

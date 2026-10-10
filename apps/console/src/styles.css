@@ -1553,6 +1553,11 @@ a.pill:hover {
   font-size: 11px;
   color: var(--ink-faint);
 }
+/* The one note that explains a dead button: it must not read as fine print. */
+.signin-nowallet {
+  font-size: 12px;
+  color: var(--ink-dim);
+}
 .signin-err {
   margin: 0;
   font-size: 12px;

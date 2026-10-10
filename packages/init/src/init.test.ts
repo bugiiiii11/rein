@@ -250,6 +250,24 @@ describe('init --mainnet and --approve', () => {
     expect(lines.join('\n')).toMatch(/Claimed: org org_\w+ is yours \(signed in as github:777\)/);
   });
 
+  it('--claim keeps waiting through a network failure instead of exiting (S106)', async () => {
+    const box = await sandbox();
+    const lines: string[] = [];
+    let polls = 0;
+    const flaky: typeof globalThis.fetch = (input, init) => {
+      if (String(input).endsWith('/v1/keys') && (polls += 1) <= 2) return Promise.reject(new TypeError('fetch failed'));
+      return fetch(input, init);
+    };
+    const waiting = runClaim({ dir: box.dir, fetch: flaky, open: () => true, log: (l) => lines.push(l), waitMs: 20_000, pollMs: 50 });
+    while (polls < 3) await new Promise((r) => setTimeout(r, 10));
+    const code = new URL(lines.find((l) => l.includes('/claim?code='))!.trim()).searchParams.get('code');
+    expect((await call('POST', '/v1/claims/redeem', identityKey, { code, identity: 'github:778' })).status).toBe(200);
+    const out = await waiting;
+    expect(out.claimed).toBe(true);
+    // One notice for the outage, not one per failed poll.
+    expect(lines.filter((l) => l.includes('did not answer'))).toHaveLength(1);
+  });
+
   it('refuses an org nobody has claimed, and writes nothing', async () => {
     const { dir, ownerDir, agent } = await sandbox();
     await expect(runMainnet({ dir, ownerDir, generateWallet, log: quiet })).rejects.toThrow(/needs a claimed org/);

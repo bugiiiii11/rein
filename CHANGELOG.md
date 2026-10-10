@@ -12,6 +12,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 - `ClaimService.session` (`POST /v1/owners/session`) now runs on the same queue as redeem and erase, so a sign-in cannot mint a key for an identity being erased.
 
+### Fixed
+
+- `init --claim` on `@reinconsole/init` keeps waiting for the sign-in when an engine poll fails at the network level (`fetch failed`), with one notice per outage. It used to exit, and rerunning it issued a second claim link.
+
 ## [0.6.1] - 2026-10-08
 
 `init --mainnet` moves the org to mainnet on a fresh wallet. The `@reinconsole/signer` README now says to pin the engine's verification key from configuration you control; the hosted engine's key is published in SECURITY.md. No breaking changes from `0.6.0`.

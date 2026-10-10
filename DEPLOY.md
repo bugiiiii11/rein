@@ -970,7 +970,15 @@ GRANT USAGE ON SCHEMA rein TO rein_backup;
 GRANT SELECT ON ALL TABLES IN SCHEMA rein TO rein_backup;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA rein TO rein_backup;
 ALTER DEFAULT PRIVILEGES IN SCHEMA rein GRANT SELECT ON TABLES TO rein_backup;
+ALTER DEFAULT PRIVILEGES IN SCHEMA rein GRANT SELECT ON SEQUENCES TO rein_backup;
 ```
+
+The last line was missing until S106: every new table got its grant, but its
+`BIGSERIAL` sequence did not, and `pg_dump` reads each sequence's `last_value`.
+The `screenings` table (S98) broke the dump with `permission denied for sequence
+screenings_seq_seq` for four nights (2026-10-07 to 2026-10-10) until a tester
+hit it. A failed scheduled run also fails the commit's check suite, so Railway's
+"wait for CI" quietly skips every deploy of that commit, variable changes included.
 
 ## Sign-in and claims on the console (Sprint 13, S87-S88)
 

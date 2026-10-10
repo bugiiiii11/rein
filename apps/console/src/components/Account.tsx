@@ -72,6 +72,7 @@ export function SignInMenu(props: {
   returnTo: string;
   onEthereum: () => void;
 }) {
+  const wallet = hasWallet();
   return (
     <div className="signin-menu" role="menu">
       {props.github && (
@@ -82,12 +83,21 @@ export function SignInMenu(props: {
       <button
         className="signin-opt"
         role="menuitem"
-        disabled={props.busy || !hasWallet()}
-        title={hasWallet() ? undefined : 'No browser wallet found'}
+        disabled={props.busy || !wallet}
+        title={wallet ? undefined : 'No browser wallet found'}
         onClick={props.onEthereum}
       >
         {props.busy ? 'Waiting for your wallet…' : 'Sign in with Ethereum'}
       </button>
+      {/* Said out loud, not only in the tooltip: a tester sat in front of a
+          grey button with no idea why (S106). A claim link opened by the CLI
+          lands in the DEFAULT browser, which is often not the wallet one. */}
+      {!wallet && (
+        <p className="signin-note signin-nowallet">
+          No wallet in this browser, so Ethereum sign-in is off. Copy this page's address into a browser
+          with MetaMask or another wallet extension{props.github ? ', or continue with GitHub' : ''}.
+        </p>
+      )}
       <p className="signin-note">No password, no custody. The wallet signature moves no funds.</p>
       {props.error && <p className="signin-err">{props.error}</p>}
     </div>

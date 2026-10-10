@@ -168,6 +168,8 @@ interface RemoteDecision {
   hash: string;
   latencyMs: number;
   decidedAt: string;
+  /** The engine's attribution sidecar, beside the signed record. Absent on pre-tenancy rows. */
+  agentId?: string;
 }
 
 interface RemoteChainVerdict {
@@ -811,7 +813,12 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
                 resource: facts.resource,
                 amount: facts.amount,
               }
-            : {}),
+            : // No intent detail -- a deny or a settled allow is in neither the
+              // gaps nor the approvals -- but the row itself names its agent.
+              // Without this every such row read "unknown" (S106).
+              d.agentId !== undefined
+              ? { agentId: d.agentId, agentName: agentNames.get(d.agentId) ?? d.agentId }
+              : {}),
         });
       }
 

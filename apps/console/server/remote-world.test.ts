@@ -446,6 +446,19 @@ describe('createRemoteWorld — the decision feed', () => {
     await w.close();
   });
 
+  it("names a deny's agent from the row's own attribution sidecar (S106: it read 'unknown')", async () => {
+    const engine = emptyEngine();
+    engine.agents = [{ id: 'agt_1', name: 'researcher', createdAt: '2026-09-01T00:00:00.000Z' }];
+    engine.decisions = [{ ...(decision(0, 'deny') as object), agentId: 'agt_1' }];
+
+    const { w } = await world(engine);
+    const [row] = w.getState().feed;
+    expect(row).toMatchObject({ outcome: 'deny', agentId: 'agt_1', agentName: 'researcher' });
+    // The sidecar names the agent only; host and amount are not published for a deny.
+    expect(row?.amount).toBeUndefined();
+    await w.close();
+  });
+
   it('reports allow/deny/escalate over the window it actually read', async () => {
     const engine = emptyEngine();
     engine.decisions = [decision(0, 'allow'), decision(1, 'deny'), decision(2, 'escalate')];
