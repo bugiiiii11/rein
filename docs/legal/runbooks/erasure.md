@@ -24,7 +24,7 @@ The GitHub username is never stored server-side. Agent wallets are pseudonymous 
    ```
    curl -s -X POST https://engine.reinconsole.com/v1/owners/erase      -H "authorization: Bearer $REIN_ENGINE_API_KEY" -H "content-type: application/json"      -d '{"identity":"github:<id>"}'
    ```
-   A `404` means the engine predates the route (added after 0.6.1): redeploy it from `main` first.
+   A `404` means the engine predates the route (added in 0.7.0): redeploy it from `main` first.
    Every key whose name carries the identity is revoked and renamed to `owner:erased` / `session:erased` in one engine write each, persisted before it answers. The running engine forgets the name with the write: no SQL, no restart. The answer is `{ orgIds, owners, sessions }`; note it in the register. Zeros mean the engine never saw that identity, or it was already erased.
 3. **Check:** `GET /v1/keys` with the same key shows no key named after the identity, and the orgs from step 2 hold an `owner:erased` key, revoked. Signing in with the erased identity shows no org.
 4. **Reply** with what was deleted, what was kept and why, and the backup note below.

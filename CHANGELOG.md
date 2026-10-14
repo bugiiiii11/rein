@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-15
+
+An erasure route for operators on the engine, and `init --claim` that survives a network blip while it waits. Minor version for the new API surface; no breaking changes from `0.6.1`.
+
 ### Added
 
 - `POST /v1/owners/erase` on `@reinconsole/policy-engine`, for an erasure request: given `{ identity }`, every key whose name carries it (the owner key, a released org's revoked one, console session keys) is revoked and renamed to `owner:erased` / `session:erased`, and the answer is `{ orgIds, owners, sessions }`. Unscoped `admin` keys only. The org's own keys, agents and decisions stay; with no live owner it can be claimed again with its admin key. `ApiKeyAuth.tombstone(keyId, name)` on `@reinconsole/core` does the single write; `ClaimService.erase`, `ERASED_IDENTITY` and `ErasedOwner` are new.
