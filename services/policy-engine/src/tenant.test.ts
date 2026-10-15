@@ -408,6 +408,30 @@ describe('tenant isolation: keys', () => {
     await own.close();
   });
 
+  it('marks init’s mainnet agent pending until a key is narrowed to it, on a gating engine only', async () => {
+    const { auth, engine, adminA, as } = await tenantWorld();
+    const moved = await engine.registerAgent({ id: newId('agt'), orgId: ORG_A, name: 'mainnet', createdAt: new Date() });
+    const list = async (app: ReturnType<typeof buildServer>) => {
+      const res = await app.inject({ method: 'GET', url: '/v1/agents', headers: as(adminA) });
+      return new Map(res.json().map((a: { id: string; mainnet?: string }) => [a.id, a.mainnet]));
+    };
+    // Not listed: the mint is refused, so the agent stays pending; the sandbox agent is never marked.
+    const gated = buildServer(engine, { auth, mainnetOrgs: [] });
+    const before = await list(gated);
+    expect(before.get(moved.id)).toBe('pending');
+    expect([...before.values()].filter(Boolean)).toEqual(['pending']);
+    // Enabled and minted: no longer pending. A REVOKED key does not count.
+    const key = await auth.issue({ name: 'mainnet-runtime', scopes: ['read'], orgId: ORG_A, agentIds: [moved.id] });
+    expect((await list(gated)).get(moved.id)).toBeUndefined();
+    await auth.revoke(key.key.id);
+    expect((await list(gated)).get(moved.id)).toBe('pending');
+    await gated.close();
+    // An engine that admits any org has no enable step to wait on.
+    const own = buildServer(engine, { auth });
+    expect((await list(own)).get(moved.id)).toBeUndefined();
+    await own.close();
+  });
+
   it('refuses an org id that is a NAME rather than a prefixed ULID', async () => {
     // Onboarding an invited org means naming it in a key's orgId -- there is no
     // /v1/orgs route. It is tempting to name it `org_acme`, and S71's handoff

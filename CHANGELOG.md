@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Added
+
+- `GET /v1/agents` on `@reinconsole/policy-engine` marks an agent `mainnet: "pending"` when `init --mainnet` registered it (agent name `mainnet`) but no live key is narrowed to it yet -- on an engine that gates mainnet (`mainnetOrgs` is not `any`), that key exists only once the org is enabled and the move is rerun. A display hint, not authority; `MAINNET_AGENT_NAME` is exported. The hosted console labels such an agent, and any policy that targets only pending agents, "pending enable".
+
 ## [0.7.0] - 2026-10-15
 
 An erasure route for operators on the engine, and `init --claim` that survives a network blip while it waits. Minor version for the new API surface; no breaking changes from `0.6.1`.

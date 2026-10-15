@@ -483,6 +483,16 @@ a.pill:hover {
 .panel-count.bad {
   color: var(--alarm);
 }
+/* A mainnet move waiting on enable (S107): shown, not hidden, so the owner
+   sees what is queued -- in the caution colour, never the alarm one. */
+.tag.pending-enable {
+  color: var(--warn);
+  border-color: rgba(245, 196, 81, 0.4);
+  border-style: dashed;
+}
+.policy-top .tag.pending-enable {
+  font-size: 9px;
+}
 .agent-figures {
   display: flex;
   gap: 18px;

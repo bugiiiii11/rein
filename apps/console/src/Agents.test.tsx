@@ -112,6 +112,15 @@ describe('the dead-man chip', () => {
     expect(el.textContent).not.toContain('silent 5m ·');
   });
 
+  it('labels a mainnet agent waiting on enable, and counts it apart', async () => {
+    const el = await render([agent({ id: 'agt_1' }), agent({ id: 'agt_2', name: 'mainnet', mainnet: 'pending' })]);
+    const tags = el.querySelectorAll('.tag.pending-enable');
+    expect(tags).toHaveLength(1);
+    expect(tags[0]?.textContent).toBe('pending enable');
+    expect(tags[0]?.getAttribute('title')).toContain('cannot spend');
+    expect(el.textContent).toContain('2 managed · 1 pending enable');
+  });
+
   it('counts only the missing among a mixed roster', async () => {
     const el = await render([
       agent({ id: 'agt_1', name: 'a', liveness: liveness() }),

@@ -112,6 +112,12 @@ export interface AgentView {
   createdAt: string;
   /** Dead-man state (B2). Absent when nobody is watching this agent. */
   liveness?: AgentLivenessView;
+  /**
+   * `init --mainnet` registered this agent but mainnet is not enabled for it
+   * yet, so it cannot spend (the engine's `mainnet: 'pending'`). Absent = no
+   * enable step is waiting.
+   */
+  mainnet?: 'pending';
 }
 
 export interface PolicyRuleView {
@@ -128,6 +134,8 @@ export interface PolicyView {
   /** Label patterns this policy targets (semantic targeting), if any. */
   labels: string[];
   rules: PolicyRuleView[];
+  /** Every agent it targets is mainnet-pending: it governs nothing until mainnet is enabled. */
+  pendingEnable?: true;
 }
 
 /**

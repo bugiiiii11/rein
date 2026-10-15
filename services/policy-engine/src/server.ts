@@ -191,6 +191,15 @@ export interface ServerOptions {
 export const MAINNET_SCREENED = 'screened';
 
 /**
+ * The name `init --mainnet` registers its agent under (packages/init). The
+ * wallet cannot say which network an agent is for -- `Chain` has one `base` for
+ * mainnet and Sepolia alike -- so this name is the only mark the move leaves
+ * before its key is minted. It drives a DISPLAY hint (`mainnet: 'pending'` on
+ * GET /v1/agents) and nothing else: no authority rests on what an agent is called.
+ */
+export const MAINNET_AGENT_NAME = 'mainnet';
+
+/**
  * Request body ceiling. Every body this API accepts is a handful of small JSON
  * objects — the largest realistic one is a policy with many rules — so 64 KiB
  * is generous by two orders of magnitude while still bounding what an
@@ -650,7 +659,27 @@ export function buildServer(
     });
   });
 
-  app.get('/v1/agents', (req) => engine.visibleAgents(scopeFor(req)));
+  // A mainnet move that has not finished (S107, Matt's finding 4): `init
+  // --mainnet` registers the agent and copies its policy BEFORE the gated key
+  // mint, so an org that is not enabled yet holds a mainnet agent that cannot
+  // spend. It is marked rather than hidden -- the owner should see what is
+  // waiting. Pending until a live key is narrowed to it, which on a gating
+  // engine only the admitted mint produces; an engine that admits `any` has no
+  // enable step and marks nothing.
+  app.get('/v1/agents', (req) => {
+    const agents = engine.visibleAgents(scopeFor(req));
+    if (mainnetOrgs === 'any' || !auth) return agents;
+    const at = Date.now();
+    const keyed = new Set(
+      auth
+        .list()
+        .filter((k) => !k.revokedAt && !(k.expiresAt && k.expiresAt.getTime() <= at))
+        .flatMap((k) => k.agentIds ?? []),
+    );
+    return agents.map((a) =>
+      a.name === MAINNET_AGENT_NAME && !keyed.has(a.id) ? { ...a, mainnet: 'pending' as const } : a,
+    );
+  });
 
   app.post('/v1/agents/:id/freeze', async (req, reply) => {
     const id = (req.params as { id: string }).id;

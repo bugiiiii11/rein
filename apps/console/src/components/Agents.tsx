@@ -45,6 +45,11 @@ function LivenessChip({ live }: { live: AgentLivenessView }) {
   );
 }
 
+/** Shared with the policy card: one wording for one state. */
+export const PENDING_ENABLE_TITLE =
+  'Registered by `init --mainnet`, but mainnet is not enabled for this org yet — it cannot spend. ' +
+  'Once enabled, run `npx @reinconsole/init --mainnet` again in the same folder.';
+
 function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
   const frozen = a.status === 'frozen';
   const toggle = () => void (frozen ? api.unfreeze(a.id) : api.freeze(a.id));
@@ -66,6 +71,11 @@ function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
           </span>
         ))}
         {a.liveness && <LivenessChip live={a.liveness} />}
+        {a.mainnet === 'pending' && (
+          <span className="tag pending-enable" title={PENDING_ENABLE_TITLE}>
+            pending enable
+          </span>
+        )}
       </div>
 
       <div className="agent-figures">
@@ -115,6 +125,7 @@ export function Agents({ agents, writable }: { agents: AgentView[]; writable: bo
   // `unknown` is about our own restart; neither is news, and a header that
   // counted them would cry at every deploy.
   const missing = agents.filter((a) => a.liveness?.status === 'missing').length;
+  const pending = agents.filter((a) => a.mainnet === 'pending').length;
   return (
     <section className="panel grow">
       <div className="panel-head">
@@ -122,6 +133,7 @@ export function Agents({ agents, writable }: { agents: AgentView[]; writable: bo
         <span className="panel-title">Agents</span>
         <span className={`panel-count ${missing > 0 ? 'bad' : ''}`}>
           {agents.length} managed{missing > 0 ? ` · ${missing} silent` : ''}
+          {pending > 0 ? ` · ${pending} pending enable` : ''}
         </span>
       </div>
       <div className="panel-body">

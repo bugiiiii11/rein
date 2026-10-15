@@ -146,6 +146,8 @@ interface RemoteAgent {
   status?: 'active' | 'frozen';
   wallets?: { chain: string; address: string; mode: string }[];
   createdAt: string;
+  /** A mainnet move waiting on enable (S107). Older engines never send it. */
+  mainnet?: 'pending';
 }
 
 interface RemotePolicy {
@@ -489,6 +491,7 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
         // panel is where allowed value is reported here.
         createdAt: a.createdAt,
         ...(liveness ? { liveness } : {}),
+        ...(a.mainnet === 'pending' ? { mainnet: 'pending' as const } : {}),
       };
     });
   }
@@ -651,16 +654,25 @@ export async function createRemoteWorld(options: RemoteWorldOptions): Promise<Re
       for (const a of agentRes.body) agentNames.set(a.id, a.name);
 
       const nextAgents = viewAgents(agentRes.body, livenessByAgent(livenessRes.body));
-      const nextPolicies = policyRes.body.map(
-        (p): PolicyView => ({
+      // A policy targeted ONLY at agents waiting on mainnet enable governs
+      // nothing yet -- `init --mainnet` copies the sandbox policy before the
+      // gated mint (Matt's finding 4). Label targeting is not judged: who a
+      // label reaches can change at any registration.
+      const pendingIds = new Set(nextAgents.filter((a) => a.mainnet === 'pending').map((a) => a.id));
+      const nextPolicies = policyRes.body.map((p): PolicyView => {
+        const agents = p.appliesTo?.agents ?? [];
+        const labels = p.appliesTo?.labels ?? [];
+        const pending = agents.length > 0 && labels.length === 0 && agents.every((id) => pendingIds.has(id));
+        return {
           policyId: p.policyId,
           version: p.version,
           default: p.default,
-          agents: p.appliesTo?.agents ?? [],
-          labels: p.appliesTo?.labels ?? [],
+          agents,
+          labels,
           rules: p.rules.map(summarizeRule),
-        }),
-      );
+          ...(pending ? { pendingEnable: true as const } : {}),
+        };
+      });
 
       const nextReconciliation: ReconciliationView = {
         window: reconRes.body.window,

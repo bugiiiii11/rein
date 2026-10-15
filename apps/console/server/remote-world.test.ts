@@ -228,6 +228,37 @@ describe('createRemoteWorld — rendering a hosted engine', () => {
     await w.close();
   });
 
+  // Matt's finding 4 (S107): `init --mainnet` registers the agent and copies
+  // its policy before the gated mint, so a not-yet-enabled org showed both as
+  // if they were live. Marked, not hidden; a policy that ALSO reaches a live
+  // agent, or targets labels, is in force and stays unmarked.
+  it('marks a mainnet agent pending enable, and the policies that govern only it', async () => {
+    const engine = emptyEngine();
+    const at = '2026-09-01T00:00:00.000Z';
+    engine.agents = [
+      { id: 'agt_sb', name: 'sandbox-agent', createdAt: at },
+      { id: 'agt_mn', name: 'mainnet', createdAt: at, mainnet: 'pending' },
+    ];
+    const policy = (policyId: string, appliesTo: Record<string, string[]>) => ({
+      policyId,
+      version: '1',
+      default: 'deny',
+      appliesTo,
+      rules: [],
+    });
+    engine.policies = [
+      policy('pol_sb', { agents: ['agt_sb'] }),
+      policy('pol_mainnet_mn', { agents: ['agt_mn'] }),
+      policy('pol_both', { agents: ['agt_sb', 'agt_mn'] }),
+      policy('pol_labelled', { agents: ['agt_mn'], labels: ['research'] }),
+    ];
+    const { w } = await world(engine);
+    const state = w.getState();
+    expect(state.agents.map((a) => a.mainnet)).toEqual([undefined, 'pending']);
+    expect(state.policies.filter((p) => p.pendingEnable).map((p) => p.policyId)).toEqual(['pol_mainnet_mn']);
+    await w.close();
+  });
+
   it('leaves the gate, signer and graph panels empty rather than inventing them', async () => {
     const { w } = await world(emptyEngine());
     const state = w.getState();
