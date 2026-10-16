@@ -14,10 +14,25 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # A pair that cannot move apart: react 19 with react-dom 18 cannot render,
+      # so as two PRs (#7, #8, S107) each was red and only the merge was green.
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
       minor-and-patch:
         update-types:
           - minor
           - patch
+    ignore:
+      # 6.x needs Vite 8 (Rolldown); the console is on Vite 6. Unignore with the
+      # Vite migration. Each red Dependabot run attaches a failed check to the
+      # main commit, and Railway's wait-for-CI then skips that deploy (S106/S107).
+      - dependency-name: '@vitejs/plugin-react'
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
