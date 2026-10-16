@@ -47,11 +47,17 @@ so use an account that has not claimed a Rein org before.
 
 Why: only a claimed org can go to mainnet. Claiming ties the org to you instead of to a 7-day key.
 
-### 5. Send us your org id, wait for "enabled"
+### 5. Send us your org id, check the console, wait for "enabled"
 
-Claude Code then shows a line with your **org id** (`org_...`). Send it to us. We screen the org and
-enable mainnet for it, and tell you **"enabled"** -- usually within the hour. Then tell Claude Code:
-`enabled`.
+Claude Code then shows a line with your **org id** (`org_...`). Send it to us. Do not enable it
+yourself, even if you can -- this test is the path a stranger takes.
+
+While you wait, open **app.reinconsole.com** and sign in with the account you used in step 4. You
+should see an agent named **mainnet** and a policy `pol_mainnet_...`, both tagged **pending enable**
+(hover the tag for why). Tell us whether you see it, and whether the wording is clear.
+
+We screen the org, enable mainnet for it, and tell you **"enabled"** -- usually within the hour. Then
+tell Claude Code: `enabled`. After step 7, reload the console: the **pending enable** tags should be gone.
 
 Why: real-money access is opened per org, after a sanctions screen of the wallet that will pay.
 
@@ -90,6 +96,7 @@ Send back the `=== RESULT ===` block and a few words on:
 
 - Where did you get stuck or have to guess?
 - Did funding the wallet work the way this file says?
+- Did the console show **pending enable** while you waited, and was it gone afterwards?
 - Did anything feel unclear or untrustworthy?
 
 Afterwards: the leftover USDC is yours. `rein-agent.json` holds the wallet key -- keep the file if you
@@ -160,8 +167,10 @@ npx -y @reinconsole/init@{{VERSION}} --mainnet
 ```
 
 - If it ends with `mainnet is not yet enabled for org org_...`: show {{NAME}} **the org id** and say:
-  "Send this org id to the Rein team and tell me `enabled` when they confirm." Wait. Then run the
-  same command again (it resumes; it does not make a second wallet).
+  "Send this org id to the Rein team and tell me `enabled` when they confirm. Meanwhile, open
+  app.reinconsole.com, sign in, and check that the `mainnet` agent and its policy are tagged
+  **pending enable**." Wait. Then run the same command again (it resumes; it does not make a
+  second wallet).
 - When it succeeds it prints `rein-agent.json is now on Base mainnet` and the owner file path. It
   also tells {{NAME}} to fund the wallet -- B6 covers that, so ignore the rest of its "next steps".
 
