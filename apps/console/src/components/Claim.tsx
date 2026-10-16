@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { claim, fetchMe, signInWithEthereum, type Me } from '../account';
 import { Logo } from './Logo';
 import { SignInMenu } from './Account';
@@ -28,7 +28,7 @@ export function Claim() {
       .finally(() => setBusy(false));
   };
 
-  let body: JSX.Element;
+  let body: ReactElement;
   if (!code) {
     body = <p>This link has no claim code. Run <code>npx @reinconsole/init --claim</code> in the folder that holds your <code>rein-agent.json</code>.</p>;
   } else if (me === null) {
