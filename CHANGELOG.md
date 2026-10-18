@@ -4,9 +4,22 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-18
+
+The guard no longer reports a failed settle as a settlement, and the engine marks a mainnet agent that is still waiting on enable. Minor version for the new export (`MAINNET_AGENT_NAME`); no breaking changes from `0.7.0`.
+
 ### Added
 
 - `GET /v1/agents` on `@reinconsole/policy-engine` marks an agent `mainnet: "pending"` when `init --mainnet` registered it (agent name `mainnet`) but no live key is narrowed to it yet -- on an engine that gates mainnet (`mainnetOrgs` is not `any`), that key exists only once the org is enabled and the move is rerun. A display hint, not authority; `MAINNET_AGENT_NAME` is exported. The hosted console labels such an agent, and any policy that targets only pending agents, "pending enable".
+
+### Fixed
+
+- `@reinconsole/sdk`: the guard reported a settlement for a vendor answer whose payment-response header said `success: false` (a failed settle), which closed the reconciliation gap for a payment that never moved. A failed settle now stays on the receipt for forensics and is not reported. A non-2xx answer to the paid retry is reported only when its header says `success: true` and names a transaction -- the facilitator's verdict on the chain, which can disagree with the vendor's verdict on the content (seen on Base mainnet: a seller settled, answered 403, and refunded). Refunds are not modelled.
+
+### Changed
+
+- `@reinconsole/policy-engine`: the "mainnet is not yet enabled" refusal now says to send the org id to whoever invited you, or to the contact address.
+- Runtime dependencies: `viem` 2.57, `@electric-sql/pglite` 0.5.8, `pg` 8.23.1.
 
 ## [0.7.0] - 2026-10-15
 
