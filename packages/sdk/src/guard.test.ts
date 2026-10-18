@@ -410,39 +410,51 @@ describe('Guard (against a live policy engine)', () => {
     expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
   });
 
-  it('leaves the gap OPEN when the vendor refuses the paid retry (S108)', async () => {
-    const agentId = await newAgent();
-    // Matt's mainnet run: the seller answered the paid retry with an AWS 403
-    // and Rein still counted the payment as settled. A refusal is not a
-    // payment, whatever headers ride on it.
+  /** A vendor whose paid retry is answered 403, with the given settlement header (or none). */
+  function refusingVendor(header?: Record<string, unknown>): FetchLike {
     const base = mockVendor('10000');
-    const fetchImpl: FetchLike = async (input, init) => {
+    return async (input, init) => {
       const res = await base.fetchImpl(input, init);
       if (res.status !== 200) return res;
       return new Response('{"Message":"explicit deny"}', {
         status: 403,
-        headers: {
-          'X-PAYMENT-RESPONSE': Buffer.from(
-            JSON.stringify({ success: true, transaction: '0xnever', network: 'base' }),
-          ).toString('base64'),
-        },
+        headers: header
+          ? { 'X-PAYMENT-RESPONSE': Buffer.from(JSON.stringify(header)).toString('base64') }
+          : {},
       });
     };
-    const guard = createGuard({ engineUrl, agentId, fetch: fetchImpl, payer: mockPayer });
-    await guard.client.addPolicy({
-      policyId: 'pol_reconcile_403',
-      appliesTo: { agents: [agentId] },
-      default: 'allow',
-    });
+  }
 
+  async function reconcileAfter(fetchImpl: FetchLike, policyId: string) {
+    const agentId = await newAgent();
+    const guard = createGuard({ engineUrl, agentId, fetch: fetchImpl, payer: mockPayer });
+    await guard.client.addPolicy({ policyId, appliesTo: { agents: [agentId] }, default: 'allow' });
     const res = await guard.wrap()('https://api.vendor.test/v1/answer');
     await settled();
+    return { res, report: await guard.client.reconciliation({ graceMs: 0, agentId }) };
+  }
 
+  it('settles a refused retry whose header names a successful tx (S108, real on mainnet)', async () => {
+    // Matt's run: the seller settled on chain, then answered 403 (and refunded).
+    // The chain moved money for this intent, so the gap must close.
+    const { res, report } = await reconcileAfter(
+      refusingVendor({ success: true, transaction: '0xreal', network: 'base' }),
+      'pol_reconcile_403_paid',
+    );
     expect(res.status).toBe(403);
-    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
-    expect(report.allowed).toBe(1);
-    expect(report.settled).toBe(0);
-    expect(report.unsettled).toBe(1);
+    expect(report.settled).toBe(1);
+    expect(report.unsettled).toBe(0);
+  });
+
+  it('leaves the gap OPEN on a refused retry without an explicit successful tx', async () => {
+    for (const [i, header] of [
+      { transaction: '0xmaybe', network: 'base' }, // no success field
+      { success: true, transaction: '', network: 'base' }, // no tx
+    ].entries()) {
+      const { report } = await reconcileAfter(refusingVendor(header), `pol_reconcile_403_${i}`);
+      expect(report.settled).toBe(0);
+      expect(report.unsettled).toBe(1);
+    }
   });
 
   it('enforces rolling budgets across calls (second purchase denied)', async () => {

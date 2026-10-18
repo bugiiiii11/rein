@@ -498,16 +498,29 @@ function withHeader(
 }
 
 /**
- * Did the vendor's answer to the paid retry say the money moved? Both halves
- * are required (S108, Matt's mainnet run): a non-2xx answer is a refused
- * request whatever headers ride on it, and a header that says
- * `success: false` is a failed settle whatever the status. Reporting either
- * as a settlement would CLOSE a reconciliation gap for a payment that never
- * happened -- the one direction reconciliation must never err in. When in
- * doubt the gap stays open and an operator checks the chain.
+ * Did the vendor's answer to the paid retry say the money moved?
+ *
+ * The settlement header is the facilitator's verdict on the CHAIN; the HTTP
+ * status is the vendor's verdict on the CONTENT. They can disagree, and S108
+ * showed it on Base mainnet: a seller settled Matt's $0.01 (real tx), answered
+ * the retry with an AWS 403, and refunded the $0.01 two seconds later. So:
+ *
+ * - `success: false` is never a settlement, whatever the status (a failed
+ *   settle used to be reported as settled-without-txHash, closing a gap for
+ *   money that never moved -- the one direction reconciliation must not err);
+ * - a non-2xx counts only when the header says `success: true` AND names a
+ *   transaction -- an explicit chain fact, not a header that merely rides on
+ *   a refusal;
+ * - a 2xx with a decodable header counts, as before.
+ *
+ * Anything else leaves the gap open, the safe direction: an operator checks
+ * the chain. Refunds are not modelled -- a settled-then-refunded payment
+ * reads as settled, which is what the chain shows for that intent.
  */
 function paid(res: Response, parsed: ParsedSettlement | undefined): boolean {
-  return res.ok && parsed !== undefined && parsed.success !== false;
+  if (parsed === undefined || parsed.success === false) return false;
+  if (res.ok) return true;
+  return parsed.success === true && parsed.settlement.txHash !== undefined;
 }
 
 interface ParsedSettlement {
