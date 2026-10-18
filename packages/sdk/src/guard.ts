@@ -254,7 +254,8 @@ export class Guard {
             )
           : withHeader(input, init, 'X-PAYMENT', paymentHeader),
       );
-      this.record(intent, decision, url, init, parseSettlement(retry));
+      const parsed = parseSettlement(retry);
+      this.record(intent, decision, url, init, parsed?.settlement, paid(retry, parsed));
       return retry;
     };
   }
@@ -265,6 +266,12 @@ export class Guard {
     url: string,
     init: RequestInit | undefined,
     settlement?: ReceiptSettlement,
+    /**
+     * Whether the vendor's answer says the money moved. A failed settle still
+     * leaves its header on the receipt (forensics), but only a paid one is
+     * reported to the engine -- see {@link paid}.
+     */
+    confirmed = false,
   ): Receipt {
     const receipt = Receipt.parse({
       id: newId('rcp'),
@@ -287,7 +294,7 @@ export class Guard {
     const max = this.options.maxReceipts ?? DEFAULT_MAX_RECEIPTS;
     if (this.log.length > max) this.log.splice(0, this.log.length - max);
     this.options.onReceipt?.(receipt);
-    if (settlement) this.announceSettlement(receipt);
+    if (settlement && confirmed) this.announceSettlement(receipt);
     return receipt;
   }
 
@@ -341,10 +348,10 @@ export class Guard {
   private settlePending(url: string, res: Response): void {
     this.sweepPending();
     const receipt = this.pendingByUrl.get(url);
-    if (!receipt || !res.ok) return;
-    const settlement = parseSettlement(res);
-    if (settlement) {
-      receipt.settlement = settlement;
+    if (!receipt) return;
+    const parsed = parseSettlement(res);
+    if (parsed && paid(res, parsed)) {
+      receipt.settlement = parsed.settlement;
       this.announceSettlement(receipt);
     }
     this.pendingByUrl.delete(url);
@@ -491,11 +498,30 @@ function withHeader(
 }
 
 /**
+ * Did the vendor's answer to the paid retry say the money moved? Both halves
+ * are required (S108, Matt's mainnet run): a non-2xx answer is a refused
+ * request whatever headers ride on it, and a header that says
+ * `success: false` is a failed settle whatever the status. Reporting either
+ * as a settlement would CLOSE a reconciliation gap for a payment that never
+ * happened -- the one direction reconciliation must never err in. When in
+ * doubt the gap stays open and an operator checks the chain.
+ */
+function paid(res: Response, parsed: ParsedSettlement | undefined): boolean {
+  return res.ok && parsed !== undefined && parsed.success !== false;
+}
+
+interface ParsedSettlement {
+  settlement: ReceiptSettlement;
+  /** The header's own `success` field; undefined when absent or undecodable. */
+  success?: boolean;
+}
+
+/**
  * Decode the vendor's settlement header — `X-PAYMENT-RESPONSE` (v1) or
  * `PAYMENT-RESPONSE` (v2); base64 JSON per the x402 spec, plain JSON
  * tolerated mock-first. Absent or undecodable -> undefined.
  */
-function parseSettlement(res: Response): ReceiptSettlement | undefined {
+function parseSettlement(res: Response): ParsedSettlement | undefined {
   const raw = res.headers.get('X-PAYMENT-RESPONSE') ?? res.headers.get('PAYMENT-RESPONSE');
   if (raw === null) return undefined;
   let payload: unknown;
@@ -505,19 +531,22 @@ function parseSettlement(res: Response): ReceiptSettlement | undefined {
     try {
       payload = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
     } catch {
-      return { raw };
+      return { settlement: { raw } };
     }
   }
   const record =
     typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
   return {
-    // A failed v2 settle carries transaction: "" — no tx is no txHash.
-    txHash:
-      typeof record['transaction'] === 'string' && record['transaction'] !== ''
-        ? record['transaction']
-        : undefined,
-    networkId: typeof record['network'] === 'string' ? record['network'] : undefined,
-    raw,
+    settlement: {
+      // A failed v2 settle carries transaction: "" — no tx is no txHash.
+      txHash:
+        typeof record['transaction'] === 'string' && record['transaction'] !== ''
+          ? record['transaction']
+          : undefined,
+      networkId: typeof record['network'] === 'string' ? record['network'] : undefined,
+      raw,
+    },
+    ...(typeof record['success'] === 'boolean' ? { success: record['success'] } : {}),
   };
 }
 

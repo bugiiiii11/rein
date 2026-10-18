@@ -410,6 +410,41 @@ describe('Guard (against a live policy engine)', () => {
     expect(guard.receipts()[0]?.settlement?.txHash).toBe('0xsettled');
   });
 
+  it('leaves the gap OPEN when the vendor refuses the paid retry (S108)', async () => {
+    const agentId = await newAgent();
+    // Matt's mainnet run: the seller answered the paid retry with an AWS 403
+    // and Rein still counted the payment as settled. A refusal is not a
+    // payment, whatever headers ride on it.
+    const base = mockVendor('10000');
+    const fetchImpl: FetchLike = async (input, init) => {
+      const res = await base.fetchImpl(input, init);
+      if (res.status !== 200) return res;
+      return new Response('{"Message":"explicit deny"}', {
+        status: 403,
+        headers: {
+          'X-PAYMENT-RESPONSE': Buffer.from(
+            JSON.stringify({ success: true, transaction: '0xnever', network: 'base' }),
+          ).toString('base64'),
+        },
+      });
+    };
+    const guard = createGuard({ engineUrl, agentId, fetch: fetchImpl, payer: mockPayer });
+    await guard.client.addPolicy({
+      policyId: 'pol_reconcile_403',
+      appliesTo: { agents: [agentId] },
+      default: 'allow',
+    });
+
+    const res = await guard.wrap()('https://api.vendor.test/v1/answer');
+    await settled();
+
+    expect(res.status).toBe(403);
+    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
+    expect(report.allowed).toBe(1);
+    expect(report.settled).toBe(0);
+    expect(report.unsettled).toBe(1);
+  });
+
   it('enforces rolling budgets across calls (second purchase denied)', async () => {
     const agentId = await newAgent();
     const vendor = mockVendor('10000'); // 0.01 USDC each
@@ -698,6 +733,37 @@ describe('Guard on the x402 v2 wire', () => {
         network: 'eip155:8453',
       }),
     );
+    // Kept for forensics, never reported: the engine still sees an open gap.
+    await settled();
+    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
+    expect(report.settled).toBe(0);
+    expect(report.unsettled).toBe(1);
+  });
+
+  it('does not settle a 2xx whose header says success: false', async () => {
+    const agentId = await newAgent();
+    const base = mockVendor('10000');
+    const fetchImpl: FetchLike = async (input, init) => {
+      const res = await base.fetchImpl(input, init);
+      if (res.status !== 200) return res;
+      return new Response('{}', {
+        status: 200,
+        headers: {
+          'X-PAYMENT-RESPONSE': Buffer.from(
+            JSON.stringify({ success: false, transaction: '', network: 'base' }),
+          ).toString('base64'),
+        },
+      });
+    };
+    const guard = createGuard({ engineUrl, agentId, fetch: fetchImpl, payer: mockPayer });
+    await allowAll(agentId);
+
+    await guard.wrap()('https://api.vendor.test/v1/answer');
+    await settled();
+
+    const report = await guard.client.reconciliation({ graceMs: 0, agentId });
+    expect(report.settled).toBe(0);
+    expect(report.unsettled).toBe(1);
   });
 });
 
