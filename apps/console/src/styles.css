@@ -421,6 +421,11 @@ a.pill:hover {
   color: var(--ok);
   background: var(--ok-soft);
 }
+.status-tag.pending-enable {
+  color: var(--warn);
+  border: 1px dashed rgba(245, 196, 81, 0.4);
+  cursor: help;
+}
 .status-tag.frozen {
   color: var(--bad);
   background: var(--bad-soft);

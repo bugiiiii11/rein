@@ -52,13 +52,22 @@ export const PENDING_ENABLE_TITLE =
 
 function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
   const frozen = a.status === 'frozen';
+  // Pending replaces ACTIVE in the badge itself (Matt, S108): a green ACTIVE beside a
+  // hover-only caveat read as live at first glance. Frozen still wins -- it is the stronger fact.
+  const pending = !frozen && a.mainnet === 'pending';
   const toggle = () => void (frozen ? api.unfreeze(a.id) : api.freeze(a.id));
   const withheld = writable ? undefined : 'read-only console — controls are withheld';
   return (
     <div className={`agent ${frozen ? 'frozen' : ''}`}>
       <div className="agent-top">
         <span className="agent-name">{a.name}</span>
-        <span className={`status-tag ${a.status}`}>{a.status}</span>
+        {pending ? (
+          <span className="status-tag pending-enable" title={PENDING_ENABLE_TITLE}>
+            pending enable
+          </span>
+        ) : (
+          <span className={`status-tag ${a.status}`}>{a.status}</span>
+        )}
       </div>
 
       <div className="agent-meta">
@@ -71,11 +80,6 @@ function AgentCard({ a, writable }: { a: AgentView; writable: boolean }) {
           </span>
         ))}
         {a.liveness && <LivenessChip live={a.liveness} />}
-        {a.mainnet === 'pending' && (
-          <span className="tag pending-enable" title={PENDING_ENABLE_TITLE}>
-            pending enable
-          </span>
-        )}
       </div>
 
       <div className="agent-figures">

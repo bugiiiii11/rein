@@ -871,7 +871,7 @@ export function buildServer(
           'mainnet_not_enabled',
           mainnetScreened
             ? `mainnet needs a claimed org: run \`npx @reinconsole/init --claim\` for org ${scope.orgId}, sign in, then run --mainnet again`
-            : `mainnet is not yet enabled for org ${scope.orgId}: new orgs wait on sanctions screening -- write to reinconsole@proton.me with your org id`,
+            : `mainnet is not yet enabled for org ${scope.orgId}: new orgs wait on sanctions screening -- send your org id to whoever invited you, or to reinconsole@proton.me`,
         );
       }
       if (screening) await screening.check(scope.orgId, 'mainnet', subjectsOf(scope.orgId, owner));

@@ -114,11 +114,19 @@ describe('the dead-man chip', () => {
 
   it('labels a mainnet agent waiting on enable, and counts it apart', async () => {
     const el = await render([agent({ id: 'agt_1' }), agent({ id: 'agt_2', name: 'mainnet', mainnet: 'pending' })]);
-    const tags = el.querySelectorAll('.tag.pending-enable');
+    const tags = el.querySelectorAll('.status-tag.pending-enable');
     expect(tags).toHaveLength(1);
     expect(tags[0]?.textContent).toBe('pending enable');
     expect(tags[0]?.getAttribute('title')).toContain('cannot spend');
+    // The pending card shows no green ACTIVE beside it; the enabled one keeps its badge.
+    expect(el.querySelectorAll('.status-tag.active')).toHaveLength(1);
     expect(el.textContent).toContain('2 managed · 1 pending enable');
+  });
+
+  it('lets a frozen badge win over pending enable', async () => {
+    const el = await render([agent({ name: 'mainnet', mainnet: 'pending', status: 'frozen' })]);
+    expect(el.querySelector('.status-tag.frozen')).not.toBeNull();
+    expect(el.querySelector('.status-tag.pending-enable')).toBeNull();
   });
 
   it('counts only the missing among a mixed roster', async () => {

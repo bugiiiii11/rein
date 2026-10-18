@@ -157,6 +157,8 @@ npx -y @reinconsole/init@{{VERSION}} --claim
 
 Tell {{NAME}} right away: "Your browser should open app.reinconsole.com/claim -- sign in with GitHub or
 an Ethereum wallet you have not used for a Rein org before." If the output shows a link, show the link.
+Run this command in the FOREGROUND, never as a background task: the link expires, and a background
+run hides it until it already has (Matt, 2026-10-18).
 Expected end: the org is claimed and its keys no longer expire. `identity_has_org` means that account
 already owns an org: ask {{NAME}} to sign in with a different one and run `--claim` again.
 
