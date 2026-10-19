@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 /**
- * The deploy triple that S36 proved prose cannot hold together: railway.json's
+ * The deploy triple that S36 proved prose cannot hold together: railway.console.json's
  * startCommand, the Dockerfile CMD, and the file on disk. services/store's
  * deploy-config.test.ts pins the first two against each other; this pins the
  * one thing it cannot see -- that the deployed entry is the one that drops
@@ -19,8 +19,9 @@ describe('the deployed entry point', () => {
   const read = (name: string): string => readFileSync(join(repoRoot, name), 'utf8');
 
   it('boots the console through boot.ts', () => {
-    const startCommand = (JSON.parse(read('railway.json')) as { deploy: { startCommand: string } })
-      .deploy.startCommand;
+    const startCommand = (
+      JSON.parse(read('railway.console.json')) as { deploy: { startCommand: string } }
+    ).deploy.startCommand;
     expect(startCommand.endsWith('apps/console/server/boot.ts')).toBe(true);
     expect(read('Dockerfile')).toContain('apps/console/server/boot.ts');
   });

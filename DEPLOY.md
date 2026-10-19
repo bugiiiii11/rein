@@ -10,9 +10,11 @@ to Vercel at **reinconsole.com**.
 
 ## Build shape
 
-`railway.json` pins the Dockerfile builder, a `/api/health` healthcheck (liveness only --
+The console builds from the Dockerfile, with a `/api/health` healthcheck (liveness only --
 it reads no world state, so a probe is not a free snapshot), and
-`ON_FAILURE` restarts (max 10). The image is built from the REPO ROOT, not
+`ON_FAILURE` restarts (max 10). Since S110 these live in the DASHBOARD and
+`railway.console.json` is the checklist they must match (see "The console left Config as
+Code" below). The image is built from the REPO ROOT, not
 `apps/console`: the console depends on 10 workspace packages, so the whole
 pnpm/Turborepo workspace has to install and build together.
 
@@ -21,7 +23,8 @@ pnpm/Turborepo workspace has to install and build together.
 
 ## Which pushes deploy (watch patterns, S60)
 
-`railway.json` now owns the deploy trigger, in `build.watchPatterns`. Before S60 it
+`railway.json` owned the deploy trigger from S60 to S110, in `build.watchPatterns`; the
+same list is now in the dashboard, recorded in `railway.console.json`. Before S60 it
 lived only in the dashboard as Watch Paths, set to `apps/console/**`, and that was
 wrong in a way nothing reported: the image is built from the repo ROOT, so a push
 touching only `services/**` produced no deploy at all and left production running the
@@ -84,6 +87,29 @@ list fails the suite instead of failing production.
    -> the latest commit -> Redeploy. Everything after that is automatic.
 
 Confirm it took: push any `services/`-only change and watch a deploy start.
+
+## The console left Config as Code (S110, 2026-10-19)
+
+Config-as-Code support for legacy services ends **2026-12-01**, and the console was the
+last one. Its dashboard values were stale underneath the file the whole time --
+builder RAILPACK, start `pnpm --filter @rein/console start` (the S36 outage command),
+watch `/apps/console/**`, no healthcheck -- and the Settings panel could not show it,
+because a root `railway.json` makes every field render the FILE's value under "The value
+is set in /railway.json". The only way to see the real values is the API.
+
+What was done, in this order (repeat it for any service the same way):
+
+1. Read the stored values with a project token: `{projectToken{projectId environmentId}}`,
+   then `serviceInstance(serviceId, environmentId)` for builder, dockerfilePath,
+   watchPatterns, startCommand, healthcheckPath/Timeout, restartPolicy*.
+2. Write the file's values with `serviceInstanceUpdate`, then read them back field by field.
+   **The API's `Builder` enum has no `DOCKERFILE`** (HEROKU, NIXPACKS, PAKETO, RAILPACK) --
+   sending it fails as an opaque `Problem processing request`. A `dockerfilePath` is what
+   selects the Dockerfile build; leave builder RAILPACK, the same shape as the engine and
+   vendor (`dockerfilePath: "/Dockerfile"`).
+3. Only then rename `railway.json` -> `railway.console.json`. The push that does it is the
+   first deploy built from dashboard values; confirm `/api/health` `startedAt` moves and
+   the service stays up. `deploy-config.test.ts` fails if a root `railway.json` reappears.
 
 ## Persistence (the volume)
 
@@ -161,7 +187,7 @@ next to non-zero gate revenue is correct, not a bug.
 Session-agent private keys are never persisted: the world rotates them at boot by
 design, and identity linking keeps one reputation across the rotation.
 
-## The start command is load-bearing (read before editing `railway.json`)
+## The start command is load-bearing (read before editing any start command)
 
 Two facts about how Railway starts this container, both learned the expensive way:
 
@@ -180,7 +206,7 @@ Keep `startCommand` set, and keep it equal to the Dockerfile `CMD`.
 
 **3. An EMPTY start command falls back to the image `CMD` — and the `CMD` is the
 console.** This is not the same as fact 2 and it bites harder. Fact 2 is what S36
-saw on the console service, which is governed by `railway.json`; the engine service
+saw on the console service, then governed by `railway.json`; the engine service
 is dashboard-configured (Config as Code cannot be opted into for a service created
 after 2026-08-28, S65), and when its Custom Start Command field was empty Railway ran
 the image's `CMD` instead. From 2026-09-19 to 2026-09-21 `engine.reinconsole.com`
@@ -744,7 +770,7 @@ imports it. Two services, one image, different start commands.
 **Railway does NOT read `railway.engine.json`, and cannot be made to (S65).**
 Config as Code is deprecated -- *"New services cannot opt into Config as Code"* --
 and existing files keep working for LEGACY services only, until **2026-12-01**.
-The console is such a legacy service, so `railway.json` still governs it. An
+The console was such a legacy service, governed by `railway.json` until S110. An
 engine service created now is not, so every value below is typed into the
 DASHBOARD by hand and `railway.engine.json` is the CHECKLIST it must match:
 declared intent with no enforcement behind it. `deploy-config.test.ts` still
@@ -772,7 +798,7 @@ believes it is the main module -- but the bin is the entry
 `services/store/src/engine-e2e.ts` spawns, so it is the one with test evidence
 behind it. It also turns a missing build into `dist/server.js not found — run
 pnpm build first` instead of a module-resolution stack. `deploy-config.test.ts`
-pins that agreement, along with the `railway.json` start command matching the
+pins that agreement, along with the `railway.console.json` start command matching the
 Dockerfile `CMD`: S36 proved that rule cannot live in prose alone.
 
 ### Human steps to create it

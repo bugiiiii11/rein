@@ -75,8 +75,9 @@ ENV NODE_ENV=production
 
 # Liveness only, and deliberately against /api/health rather than /api/state: the probe
 # used to serialize the whole world every few seconds, which made a full state dump the
-# cheapest request on the box. Railway runs its own healthcheck from railway.json; this
-# one is for `docker run` and any other runtime that reads the image's own declaration.
+# cheapest request on the box. Railway runs its own healthcheck from the dashboard
+# (checklist: railway.console.json); this one is for `docker run` and any other runtime
+# that reads the image's own declaration.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4173)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
@@ -92,12 +93,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 # command as argv, not through a shell, so a leading `exec` is looked up as a BINARY and
 # the container never starts — an outage, versus a lost flush.
 #
-# railway.json MUST keep an equivalent `startCommand`. Removing it does NOT fall back to
-# this CMD — Railway substituted its own inferred pnpm command, which is what took the
-# site down for ~15 min in S36 (`No projects matched the filters in "/app"`).
+# The console's dashboard start command MUST stay set and equal to this CMD (checklist:
+# railway.console.json). Under the old Config-as-Code railway.json a
+# missing startCommand did NOT fall back to this CMD — Railway substituted its own
+# inferred pnpm command, which took the site down for ~15 min in S36 (`No projects
+# matched the filters in "/app"`).
 #
-# On a DASHBOARD-configured service the fallback is different and worse: an empty start
-# command runs this CMD, so that service silently becomes the console. It then answers
+# On a DASHBOARD-configured service (all three since S110) the fallback is different and
+# worse for the OTHER services: an empty start command runs this CMD, so that service
+# silently becomes the console. It then answers
 # every probe 200 and reads as healthy, which is how engine.reinconsole.com served the
 # console for three days in September 2026. Because THIS line is what a misconfigured
 # service runs, boot.ts calls `checkServiceIdentity` before it binds anything — see

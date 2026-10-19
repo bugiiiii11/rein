@@ -13,7 +13,7 @@
  * REIN_ENGINE_URL (defaults to the hosted engine), REIN_PAYER_PRIVATE_KEY
  * (required only by checks 2 and 3 -- its ABSENCE is what advisory mode is).
  *
- * Lives in scripts/ because railway.json's watchPatterns subtract it: an ops
+ * Lives in scripts/ because railway.console.json's watchPatterns subtract it: an ops
  * script the image never runs must not redeploy production when it is edited.
  * That costs the bare specifiers -- the repo root's node_modules/@reinconsole/
  * holds only core and policy-engine -- so the two packages are reached through

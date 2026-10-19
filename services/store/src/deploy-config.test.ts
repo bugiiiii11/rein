@@ -33,8 +33,23 @@ function entryOf(startCommand: string): string {
 }
 
 describe('deploy configuration', () => {
-  describe('the console service (railway.json)', () => {
-    const config = railway('railway.json');
+  /**
+   * Since S110 the console is a dashboard checklist too. It was the last
+   * Config-as-Code service, and that support ends 2026-12-01, so its values
+   * were written into the dashboard through the API (read back field by
+   * field) and the file was renamed out of the path Railway reads.
+   */
+  describe('the console service (railway.console.json -- dashboard checklist)', () => {
+    const config = railway('railway.console.json');
+
+    /**
+     * A root `railway.json` OVERRIDES the dashboard and hides it: every field
+     * renders the file's value, so a stale dashboard value underneath is
+     * invisible until the file goes (S109 found the S36 outage command there).
+     */
+    it('has no root railway.json shadowing the dashboard', () => {
+      expect(existsSync(join(repoRoot, 'railway.json'))).toBe(false);
+    });
 
     /**
      * The rule DEPLOY.md states and S36 proved prose cannot enforce: the
@@ -85,14 +100,14 @@ describe('deploy configuration', () => {
     /** The engine answers /health; the console answers /api/health. */
     it('health-checks the path the engine actually serves', () => {
       expect(config.deploy.healthcheckPath).toBe('/health');
-      expect(railway('railway.json').deploy.healthcheckPath).toBe('/api/health');
+      expect(railway('railway.console.json').deploy.healthcheckPath).toBe('/api/health');
     });
 
     it('never prefixes the command with exec', () => {
       // Railway runs a start command as argv, not through a shell, so a
       // leading `exec` is looked up as a BINARY and the container never
       // starts -- an outage, versus a lost flush.
-      for (const name of ['railway.json', 'railway.engine.json', 'railway.vendor.json']) {
+      for (const name of ['railway.console.json', 'railway.engine.json', 'railway.vendor.json']) {
         expect(railway(name).deploy.startCommand.startsWith('exec ')).toBe(false);
       }
     });
@@ -272,10 +287,9 @@ describe('deploy configuration', () => {
       .filter((f): f is string => f !== undefined);
 
     it('builds the workspace each start command runs out of dist/', () => {
-      for (const name of ['railway.json', 'railway.engine.json', 'railway.vendor.json']) {
-        const { startCommand } = (
-          JSON.parse(read(name)) as { deploy: { startCommand: string } }
-        ).deploy;
+      for (const name of ['railway.console.json', 'railway.engine.json', 'railway.vendor.json']) {
+        const { startCommand } = (JSON.parse(read(name)) as { deploy: { startCommand: string } })
+          .deploy;
         const entry = startCommand.split(/\s+/).find((p) => p.includes('/'));
         expect(entry, `${name} has no entry path`).toBeTruthy();
         // Only dist/ entries depend on the build; tsx runs TypeScript sources.
@@ -339,7 +353,7 @@ describe('deploy configuration', () => {
     }
 
     it('starts from a match-everything base and only ever subtracts', () => {
-      for (const name of ['railway.json', 'railway.engine.json']) {
+      for (const name of ['railway.console.json', 'railway.engine.json']) {
         const patterns = patternsOf(name);
         expect(patterns.length, `${name} declares no watchPatterns`).toBeGreaterThan(0);
         expect(patterns[0], `${name} must fail safe`).toBe('**');
@@ -349,8 +363,8 @@ describe('deploy configuration', () => {
 
     /** Every service builds the SAME image from the same Dockerfile. */
     it('keeps every service on the same list', () => {
-      expect(patternsOf('railway.engine.json')).toEqual(patternsOf('railway.json'));
-      expect(patternsOf('railway.vendor.json')).toEqual(patternsOf('railway.json'));
+      expect(patternsOf('railway.engine.json')).toEqual(patternsOf('railway.console.json'));
+      expect(patternsOf('railway.vendor.json')).toEqual(patternsOf('railway.console.json'));
     });
 
     /**
@@ -363,7 +377,7 @@ describe('deploy configuration', () => {
         .map((m) => m[1])
         .filter((g): g is string => g !== undefined);
       expect(globs.length).toBeGreaterThan(0);
-      const patterns = patternsOf('railway.json');
+      const patterns = patternsOf('railway.console.json');
       for (const glob of globs) {
         const [root] = glob.split('/');
         expect(deploys(patterns, `${root}/anything/src/index.ts`), `${glob} is not watched`).toBe(
@@ -373,7 +387,7 @@ describe('deploy configuration', () => {
     });
 
     it('deploys a change to anything the build itself reads', () => {
-      const patterns = patternsOf('railway.json');
+      const patterns = patternsOf('railway.console.json');
       for (const file of [
         'Dockerfile',
         '.dockerignore',
@@ -383,7 +397,7 @@ describe('deploy configuration', () => {
         'turbo.json',
         'tsconfig.base.json',
         '.npmrc',
-        'railway.json',
+        'railway.console.json',
         'railway.engine.json',
       ]) {
         expect(deploys(patterns, file), `${file} is not watched`).toBe(true);
@@ -402,7 +416,7 @@ describe('deploy configuration', () => {
      * console every time an ops script was edited.
      */
     it('skips only docs, CI, agent config and operator scripts', () => {
-      const patterns = patternsOf('railway.json');
+      const patterns = patternsOf('railway.console.json');
       for (const file of [
         'DEPLOY.md',
         'README.md',
