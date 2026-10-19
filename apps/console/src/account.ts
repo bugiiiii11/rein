@@ -62,5 +62,5 @@ export async function signOut(): Promise<void> {
 }
 
 export function claim(code: string): Promise<{ orgId: string; alreadyOwned: boolean }> {
-  return postJson('/api/claim', { code });
+  return postJson('/api/claim', { code, adult: true });
 }

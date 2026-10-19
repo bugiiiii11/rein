@@ -148,6 +148,11 @@ export function createAccountHandler(signIn: SignIn | undefined, bridge: OwnerBr
           if (typeof code !== 'string' || code.length === 0 || code.length > 200) {
             throw new SignInError(400, 'bad_code', 'a claim code is required');
           }
+          // The Terms require an owner to be 18+ (terms.html). Checked here and
+          // not only by the page's checkbox, so a scripted POST cannot skip it.
+          if (body['adult'] !== true) {
+            throw new SignInError(400, 'age_confirmation_required', 'confirm you are at least 18 and accept the Terms to claim');
+          }
           sendJson(res, 200, await bridge.redeem(code, session.sub));
           return;
         }

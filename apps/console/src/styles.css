@@ -1609,6 +1609,19 @@ a.pill:hover {
   align-self: flex-start;
   text-decoration: none;
 }
+.claim-consent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.claim-consent input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+.claim-consent a {
+  color: var(--ink);
+}
 /* An id is case-sensitive: the pill's uppercase would turn org_ into ORG_. */
 .account .org-id {
   text-transform: none;

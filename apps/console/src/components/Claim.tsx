@@ -14,6 +14,7 @@ export function Claim() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [adult, setAdult] = useState(false);
 
   useEffect(() => {
     void fetchMe().then(setMe);
@@ -79,7 +80,14 @@ export function Claim() {
         <p>
           Signed in as <b>{me.user.name}</b>. Claiming binds this sandbox to that account for good.
         </p>
-        <button className="run-btn" disabled={busy} onClick={doClaim}>
+        <label className="claim-consent">
+          <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} />
+          <span>
+            I am at least 18 and accept the <a href="https://reinconsole.com/terms" target="_blank" rel="noreferrer">Terms</a>{' '}
+            and the <a href="https://reinconsole.com/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.
+          </span>
+        </label>
+        <button className="run-btn" disabled={busy || !adult} onClick={doClaim}>
           {busy ? 'Claiming…' : 'Claim this sandbox'}
         </button>
         {error && <p className="signin-err">{error}</p>}

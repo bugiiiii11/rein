@@ -958,8 +958,16 @@ volume's chain rather than overwrite it.
 **Nightly dump (11.4):** `backup.yml` job `postgres-dump`, dormant until the
 repo secret `REIN_BACKUP_DATABASE_URL` exists. It `pg_dump`s schema `rein`,
 restores it into a scratch Postgres 17, verifies the whole chain
-(`scripts/verify-dump.mjs`, `rooted: true`), and only then commits
-`postgres/rein.sql` + `postgres/latest.json` to the private backups repo. Give
+(`scripts/verify-dump.mjs`, `rooted: true`), and only then encrypts it with
+`age` to the PUBLIC key in the repo secret `REIN_BACKUP_AGE_RECIPIENT` and
+pushes it to the private backups repo's `postgres-dumps` branch as
+`rein-<YYYY-MM-DD>.sql.age` (+ `latest.json`). That branch is ONE orphan commit,
+rebuilt and force-pushed each night with the last 90 days only: the privacy
+policy's 90-day backup retention. A missing or malformed recipient FAILS the run
+-- it never falls back to plaintext. The private key is the founder's, offline;
+CI never holds it. Restore: `age -d -i <key file> rein-<date>.sql.age | psql
+<url>`. Until S109 the plaintext dump was committed to `postgres/rein.sql` on
+`main`, so that path's history must be purged once (see the S109 handoff). Give
 it a read-only role, not the owner -- created in the SQL editor AFTER the
 cutover (schema `rein` exists once the engine has booted on it). Through the
 session pooler its user name is `rein_backup.<project-ref>`:

@@ -167,7 +167,7 @@ describe('claim and the owner dashboard', () => {
     const theirs = await sandbox();
 
     await signInWithWallet();
-    const claimed = await call('/api/claim', { method: 'POST', body: { code: await claimCode(mine.apiKey) } });
+    const claimed = await call('/api/claim', { method: 'POST', body: { code: await claimCode(mine.apiKey), adult: true } });
     expect(claimed.status).toBe(200);
     expect((await claimed.json()).orgId).toBe(mine.orgId);
     // The engine lifted the sandbox key's expiry: that IS keeping the org.
@@ -188,9 +188,23 @@ describe('claim and the owner dashboard', () => {
   it('needs a session to claim', async () => {
     const { call, sandbox, claimCode } = await setup();
     const sb = await sandbox();
-    const res = await call('/api/claim', { method: 'POST', body: { code: await claimCode(sb.apiKey) } });
+    const res = await call('/api/claim', { method: 'POST', body: { code: await claimCode(sb.apiKey), adult: true } });
     expect(res.status).toBe(401);
     expect((await res.json()).error).toBe('signin_required');
+  });
+
+  it('refuses a claim without the 18+ confirmation, and spends no code', async () => {
+    const { call, sandbox, claimCode, signInWithWallet } = await setup();
+    const sb = await sandbox();
+    await signInWithWallet();
+    const code = await claimCode(sb.apiKey);
+    for (const adult of [undefined, false, 'true']) {
+      const res = await call('/api/claim', { method: 'POST', body: { code, adult } });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('age_confirmation_required');
+    }
+    const ok = await call('/api/claim', { method: 'POST', body: { code, adult: true } });
+    expect(ok.status).toBe(200);
   });
 
   it('relays the engine refusing a second org for the same account', async () => {
@@ -198,8 +212,8 @@ describe('claim and the owner dashboard', () => {
     const a = await sandbox();
     const b = await sandbox();
     await signInWithWallet();
-    await call('/api/claim', { method: 'POST', body: { code: await claimCode(a.apiKey) } });
-    const res = await call('/api/claim', { method: 'POST', body: { code: await claimCode(b.apiKey) } });
+    await call('/api/claim', { method: 'POST', body: { code: await claimCode(a.apiKey), adult: true } });
+    const res = await call('/api/claim', { method: 'POST', body: { code: await claimCode(b.apiKey), adult: true } });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('identity_has_org');
   });
