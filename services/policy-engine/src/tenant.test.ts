@@ -363,6 +363,41 @@ describe('tenant isolation: spending and its record', () => {
     expect(bSees.json().gaps).toEqual([]);
     await app.close();
   });
+
+  it('caps settlementsSeen at 1 for a scoped caller, so it leaks no volume (S108)', async () => {
+    const { app, evalA, adminB, readA, root, agentA, as } = await tenantWorld();
+    await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: as(root),
+      payload: { policyId: 'pol_open', rules: [], default: 'allow' },
+    });
+    const seen = async (key: Parameters<typeof as>[0]) =>
+      (await app.inject({ method: 'GET', url: '/v1/reconciliation', headers: as(key) })).json()
+        .settlementsSeen;
+    expect(await seen(adminB)).toBe(0);
+    for (const amount of ['0.25', '0.5']) {
+      const evaluated = await app.inject({
+        method: 'POST',
+        url: '/v1/evaluate',
+        headers: as(evalA),
+        payload: intent(agentA.id, amount),
+      });
+      await app.inject({
+        method: 'POST',
+        url: '/v1/settlements',
+        headers: as(evalA),
+        payload: { intentId: evaluated.json().intent.id, confirmedAt: new Date().toISOString() },
+      });
+    }
+    // B owns none of them: it learns a reporter is connected (its own gaps
+    // must still show), never how much the platform settles.
+    expect(await seen(adminB)).toBe(1);
+    expect(await seen(readA)).toBe(1);
+    // The unscoped operator keeps the real count.
+    expect(await seen(root)).toBe(2);
+    await app.close();
+  });
 });
 
 describe('tenant isolation: keys', () => {

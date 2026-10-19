@@ -296,20 +296,23 @@ if (mode === 'deny') {
   // input only AFTER the payment arrives, so a missing parameter fails the PAID call.
   const inputOf = new Map(items.map((e) => [e?.resource, e?.extensions?.bazaar?.info?.input ?? e?.accepts?.[0]?.outputSchema?.input]));
   const withInput = (c) => {
-    const input = inputOf.get(c.resource) ?? {};
+    const declared = inputOf.get(c.resource);
+    const input = declared ?? {};
     const query = input.queryParams ?? {};
     if (input.bodyFields || input.body) return undefined;
     if (!Object.values(query).every((v) => typeof v === 'string' || typeof v === 'number')) return undefined;
     const url = new URL(c.resource);
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
-    return { ...c, url: url.href, params: Object.keys(query).length };
+    return { ...c, url: url.href, params: Object.keys(query).length, declared: declared !== undefined };
   };
   const found = selectDiscovered(items, { profile: MAINNET, maxAtomic: 10_000n, excludeHosts: ['vendor.reinconsole.com'] })
     .filter((c) => c.amount > 4_000n)
     .map(withInput)
     .filter(Boolean);
-  // Sellers needing no input first, then the dearest: test 2 pays at most what the raised limit allows.
-  found.sort((x, y) => x.params - y.params || Number(y.amount - x.amount));
+  // Sellers that DECLARE their input first: "declares none" is not "needs none" -- an undeclared
+  // seller took a real payment and answered 403 (Matt, 2026-10-18). Then those needing no input,
+  // then the dearest: test 2 pays at most what the raised limit allows.
+  found.sort((x, y) => Number(y.declared) - Number(x.declared) || x.params - y.params || Number(y.amount - x.amount));
   // One seller per operator: the catalog lists dozens of endpoints of a single host, and one host down must not end the test.
   const operators = new Set();
   const picks = found.filter((c) => {
@@ -342,6 +345,11 @@ if (mode === 'deny') {
   else if (r.error) result = `ERROR -- ${r.error}`;
   else if (r.res.status < 400 && r.receipt?.settlement?.txHash)
     result = `PAID ${usd(seller.amount)} -- https://basescan.org/tx/${r.receipt.settlement.txHash}`;
+  else if (r.receipt?.settlement?.txHash)
+    // The chain and the content can disagree: the seller settled, then refused the request.
+    result =
+      `PAID ON CHAIN, CONTENT REFUSED -- ${usd(seller.amount)} https://basescan.org/tx/${r.receipt.settlement.txHash}; ` +
+      `seller answered ${await whyUnpaid(r.res)} (a refund, if any, is a separate transfer back to the wallet)`;
   else if (r.receipt?.outcome === 'allow')
     result = `ALLOWED, NOT CONFIRMED PAID -- ${await whyUnpaid(r.res)} (check the wallet balance before retrying anything)`;
   else result = `UNEXPECTED -- HTTP ${r.res?.status}, outcome ${r.receipt?.outcome ?? 'none'}`;

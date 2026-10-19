@@ -131,10 +131,15 @@ export interface ReconcileOptions {
    * caller may not see would leak the other tenant's volume through the
    * totals even with the `gaps` list trimmed.
    *
-   * `settlementsSeen` is the deliberate exception: it counts every settlement
-   * this ENGINE was ever told about, because its job is to answer "is any
-   * reporter connected at all", which is a property of the deployment rather
-   * than of a tenant. Nothing about another org's payments can be read off it.
+   * `settlementsSeen` is the deliberate exception: its job is to answer "is
+   * any reporter connected at all", a property of the deployment rather than
+   * of a tenant -- so it is NOT narrowed to owned settlements (a new org whose
+   * first payment never settled would read 0, "nobody is looking", and the
+   * console would hide the very gap reconciliation exists to show). It is
+   * CAPPED at 1 for a filtered caller instead (S108): before, a tenant
+   * watching the raw count grow read the platform's settlement volume off it
+   * (Matt saw 153 for a one-payment org). 0 or 1 answers the question and
+   * leaks nothing else.
    */
   agentFilter?: (agentId: string) => boolean;
 }
@@ -239,7 +244,9 @@ export function reconcile(
     overspent: overspent.length,
     overspentValue: sumDecimal(excess),
     unattributed,
-    settlementsSeen: settlements.count(),
+    settlementsSeen: options.agentFilter
+      ? Math.min(settlements.count(), 1)
+      : settlements.count(),
     gaps: gaps.slice(0, limit),
     truncated: gaps.length > limit,
   };

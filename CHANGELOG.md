@@ -4,6 +4,10 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Changed
+
+- `@reinconsole/policy-engine`: `GET /v1/reconciliation` caps `settlementsSeen` at 1 for a tenant-scoped caller. It still answers "is any settlement reporter connected" (so a tenant's own gaps keep showing), but it no longer exposes how many settlements the whole deployment has seen. Unscoped operator keys keep the real count.
+
 ## [0.8.0] - 2026-10-18
 
 The guard no longer reports a failed settle as a settlement, and the engine marks a mainnet agent that is still waiting on enable. Minor version for the new export (`MAINNET_AGENT_NAME`); no breaking changes from `0.7.0`.
