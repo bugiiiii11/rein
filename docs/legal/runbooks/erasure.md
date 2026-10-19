@@ -33,4 +33,4 @@ What erasure leaves: the org itself, its agents, policies, keys and decisions. W
 
 ## Backups
 
-Backups are kept indefinitely today (privacy policy: moving to a 90-day rolling retention). We do not rewrite them. If a backup is ever restored, re-run step 2 for every erasure in the register made after that backup's date, before the restored engine serves traffic.
+Full database backups are encrypted and kept for 90 days (`backup.yml`, branch `postgres-dumps` of the private backups repo), so an erased person's data leaves the backups within 90 days of the erasure. We do not rewrite them. If a backup is ever restored, re-run step 2 for every erasure in the register made after that backup's date, before the restored engine serves traffic.

@@ -32,5 +32,5 @@ Screened by hand before S98 (record date, wallet, result, list version):
 
 ## Still open
 
-- S109 (2026-10-19): 18+ confirmation at claim DONE (console checkbox + server refusal `age_confirmation_required`; not stored). Encrypted dumps with 90-day rolling retention BUILT (`backup.yml`, `DEPLOY.md`) -- live once the age key exists and the old plaintext `postgres/` history in the backup repo is purged; then the privacy policy's backup line changes. `ropa.md` DRAFTED, under review in the Mind Palace.
+- S109 (2026-10-19): 18+ confirmation at claim DONE (console checkbox + server refusal `age_confirmation_required`; not stored). Encrypted dumps with 90-day rolling retention LIVE (`backup.yml`, `DEPLOY.md`; first encrypted dump 2026-10-19, decrypt verified with the founder's offline key); the old plaintext `postgres/` history was purged from the backups repo the same day; privacy policy updated. `ropa.md` DRAFTED, under review in the Mind Palace.
 - Before public GA: EU and UK representatives, a DPA template for business customers, removal of the DRAFT banner.

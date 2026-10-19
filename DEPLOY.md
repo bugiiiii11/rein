@@ -967,7 +967,7 @@ policy's 90-day backup retention. A missing or malformed recipient FAILS the run
 -- it never falls back to plaintext. The private key is the founder's, offline;
 CI never holds it. Restore: `age -d -i <key file> rein-<date>.sql.age | psql
 <url>`. Until S109 the plaintext dump was committed to `postgres/rein.sql` on
-`main`, so that path's history must be purged once (see the S109 handoff). Give
+`main`; that history was purged on 2026-10-19 (filter-branch, force-pushed). Give
 it a read-only role, not the owner -- created in the SQL editor AFTER the
 cutover (schema `rein` exists once the engine has booted on it). Through the
 session pooler its user name is `rein_backup.<project-ref>`:
