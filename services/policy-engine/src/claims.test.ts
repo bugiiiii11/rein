@@ -24,8 +24,13 @@ async function world() {
       apiKey: string;
     };
   const start = (key: string) => app.inject({ method: 'POST', url: '/v1/claims', headers: bearer(key) });
-  const redeem = (code: string, identity: string, key = consoleKey) =>
-    app.inject({ method: 'POST', url: '/v1/claims/redeem', headers: bearer(key), payload: { code, identity } });
+  const redeem = (code: string, identity: string, key = consoleKey, extra: object = {}) =>
+    app.inject({
+      method: 'POST',
+      url: '/v1/claims/redeem',
+      headers: bearer(key),
+      payload: { code, identity, ...extra },
+    });
   const session = (identity: string, key = consoleKey) =>
     app.inject({ method: 'POST', url: '/v1/owners/session', headers: bearer(key), payload: { identity } });
   const operator = (await auth.issue({ name: 'ops-admin', scopes: ['admin'] })).secret;
@@ -209,6 +214,42 @@ describe('claiming a sandbox', () => {
     for (const identity of ['github:octocat', 'eth:0xABC', 'google:1']) {
       expect((await redeem(code, identity)).statusCode).toBe(400);
     }
+    await app.close();
+  });
+
+  /**
+   * L5 of the soft-open legal review: the acceptance is the evidence the
+   * contract formed, so it is written with the owner key, on the engine's
+   * clock -- and survives erasure, where the renamed key names nobody.
+   */
+  it('records the accepted Terms version on the owner key, and keeps it through erasure', async () => {
+    const { app, auth, sandbox, start, redeem, erase } = await world();
+    const a = await sandbox();
+    const code = (await start(a.apiKey)).json().code;
+    expect((await redeem(code, GH, undefined, { termsVersion: '2026-10-20' })).statusCode).toBe(200);
+    const owner = auth.list().find((k) => k.name === `owner:${GH}`);
+    expect(owner?.termsAccepted).toEqual({ version: '2026-10-20', at: new Date('2026-10-01T00:00:00Z') });
+
+    expect((await erase(GH)).statusCode).toBe(200);
+    const erased = auth.list().find((k) => k.id === owner?.id);
+    expect(erased?.name).toBe('owner:erased');
+    expect(erased?.termsAccepted?.version).toBe('2026-10-20');
+
+    // A self-hosted console has no Terms to send; its owner key records none.
+    const b = await sandbox();
+    expect((await redeem((await start(b.apiKey)).json().code, ETH)).statusCode).toBe(200);
+    expect(auth.list().find((k) => k.name === `owner:${ETH}`)?.termsAccepted).toBeUndefined();
+    await app.close();
+  });
+
+  it('refuses a Terms version that is not an ISO date, and spends no code', async () => {
+    const { app, sandbox, start, redeem } = await world();
+    const sb = await sandbox();
+    const code = (await start(sb.apiKey)).json().code;
+    for (const termsVersion of ['latest', '20-10-2026', 7]) {
+      expect((await redeem(code, GH, undefined, { termsVersion })).statusCode).toBe(400);
+    }
+    expect((await redeem(code, GH, undefined, { termsVersion: '2026-10-20' })).statusCode).toBe(200);
     await app.close();
   });
 

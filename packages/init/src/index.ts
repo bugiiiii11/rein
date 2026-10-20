@@ -24,6 +24,13 @@ import { createGuard, PaymentBlockedError, type Payer } from '@reinconsole/sdk';
  */
 
 export const DEFAULT_ENGINE_URL = 'https://engine.reinconsole.com';
+/**
+ * Printed before a sandbox is created on the HOSTED engine -- the first time
+ * an anonymous sandbox user meets the Terms (soft-open legal review, L4). A
+ * self-hosted engine is not ours, so `--engine` elsewhere prints nothing.
+ */
+export const HOSTED_TERMS_NOTICE =
+  'By using the hosted sandbox you agree to the Terms (https://reinconsole.com/terms); privacy: https://reinconsole.com/privacy';
 export const DEFAULT_VENDOR_URL = 'https://vendor.reinconsole.com';
 export const AGENT_FILE = 'rein-agent.json';
 const NETWORK = 'base-sepolia';
@@ -107,6 +114,7 @@ export async function runInit(options: InitOptions = {}): Promise<InitResult> {
     log(`Using the existing ${AGENT_FILE} (agent ${agent.agentId}). Pass --force for a new sandbox.`);
   } else {
     const wallet = chain.generateWallet();
+    if (engineUrl === DEFAULT_ENGINE_URL) log(HOSTED_TERMS_NOTICE);
     log('Creating a sandbox on ' + engineUrl + ' ...');
     const res = await http(`${engineUrl}/v1/sandbox`, {
       method: 'POST',

@@ -15,6 +15,14 @@ import { EngineRefusal, type OwnerBridge } from './owners';
 
 const MAX_BODY_BYTES = 8_192;
 
+/**
+ * The Terms a claim accepts: the "last updated" date of
+ * apps/landing/terms.html, as an ISO date. The engine records it on the owner
+ * key (L5). Bump it with every change to the Terms -- account.test.ts fails
+ * while the page and this constant disagree.
+ */
+export const TERMS_VERSION = '2026-10-20';
+
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
@@ -153,7 +161,7 @@ export function createAccountHandler(signIn: SignIn | undefined, bridge: OwnerBr
           if (body['adult'] !== true) {
             throw new SignInError(400, 'age_confirmation_required', 'confirm you are at least 18 and accept the Terms to claim');
           }
-          sendJson(res, 200, await bridge.redeem(code, session.sub));
+          sendJson(res, 200, await bridge.redeem(code, session.sub, TERMS_VERSION));
           return;
         }
         sendJson(res, 404, { error: 'not_found', path: pathname });

@@ -7,6 +7,8 @@ import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { ApprovalService, buildServer, PolicyEngine } from '@reinconsole/policy-engine';
 import {
   AGENT_FILE,
+  DEFAULT_ENGINE_URL,
+  HOSTED_TERMS_NOTICE,
   TESTNET_AGENT_FILE,
   ownerFilePath,
   runApprove,
@@ -152,6 +154,22 @@ describe('npx @reinconsole/init', () => {
     await expect(
       runInit({ dir, engineUrl, fetch: refusing, chain: chain(0n), log: quiet }),
     ).rejects.toThrow('(HTTP 503): try again tomorrow');
+  });
+
+  it('shows the Terms notice before a hosted sandbox, and only for the hosted engine', async () => {
+    const refusing: typeof fetch = async () => new Response('{}', { status: 503 });
+    const seen = async (url: string) => {
+      const lines: string[] = [];
+      const dir = mkdtempSync(join(tmpdir(), 'rein-init-'));
+      await runInit({ dir, engineUrl: url, fetch: refusing, chain: chain(0n), log: (l) => lines.push(l) }).catch(
+        () => undefined,
+      );
+      return lines;
+    };
+    const hosted = await seen(DEFAULT_ENGINE_URL);
+    expect(hosted[0]).toBe(HOSTED_TERMS_NOTICE);
+    expect(hosted[1]).toMatch(/^Creating a sandbox/);
+    expect(await seen(engineUrl)).not.toContain(HOSTED_TERMS_NOTICE);
   });
 });
 

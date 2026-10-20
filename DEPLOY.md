@@ -981,6 +981,16 @@ untouched volume. Anything decided on Postgres after the cutover is NOT on the
 volume; a later re-migration refuses a target that no longer continues the
 volume's chain rather than overwrite it.
 
+**Nightly decision export (S110, L9):** `backup.yml` job `backup` exports the read
+key's orgs over HTTP and commits `decisions/decisions-<YYYY-MM-DD>.jsonl.age` to the
+backup repo's `main`, encrypted to the same `REIN_BACKUP_AGE_RECIPIENT`, kept
+indefinitely like the decision log (privacy policy). The plaintext never enters the
+repo; `latest.json` (count, head hash, public key) stays readable. A missing recipient
+FAILS the run. The first run converts the plaintext exports already at the tip. Their
+git HISTORY still holds plaintext until purged like the S109 dump purge: a mirror clone,
+`git filter-repo --path-glob 'decisions/*.jsonl' --invert-paths` (or filter-branch),
+push to the URL. Founder step -- the auto-mode classifier refuses history rewrites.
+
 **Nightly dump (11.4):** `backup.yml` job `postgres-dump`, dormant until the
 repo secret `REIN_BACKUP_DATABASE_URL` exists. It `pg_dump`s schema `rein`,
 restores it into a scratch Postgres 17, verifies the whole chain

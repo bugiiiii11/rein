@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 19 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 20 October 2026.
               </p>
             </div>
           </div>
@@ -92,13 +92,14 @@
         <ul>
           <li>Your agent's <b>wallet address</b>, stored with the agent, so we can send it test USDC and record payments.</li>
           <li>An org, an agent, a starter policy and an API key. We store only a cryptographic digest of each key, never the key itself, plus when it was created, last used and when it expires.</li>
-          <li>Your <b>IP address</b>, used only in memory to limit how many sandboxes one address can create per day. We do not write it to our database.</li>
+          <li>Your <b>IP address</b>, used in memory only: to limit how many sandboxes one address can create per day, to limit how many requests one address can send to the engine, and to check which territory a request comes from (see below). We do not write it to our database.</li>
         </ul>
         <p><b>When you sign in to the console and claim an org:</b></p>
         <ul>
           <li>With GitHub: your numeric <b>GitHub user id</b> and your <b>GitHub username</b>. We request no GitHub permissions beyond your public profile, and we do not keep the GitHub access token.</li>
           <li>With an Ethereum wallet: your <b>wallet address</b> and a signed sign-in message. The signature moves no funds.</li>
-          <li>Claiming binds your org to that identity. We store it as <code class="inline-code">github:&lt;id&gt;</code> or <code class="inline-code">eth:&lt;address&gt;</code> in the name of the org's owner key. Your username is kept only in your session cookie, not in our database.</li>
+          <li>Claiming binds your org to that identity. We store it as <code class="inline-code">github:&lt;id&gt;</code> or <code class="inline-code">eth:&lt;address&gt;</code> in the name of the org's owner key and, each time an owner signs in, in the name of a short-lived console key that we delete a day after it expires. Your username is kept only in your session cookie, not in our database.</li>
+          <li>When you claim, you confirm that you are at least 18 and accept the Terms and this policy. We record that you did, with the time and the version of the Terms, on the org's owner key, as evidence of our agreement.</li>
         </ul>
         <p>
           <b>Sanctions checks.</b> When you claim an org, and again when you move its agent to mainnet, we check your
@@ -135,7 +136,7 @@
         </p>
         <p>
           <b>This website</b> sets no cookies, has no forms and runs no analytics. It reads one public status figure from
-          the console.
+          the console. Our host, Vercel, processes your IP address and browser details to deliver the pages.
         </p>
 
         <h2>Cookies</h2>
@@ -171,22 +172,24 @@
           <li><b>Railway</b>: hosts the engine, console and vendor, and receives their logs. For your org, engine logs record only the ids of an escalation, not its details.</li>
           <li><b>Supabase</b>: hosts the engine's database, in the EU (Central, Frankfurt).</li>
           <li><b>Vercel</b>: hosts this website.</li>
-          <li><b>GitHub</b>: provides GitHub sign-in, and stores our nightly full database backups in a private repository. Backups run on GitHub Actions.</li>
+          <li><b>GitHub</b>: provides GitHub sign-in when you choose it (GitHub handles that under its own privacy statement), and stores, in a private repository, our nightly encrypted database backups and an encrypted nightly export of the decision log of Rein's own orgs. Backups run on GitHub Actions.</li>
           <li><b>Telegram</b>: delivers escalation and alert notifications for Rein's own orgs to the Rein operator. Nothing about your org is sent to Telegram.</li>
-          <li><b>Payment facilitators</b> (x402.org on testnet; PayAI or Coinbase on mainnet): receive the signed payment when an agent pays the reference vendor, in order to settle it.</li>
+          <li><b>Payment facilitators</b> (x402.org): receive the signed payment when an agent pays the reference vendor, which runs only on the Base Sepolia test network, in order to settle it. Payments your agent makes to other sellers are settled by facilitators those sellers choose and do not pass through us.</li>
           <li><b>Blockchain RPC providers</b> (Base and Ethereum): receive wallet addresses when we send test USDC, read the chain, or run a sanctions check.</li>
         </ul>
         <p>
           We will disclose data where the law requires it, for example to a court order or a sanctions authority.
         </p>
         <p>
-          <b>International transfers.</b> We are based in the United Arab Emirates. Our database is hosted in the European
-          Union. Some of our providers process data in the United States or in other countries. Where data about users in
-          the EU, EEA or UK leaves those territories, we rely on the European Commission's Standard Contractual Clauses
-          (and the UK Addendum or International Data Transfer Agreement) in our agreements with those providers, or on the
-          EU-US Data Privacy Framework where the provider is certified under it. Where data leaves the UAE, we rely on the
-          same contractual safeguards as permitted by the UAE Personal Data Protection Law. You can ask us for a summary
-          of the safeguards that apply to a given provider.
+          <b>International transfers.</b> We are based in the United Arab Emirates, and you provide your data to us
+          directly. Our database is hosted in the European Union (Frankfurt). Our hosting providers are US companies and
+          may access or process data in the United States. Where a provider processes personal data on our behalf and
+          data about users in the EU, EEA or UK leaves those territories, we rely on the safeguard that provider offers in
+          its data processing terms: the European Commission's Standard Contractual Clauses with the UK Addendum, or the
+          EU-US Data Privacy Framework where the provider is certified under it. Some recipients are not our providers but
+          independent services: GitHub when you choose to sign in with it, public blockchain networks and the RPC nodes
+          that serve them, and payment facilitators. They receive data under their own terms and privacy policies, and no
+          transfer agreement with us applies. You can ask us which safeguard applies to a given provider.
         </p>
 
         <h2>Public blockchains</h2>
@@ -201,11 +204,14 @@
           <li><b>Spending records, settlements and API key records</b>: kept indefinitely, as part of the same record.</li>
           <li><b>Resolved escalations</b>: pruned after they are no longer needed for enforcement.</li>
           <li><b>Screening records</b>: kept indefinitely, as the evidence that a sanctions check ran and what it found.</li>
-          <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. The records stay in the decision log.</li>
-          <li><b>IP addresses</b>: held in memory only. The location check uses an address only while it answers the request; the sandbox limit keeps it until the limit resets or the service restarts.</li>
+          <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. A month later we delete the org, its agent (including the agent's wallet address), its policy and its keys. Its decisions stay in the decision log.</li>
+          <li><b>IP addresses</b>: our software holds them in memory only. The location check uses an address only while it answers the request; the request and sandbox limits keep it until the limit resets or the service restarts. Our hosting providers (Railway for the engine, console and reference vendor; Vercel for this website) may record IP addresses in their request logs, which they keep for a limited time.</li>
+          <li><b>Console session keys</b>: deleted a day after they expire.</li>
+          <li><b>Records of accepting the Terms</b>: kept with the org's owner key for as long as the org exists. If you ask us to delete your data, the record stays but no longer names you.</li>
           <li><b>Sign-in cookies</b>: 7 days at most.</li>
           <li><b>Application logs</b>: kept by our host for a limited time set by its plan, then deleted.</li>
           <li><b>Backups</b>: we keep encrypted full backups of the database for up to 90 days, after which they are deleted.</li>
+          <li><b>Decision log export</b>: an encrypted nightly copy of the decision log of Rein's own orgs, kept indefinitely like the decision log itself.</li>
         </ul>
         <p>If you ask us to delete your data, see "Your rights" for what we delete and what we must keep.</p>
 
@@ -280,6 +286,8 @@
         <a href="whitepaper">Whitepaper</a>
         <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
         <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
+        <a href="terms">Terms</a>
+        <a href="privacy">Privacy</a>
       </nav>
     </footer>
 

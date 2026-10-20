@@ -99,6 +99,13 @@ export function SignInMenu(props: {
         </p>
       )}
       <p className="signin-note">No password, no custody. The wallet signature moves no funds.</p>
+      {/* The identity is collected HERE, before the claim page's checkbox, so
+          the notice has to be here too (soft-open legal scan E2). */}
+      <p className="signin-note signin-legal">
+        By signing in you agree to the{' '}
+        <a href="https://reinconsole.com/terms" target="_blank" rel="noreferrer">Terms</a> and acknowledge the{' '}
+        <a href="https://reinconsole.com/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>.
+      </p>
       {props.error && <p className="signin-err">{props.error}</p>}
     </div>
   );

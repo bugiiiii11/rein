@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 5 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 20 October 2026.
               </p>
             </div>
           </div>
@@ -67,7 +67,7 @@
           services: the policy engine at <code class="inline-code">engine.reinconsole.com</code>, the console at
           <code class="inline-code">app.reinconsole.com</code>, the sandbox created by
           <code class="inline-code">npx @reinconsole/init</code>, and the reference vendor at
-          <code class="inline-code">vendor.reinconsole.com</code>. By using them you accept these terms and our
+          <code class="inline-code">vendor.reinconsole.com</code>, which runs on the Base Sepolia test network only. By using them you accept these terms and our
           <a class="inline-link" href="privacy">Privacy Policy</a>. You must be at least 18 and able to form a binding
           contract. If you use the services for an organisation, you confirm you may accept these terms on its behalf.
         </p>
@@ -99,7 +99,7 @@
           <li>A sandbox runs on the Base Sepolia test network. Test USDC has no value and cannot be exchanged for anything.</li>
           <li>An unclaimed sandbox's keys stop working after 7 days. Sandboxes have limits on how many can be created and how much they can be used, which we may change.</li>
           <li>You claim an org by signing in with GitHub or an Ethereum wallet. One identity can own one org. Claiming lifts the expiry and the sandbox limits.</li>
-          <li>Only a claimed org can be moved to Base mainnet, where payments use real USDC. We may require checks before enabling mainnet for an org.</li>
+          <li>Only a claimed org can be moved to Base mainnet, where payments use real USDC. When you claim an org and before we enable mainnet for it, we check the wallets registered to it against sanctions lists, and we may refuse. Do not use the keys of a sandbox, or of an org we have not enabled for mainnet, to make payments on Base mainnet, and do not make payments through Rein from a wallet that is not registered to your org.</li>
           <li>You confirm that any wallet you use is yours or that you are authorised to use it.</li>
         </ul>
 
@@ -107,8 +107,9 @@
         <ul>
           <li>Keep your keys safe. <code class="inline-code">rein-agent.json</code> holds your agent's wallet key and API key, and your owner file holds your admin and approver keys. They are the only copies; we cannot recover them, and anyone who has them can act as you.</li>
           <li>Fund your agent's wallet yourself, and only with amounts you are prepared to have spent within your policy.</li>
-          <li>Use the services only lawfully. Do not use them to pay for anything illegal, to evade sanctions, or on behalf of anyone subject to sanctions. We may screen wallet addresses and connection data against sanctions lists and may refuse or suspend service where a match or a restricted territory is detected.</li>
+          <li>Use the services only lawfully. Do not use them to pay for anything illegal, to evade sanctions, or on behalf of anyone subject to sanctions. We may screen wallet addresses and connection data against sanctions lists and may refuse or suspend service where a match or a restricted territory is detected. You confirm that you are not named on a sanctions list, are not owned or controlled by anyone who is, and are not located or ordinarily resident in a territory subject to comprehensive sanctions.</li>
           <li>You are responsible for any taxes arising from your agent's payments.</li>
+          <li>Do not put other people's personal data into the free-text fields the services record, such as a payment's reason or metadata, agent names or policy names. Those fields go into the decision log, which keeps records permanently (section 8).</li>
           <li>Do not get around the quotas, for example by creating sandboxes from many addresses. Do not probe, overload or attack the services, or try to read another org's data. Report security issues as described in <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</li>
           <li>If you use the services for an organisation, and you are not a consumer, you will indemnify us against third-party claims arising from your organisation's breach of these terms.</li>
         </ul>
@@ -145,7 +146,7 @@
           threatens the security or stability of the services, or where we are required to act by law or by sanctions
           rules. For a claimed org, we will give notice before suspending where it is practicable to do so, and in any
           case tell you the reason afterwards unless the law prevents it. You may object by email within 14 days and we
-          will review. Suspension does not stop you from exporting your records or moving to a self-hosted engine.
+          will review. If we suspend a claimed org, we will, on request and unless the law prevents it, send you an export of its records, and you can move to a self-hosted engine.
           Sections 3, 5, 8, 10, 11 and 13 continue after use ends.
         </p>
 
@@ -224,6 +225,8 @@
         <a href="whitepaper">Whitepaper</a>
         <a href="https://www.x402.org" target="_blank" rel="noopener">x402</a>
         <a href="https://eips.ethereum.org/EIPS/eip-8004" target="_blank" rel="noopener">ERC-8004</a>
+        <a href="terms">Terms</a>
+        <a href="privacy">Privacy</a>
       </nav>
     </footer>
 

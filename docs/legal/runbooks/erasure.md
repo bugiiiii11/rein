@@ -11,6 +11,7 @@ Run it only after `data-subject-requests.md` step 2 (identity verified). Log eve
 | `rein.api_keys`, the org's owner key | `name` = `owner:github:<id>` or `owner:eth:<address>`, also on a released org's revoked key | erased by step 2 |
 | `rein.api_keys`, console session keys | `name` = `session:<identity>`, one per sign-in, deleted a day after they expire | erased by step 2 |
 | Console session cookie (`rein_session`) | identity + GitHub username | nothing to do: in the user's browser, expires in 7 days; the engine refuses it once step 2 has run |
+| `rein.api_keys`, the owner key's `termsAccepted` | Terms version + time of acceptance (S110) | nothing to do: stays on the renamed `owner:erased` key, where it names nobody -- the evidence that a contract formed, kept for legal claims |
 | `rein.screenings` | the owner's wallet, if they signed in with Ethereum | **keep** (legal obligation; say so in the reply) |
 | Railway application logs | claim and session lines | nothing to do: expire with the plan's log retention; say so in the reply |
 | Nightly backups (private backup repo) | full copies of the above | not rewritten; see "Backups" |

@@ -60,6 +60,16 @@ export const Identity = z
 export const RedeemInput = z.object({
   code: z.string().min(1).max(200),
   identity: Identity,
+  /**
+   * The Terms version the owner accepted at claim (an ISO date, the Terms'
+   * "last updated"). Recorded on the owner key with the engine's clock.
+   * Optional because only the HOSTED console has Terms to accept; a
+   * self-hosted console sends none and the key records none.
+   */
+  termsVersion: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'termsVersion must be an ISO date')
+    .optional(),
 });
 
 export const SessionInput = z.object({ identity: Identity });
@@ -183,12 +193,12 @@ export class ClaimService {
 
   redeem(body: unknown): Promise<ClaimRedeemed> {
     const input = RedeemInput.parse(body);
-    const run = this.chain.then(() => this.bind(input.code, input.identity));
+    const run = this.chain.then(() => this.bind(input.code, input.identity, input.termsVersion));
     this.chain = run.catch(() => undefined);
     return run;
   }
 
-  private async bind(code: string, identity: string): Promise<ClaimRedeemed> {
+  private async bind(code: string, identity: string, termsVersion?: string): Promise<ClaimRedeemed> {
     this.sweep();
     const entry = this.codes.get(code);
     if (!entry) {
@@ -218,7 +228,14 @@ export class ClaimService {
     // The code is spent before anything is written: a failure below leaves an
     // org half-lifted at worst, never a code that can be replayed.
     this.codes.delete(code);
-    await this.auth.issue({ name: OWNER_KEY_PREFIX + identity, scopes: ['read'], orgId });
+    await this.auth.issue({
+      name: OWNER_KEY_PREFIX + identity,
+      scopes: ['read'],
+      orgId,
+      ...(termsVersion !== undefined
+        ? { termsAccepted: { version: termsVersion, at: new Date(this.now()) } }
+        : {}),
+    });
     let lifted = 0;
     for (const key of this.auth.list()) {
       if (key.orgId !== orgId || key.expiresAt === undefined || key.revokedAt) continue;

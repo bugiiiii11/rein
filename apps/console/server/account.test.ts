@@ -12,7 +12,8 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts';
 import { ApiKeyAuth } from '@reinconsole/core/auth';
 import { buildServer, PolicyEngine } from '@reinconsole/policy-engine';
 import { createApiHandler } from './api';
-import { createAccountHandler } from './account';
+import { readFileSync } from 'node:fs';
+import { createAccountHandler, TERMS_VERSION } from './account';
 import { createOwnerBridge, type OwnerBridge } from './owners';
 import { createSignIn, SESSION_COOKIE, safeReturnTo, type SignIn } from './signin';
 import type { World } from './world';
@@ -183,6 +184,32 @@ describe('claim and the owner dashboard', () => {
 
     signOut();
     expect(await (await call('/api/state')).json()).toEqual({ public: true });
+  });
+
+  it('records the Terms version the claim accepted on the owner key (L5)', async () => {
+    const { call, sandbox, claimCode, signInWithWallet, auth } = await setup();
+    const sb = await sandbox();
+    const { account } = await signInWithWallet();
+    const res = await call('/api/claim', { method: 'POST', body: { code: await claimCode(sb.apiKey), adult: true } });
+    expect(res.status).toBe(200);
+    const owner = auth.list().find((k) => k.name === `owner:eth:${account.address.toLowerCase()}`);
+    expect(owner?.termsAccepted?.version).toBe(TERMS_VERSION);
+    expect(owner?.termsAccepted?.at).toBeInstanceOf(Date);
+  });
+
+  /**
+   * The version recorded must be the Terms the person was shown. The page
+   * carries its date in words; the constant carries it as an ISO date.
+   */
+  it('names the Terms page actually published', () => {
+    const terms = readFileSync(new URL('../../landing/terms.html', import.meta.url), 'utf8');
+    const words = new Date(`${TERMS_VERSION}T00:00:00Z`).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    expect(terms).toContain(`Last updated: ${words}.`);
   });
 
   it('needs a session to claim', async () => {

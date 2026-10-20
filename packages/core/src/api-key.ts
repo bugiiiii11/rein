@@ -71,6 +71,13 @@ export const ApiKey = z.object({
    * a permanent key would not be a 7-day sandbox.
    */
   expiresAt: z.coerce.date().optional(),
+  /**
+   * When the owner accepted the hosted service's Terms, and which version --
+   * the evidence that the contract formed (soft-open legal review, L5). Set
+   * only on an `owner:` key, by the claim, with the engine's clock. Erasure
+   * renames the key and leaves this in place, where it then names nobody.
+   */
+  termsAccepted: z.object({ version: z.string().min(1).max(40), at: z.coerce.date() }).optional(),
 });
 export type ApiKey = z.infer<typeof ApiKey>;
 

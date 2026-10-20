@@ -221,6 +221,8 @@ export class ApiKeyAuth {
     secret?: string;
     /** Stop authenticating at this instant (sandbox keys). Omit for never. */
     expiresAt?: Date;
+    /** The Terms acceptance an owner key records (claims.ts). */
+    termsAccepted?: { version: string; at: Date };
   }): Promise<IssuedApiKey> {
     if (input.scopes.length === 0) throw new TypeError('an API key needs at least one scope');
     if (input.agentIds?.length && input.orgId === undefined) {
@@ -235,6 +237,7 @@ export class ApiKeyAuth {
       ...(input.agentIds?.length ? { agentIds: input.agentIds } : {}),
       createdAt: new Date(this.now()),
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
+      ...(input.termsAccepted !== undefined ? { termsAccepted: input.termsAccepted } : {}),
       secretHash: hashSecret(secret),
     });
     await this.store.put(record);

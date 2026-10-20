@@ -4,6 +4,11 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ## [Unreleased]
 
+### Added
+
+- `@reinconsole/core`: `ApiKey.termsAccepted` (`{ version, at }`), optional. `@reinconsole/policy-engine`: `POST /v1/claims/redeem` takes an optional `termsVersion` (an ISO date) and records it, with the engine's clock, on the owner key. The hosted console sends the version of the Terms its claim checkbox accepts; a self-hosted console sends none and nothing is recorded.
+- `@reinconsole/init`: prints a one-line Terms notice before creating a sandbox on the hosted engine. Nothing changes with `--engine` pointing anywhere else.
+
 ### Changed
 
 - `@reinconsole/policy-engine`: `GET /v1/reconciliation` caps `settlementsSeen` at 1 for a tenant-scoped caller. It still answers "is any settlement reporter connected" (so a tenant's own gaps keep showing), but it no longer exposes how many settlements the whole deployment has seen. Unscoped operator keys keep the real count.

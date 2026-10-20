@@ -36,6 +36,9 @@ jobs:
     env:
       REIN_TELEGRAM_BOT_TOKEN: ${{ secrets.REIN_TELEGRAM_BOT_TOKEN }}
       REIN_TELEGRAM_CHAT_ID: ${{ secrets.REIN_TELEGRAM_CHAT_ID }}
+      # Same public age key as the dumps (L9 of the soft-open legal review:
+      # the export is kept indefinitely, so it is encrypted like the dumps).
+      REIN_BACKUP_AGE_RECIPIENT: ${{ secrets.REIN_BACKUP_AGE_RECIPIENT }}
 
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +47,17 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      # Encrypted or not at all, as for the dumps: a missing recipient FAILS
+      # the run rather than committing a plaintext export.
+      - name: Encryption key present?
+        run: |
+          case "$REIN_BACKUP_AGE_RECIPIENT" in
+            age1*) ;;
+            *) echo 'REIN_BACKUP_AGE_RECIPIENT is missing or not an age public key -- refusing to export in plaintext'; exit 1 ;;
+          esac
+          sudo apt-get install -y -qq age >/dev/null
+          age --version
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -62,14 +76,32 @@ jobs:
           token: ${{ secrets.REIN_BACKUP_TOKEN }}
           path: .backup-repo
 
+      # The plaintext export stays on the runner, outside the backup repo, and
+      # dies with it -- only the encrypted file and the manifest are committed.
       - name: Export and verify
         env:
           REIN_ENGINE_URL: ${{ secrets.REIN_E2E_ENGINE_URL }}
           REIN_KEY_READ: ${{ secrets.REIN_KEY_READ }}
-        run: node scripts/export-decisions.mjs --out .backup-repo/decisions
+        run: node scripts/export-decisions.mjs --out "$RUNNER_TEMP/decisions"
 
-      # Nothing to commit is the NORMAL outcome on a quiet day -- the export is
-      # byte-identical when no decision was made -- so it must not fail the run.
+      # The manifest (count, head hash, public key, time) names nobody and stays
+      # readable, so a failed night can be diagnosed without the private key.
+      # Plaintext exports from before L9 are converted in place on the first
+      # run; their git history needs a separate purge (DEPLOY.md, "Nightly dump").
+      - name: Encrypt
+        run: |
+          set -eu
+          mkdir -p .backup-repo/decisions
+          for f in "$RUNNER_TEMP"/decisions/decisions-*.jsonl .backup-repo/decisions/decisions-*.jsonl; do
+            [ -e "$f" ] || continue
+            age -r "$REIN_BACKUP_AGE_RECIPIENT" -o ".backup-repo/decisions/$(basename "$f").age" "$f"
+          done
+          rm -f .backup-repo/decisions/decisions-*.jsonl
+          cp "$RUNNER_TEMP/decisions/latest.json" .backup-repo/decisions/latest.json
+
+      # Nothing to commit is NOT expected any more: age output differs on every
+      # run, so tonight's file is always new. A quiet day just re-encrypts the
+      # same snapshot under the same name, and that must not fail the run.
       - name: Commit and push
         working-directory: .backup-repo
         run: |

@@ -20,6 +20,10 @@ It:
 
 Running it again reuses `rein-agent.json`. `--force` creates a new sandbox instead.
 
+By using the hosted sandbox you agree to the [Terms](https://reinconsole.com/terms); see the
+[Privacy Policy](https://reinconsole.com/privacy). The packages themselves are MIT licensed, and an
+engine you run yourself is not covered by either.
+
 ## Options
 
 | Option | Default |

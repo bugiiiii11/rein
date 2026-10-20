@@ -46,7 +46,11 @@ export class EngineRefusal extends Error {
 }
 
 export interface OwnerBridge {
-  redeem(code: string, identity: string): Promise<{ orgId: string; alreadyOwned: boolean }>;
+  redeem(
+    code: string,
+    identity: string,
+    termsVersion: string,
+  ): Promise<{ orgId: string; alreadyOwned: boolean }>;
   /** The owner's org and its world, or undefined when this identity owns none. */
   viewFor(identity: string): Promise<OwnerView | undefined>;
   close(): Promise<void>;
@@ -177,8 +181,12 @@ export function createOwnerBridge(options: OwnerBridgeOptions): OwnerBridge {
   sweeper.unref?.();
 
   return {
-    async redeem(code, identity) {
-      const out = await post<{ orgId: string; alreadyOwned: boolean }>('/v1/claims/redeem', { code, identity });
+    async redeem(code, identity, termsVersion) {
+      const out = await post<{ orgId: string; alreadyOwned: boolean }>('/v1/claims/redeem', {
+        code,
+        identity,
+        termsVersion,
+      });
       notOwner.delete(identity);
       return { orgId: out.orgId, alreadyOwned: out.alreadyOwned };
     },
