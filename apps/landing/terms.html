@@ -51,7 +51,7 @@
               <div class="panel-scan" aria-hidden="true"></div>
               <div class="panel-head"><span class="panel-tick"></span><span class="panel-title">Draft</span></div>
               <p class="answer-body">
-            This is a draft pending legal review. It is not yet in effect. Last updated: 20 October 2026.
+            This is a draft pending legal review. It is not yet in effect. Last updated: 21 October 2026.
               </p>
             </div>
           </div>
@@ -108,6 +108,7 @@
           <li>Keep your keys safe. <code class="inline-code">rein-agent.json</code> holds your agent's wallet key and API key, and your owner file holds your admin and approver keys. They are the only copies; we cannot recover them, and anyone who has them can act as you.</li>
           <li>Fund your agent's wallet yourself, and only with amounts you are prepared to have spent within your policy.</li>
           <li>Use the services only lawfully. Do not use them to pay for anything illegal, to evade sanctions, or on behalf of anyone subject to sanctions. We may screen wallet addresses and connection data against sanctions lists and may refuse or suspend service where a match or a restricted territory is detected. You confirm that you are not named on a sanctions list, are not owned or controlled by anyone who is, and are not located or ordinarily resident in a territory subject to comprehensive sanctions.</li>
+          <li>The services are not offered in the United Kingdom. Do not use them from the United Kingdom or if you are ordinarily resident there; we refuse connections from UK addresses.</li>
           <li>You are responsible for any taxes arising from your agent's payments.</li>
           <li>Do not put other people's personal data into the free-text fields the services record, such as a payment's reason or metadata, agent names or policy names. Those fields go into the decision log, which keeps records permanently (section 8).</li>
           <li>Do not get around the quotas, for example by creating sandboxes from many addresses. Do not probe, overload or attack the services, or try to read another org's data. Report security issues as described in <a class="inline-link" href="https://github.com/bugiiiii11/rein/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</li>
@@ -152,27 +153,28 @@
 
         <h2>10. Liability</h2>
         <p>
-          Rein's promise is this: the hosted engine will evaluate your agent's payment requests against the policy you
-          set, and will approve only requests that your policy allows. To the extent the law allows:
+          The hosted engine is designed to evaluate your agent's payment requests against the policy you set and to
+          approve only requests that the policy allows. Rein returns a decision; it never moves funds. You are
+          responsible for your agent and for every payment it signs and sends, and you should not rely on Rein as your
+          only safeguard. To the extent the law allows:
         </p>
         <ul>
           <li>(a) The services are provided "as is", without warranties of any kind, express or implied, including fitness for a particular purpose and uninterrupted or error-free operation.</li>
-          <li>(b) We are not liable for payments your agent makes that your policy allowed, because you set that policy. We are not liable for payments made without going through the Rein guard, for payments made by anyone who obtained your keys, for what a seller provides or fails to provide in return for a payment, or for the acts, failures or fees of facilitators, blockchain networks, RPC providers, GitHub or wallet software.</li>
-          <li>(c) If the hosted engine approves a payment that your policy, correctly applied, should have denied, our liability for the resulting loss is limited to the cap in (e). This is the one promise the service makes, and we stand behind it to that extent.</li>
-          <li>(d) We are not liable for indirect or consequential loss, loss of profit, loss of business or loss of data.</li>
-          <li>(e) Our total liability to you for all claims arising from the services in any 12-month period is limited to the greater of USD 100 and the fees you paid us for the services in the 12 months before the event giving rise to the claim.</li>
-          <li>(f) Nothing in these terms excludes or limits liability for fraud, for gross negligence or wilful misconduct, for death or personal injury caused by negligence, or any liability that cannot be excluded or limited by applicable law. If you are a consumer, nothing in these terms removes rights you have under the mandatory law of your country of residence.</li>
+          <li>(b) We are not liable for payments your agent makes, including a payment that the hosted engine approved in error, a payment your policy allowed (you set that policy), a payment made without going through the Rein guard, a payment sent to a wrong address, or a payment made by anyone who obtained your keys. We are not liable for what a seller provides or fails to provide in return for a payment, or for the acts, failures or fees of facilitators, blockchain networks, RPC providers, GitHub or wallet software.</li>
+          <li>(c) We are not liable for indirect or consequential loss, loss of profit, loss of business or loss of data.</li>
+          <li>(d) Where we are liable despite (a) to (c), our total liability to you for all claims arising from the services in any 12-month period, taken together, is limited to the greater of USD 100 and the fees you paid us for the services in the 12 months before the event giving rise to the claim.</li>
+          <li>(e) Nothing in these terms excludes or limits liability for fraud, for gross negligence or wilful misconduct, for death or personal injury caused by negligence, or any liability that cannot be excluded or limited by applicable law. Where the law does not allow a limitation in this section, it applies to the fullest extent the law permits. If you are a consumer, nothing in these terms removes rights you have under the mandatory law of your country of residence.</li>
         </ul>
 
         <h2>11. Law and disputes</h2>
         <p>
-          These terms are governed by the federal laws of the United Arab Emirates as applied in the Emirate of Umm Al
-          Quwain. If you have a dispute with us, write to us first and we will try to resolve it informally within 30
-          days. If that fails, you and we agree that the Courts of the Dubai International Financial Centre have exclusive
-          jurisdiction to settle any dispute arising out of or in connection with these terms or the services, and we both
-          opt in to their jurisdiction for that purpose. If you are a consumer resident in the EU, EEA or UK, nothing in
-          this section takes away protections you have under the mandatory law of your country of residence, or your
-          right to bring a claim in the courts of that country.
+          These terms are governed by the laws of the Dubai International Financial Centre (DIFC). If you have a dispute
+          with us, write to us first and we will try to resolve it informally within 30 days. If that fails, any dispute
+          arising out of or in connection with these terms or the services is subject to the exclusive jurisdiction of the
+          Courts of the DIFC, including its Small Claims Tribunal where the claim qualifies. You and we expressly agree to
+          that jurisdiction under Article 14(B) of Dubai Law No. 2 of 2025 concerning the DIFC Courts. If you are a
+          consumer resident in the EU or EEA, nothing in this section takes away protections you have under the mandatory
+          law of your country of residence, or your right to bring a claim in the courts of that country.
         </p>
 
         <h2>12. Changes and contact</h2>

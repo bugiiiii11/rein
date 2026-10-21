@@ -21,7 +21,7 @@ const MAX_BODY_BYTES = 8_192;
  * key (L5). Bump it with every change to the Terms -- account.test.ts fails
  * while the page and this constant disagree.
  */
-export const TERMS_VERSION = '2026-10-20';
+export const TERMS_VERSION = '2026-10-21';
 
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

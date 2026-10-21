@@ -6,7 +6,7 @@ DRAFT -- prepared 2026-10-19 (S109) from the code and `apps/landing/privacy.html
 
 - **Controller:** M.D.N Tech FZE, Al Shmookh Business Center, One UAQ, UAQ Free Trade Zone, Umm Al Quwain, U.A.E., licence 7813.
 - **Contact:** reinconsole@proton.me.
-- **EU / UK representative (Art. 27):** not appointed. OPEN (L1): Benji -- Art. 27 applies once EU/UK users are offered the service; appoint before mainnet opens to the public, or the founder records a conscious risk acceptance.
+- **EU representative (Art. 27):** being appointed (S111, 2026-10-21); named in the privacy policy once the written mandate is signed. **UK:** not offered; UK addresses are refused (`REIN_GEOBLOCK` includes GB on the hosted services), so no UK representative.
 - **DPO:** none (L6: no large-scale special-category data; core activity is recording software agents' payment decisions).
 
 ## Scope
@@ -23,7 +23,7 @@ Hosted services only: engine.reinconsole.com, app.reinconsole.com, vendor.reinco
 | 4 | Geo-block and request limits | Refuse requests from comprehensively sanctioned territories; limit requests per address | Every visitor of the engine and console | IP address, looked up in a bundled table in memory; per-IP request counter | Geo-block: as row 3. Rate limit: 6(1)(f) | None (bundled DB-IP data, no lookup service) | Geo-block: not stored. Rate limit: memory only, until the bucket refills or the service restarts |
 | 5 | Payment decisions (the service itself) | Evaluate each payment against the owner's policy; keep a signed, hash-linked record | Owners; approvers; sellers (hostnames may identify a person) | Decisions (outcome, reason, rules, request hash, time, signature); spending records (vendor host, resource, amount, time); escalations and the approver's public key and signed answer; reported settlements (tx hash, chain, amount) | 6(1)(b) contract; 6(1)(f) accurate audit record / PDPL Art. 4 | Railway, Supabase | Indefinitely (removing a row breaks the hash chain). Resolved escalations pruned once no longer needed for enforcement -- OPEN (E24): state the period |
 | 6 | Reference vendor (Base Sepolia only) | Prove what a paying wallet paid for | Wallets paying the vendor (users' agents or third parties) | Paying wallet address, resource, amount, tx hash; in-memory reputation scores of the parties it deals with | 6(1)(f) primary | Railway; x402.org facilitator | Indefinitely, as the vendor's receipt record. OPEN (E23): a fixed period (e.g. 12 months). Reputation: memory only |
-| 7 | Operational logs | Run and debug the service | All users | Request metadata (whether client IPs are included: OPEN, Q2); for tenant orgs only escalation ids, not their details | 6(1)(f) | Railway (engine, console, vendor); Vercel (website) | Hosts' plan retention -- OPEN (Q2): state the days |
+| 7 | Operational logs | Run and debug the service | All users | Request metadata (whether client IPs are included: OPEN, Q2); for tenant orgs only escalation ids, not their details | 6(1)(f) | Railway (engine, console, vendor); Vercel (website) | Railway Hobby: 7 days (railway.com/pricing, checked 2026-10-21). Client IPs in Railway HTTP logs: OPEN (Q2) |
 | 8 | Backups | Recover the service after loss of the database; keep a second copy of the audit trail | All of the above | Full engine database dump; nightly HTTP export of the decision log of Rein's own orgs (decision and agent ids, outcome, reason, policy id, hashes, signatures) | 6(1)(f) | GitHub (private repository, GitHub Actions) | Dumps: encrypted (age), 90-day rolling window on the `postgres-dumps` branch (live 2026-10-19). Decision export: encrypted (age) from S110, kept indefinitely like the decision log (L9); pre-S110 plaintext exports stay in git history until purged. The L7 purge was a force-push: GitHub may keep unreachable commits until its support purges them (OPEN, Q8) |
 | 9 | Operator alerts | Alert the operator to failures and to escalations in Rein's own orgs | Operator | Alert text; no tenant data | 6(1)(f) | Telegram | Telegram's retention |
 | 10 | Data-subject requests and erasure | Answer access and erasure requests | Requesters | Request, identity proof, what was deleted and kept | 6(1)(c) (the duty is in the GDPR itself) | GitHub (the register lives in the Mind Palace vault, a private GitHub repo since 2026-10-15) | Proposed: 3 years after the request is closed (a choice, not a statute) |
@@ -39,9 +39,9 @@ Database: Supabase, EU (Frankfurt). The privacy policy (S110 wording) claims onl
 
 | Provider | Role | Mechanism (as far as known) | Action |
 |---|---|---|---|
-| Supabase | Processor (database) | DPA with SCCs + UK addendum | Sign the DPA in the dashboard and file it (Q3) |
-| Railway | Processor (compute, logs, volumes) | Published DPA with SCCs | Confirm plan, region (Q1), DPF status |
-| Vercel | Processor (website) | DPA with SCCs + UK addendum | Confirm plan (Q4) |
+| Supabase (Supabase Pte. Ltd, Singapore) | Processor (database, AWS eu-central-1) | DPA v1 (2026-08-01), incorporated into the Supabase ToS, no signature: SCCs Module 2 + UK and Swiss addenda, Irish law | Filed (Q3, 2026-10-21). Optional: subscribe to sub-processor notices |
+| Railway (Railway Corporation, US) | Processor (compute, logs, volumes; EU West, Amsterdam; Hobby plan) | DPA binds only once the customer signs its DocuSign form: DPF, else EU SCCs; UK Addendum | Founder to sign as M.D.N Tech FZE (S111) |
+| Vercel (Vercel Inc., US) | Processor (website) | Hobby plan: Vercel's DPA covers Pro/Enterprise only, and Hobby is non-commercial use only | Moving the website to Cloudflare Pages (Cloudflare, Inc.; DPA v6.4, 2026-04-03, incorporated by reference into the Self-Serve Subscription Agreement s.6.1: SCCs, UK IDTA, DPF) (Q4) |
 | GitHub | Processor (backups, Actions); independent controller for OAuth | DPF + SCCs in the GitHub DPA; coverage of a personal account unclear | Check which terms govern the backup repo's account |
 | Telegram | Not a processor of user data (operator alerts only) | None | Keep it out of the transfer claim |
 | RPC nodes, facilitators | Independent recipients | None | Covered by the policy wording |

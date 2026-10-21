@@ -1,0 +1,19 @@
+# Cloudflare Pages headers -- mirrors the "headers" block of vercel.json.
+# Keep the two in step until vercel.json is retired.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+
+/agent-quickstart.md
+  Content-Type: text/plain; charset=utf-8
+
+/beta-tester-guide.md
+  Content-Type: text/plain; charset=utf-8
+
+/skill/SKILL.md
+  Content-Type: text/plain; charset=utf-8
+
+/og
+  X-Robots-Tag: noindex

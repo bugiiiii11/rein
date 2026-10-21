@@ -27,7 +27,7 @@ import { isIP } from 'node:net';
 const OUT = new URL('../services/policy-engine/src/geo-data.ts', import.meta.url);
 
 /** Whole countries, ISO 3166-1. */
-const COUNTRIES = ['CU', 'IR', 'KP', 'SY'];
+const COUNTRIES = ['CU', 'IR', 'KP', 'SY', 'GB'];
 /**
  * Regions, ISO 3166-2, by the `stateprov` names DB-IP gives them. DB-IP files
  * Crimea under RU and under UA, so the country is not part of the match.

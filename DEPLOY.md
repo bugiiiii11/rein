@@ -1074,7 +1074,9 @@ against a local engine and console.
 
 These implement the legal decision of 2026-10-05 (`docs/legal/decisions.md`). Both are ON by
 default wherever strangers are served: the engine turns them on with `REIN_SANDBOX=1`, and the
-console turns its geo-block on with sign-in. No variable is needed to get the hosted posture.
+console turns its geo-block on with sign-in. The hosted service also refuses the UK (S111, `docs/legal/decisions.md`: no UK GDPR
+representative), which is not in the code default, so set on BOTH `rein-engine` and the console:
+`REIN_GEOBLOCK=CU,IR,KP,UA-43,UA-40,UA-14,UA-09,GB`. Self-hosters keep the sanctions-only default.
 
 **Geo-block.** A request from a refused territory gets `451 restricted_territory`. On the
 engine this applies to every route except `/health`, and runs before the rate limiter and auth.
