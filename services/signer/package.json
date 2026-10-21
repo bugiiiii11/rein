@@ -50,7 +50,7 @@
     "@reinconsole/x402-rails": "workspace:^",
     "fastify": "^5.12.1",
     "viem": "^2.57.4",
-    "zod": "^3.24.1"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@reinconsole/policy-engine": "workspace:*",
