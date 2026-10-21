@@ -56,7 +56,7 @@
     "@reinconsole/mock-rails": "workspace:*",
     "@reinconsole/policy-engine": "workspace:*",
     "@reinconsole/x402-rails": "workspace:*",
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.6.5",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "viem": "^2.57.4",
