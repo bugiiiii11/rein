@@ -48,8 +48,8 @@
     "@reinconsole/core": "workspace:^",
     "@reinconsole/sdk": "workspace:^",
     "@reinconsole/x402-rails": "workspace:^",
-    "fastify": "^5.12.1",
-    "viem": "^2.57.4",
+    "fastify": "^5.12.7",
+    "viem": "^2.57.11",
     "zod": "^3.24.1"
   },
   "devDependencies": {
