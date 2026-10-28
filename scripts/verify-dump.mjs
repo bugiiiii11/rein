@@ -39,7 +39,19 @@ try {
   if (keys[0].private_pem !== '') throw new Error('the dump holds a PRIVATE key -- it must never');
   const docs = (await client.query('SELECT doc FROM decisions ORDER BY seq')).rows.map((r) => r.doc);
   const chain = docs.map((doc) => Decision.parse(JSON.parse(doc)));
-  if (!verifyDecisionChain(chain, keys[0].public_pem)) throw new Error('the restored decision chain does NOT verify');
+  // S112 key rotation: retired keys verify only the stretch they signed. A
+  // dump taken before the history table existed has no rotation to honour.
+  const hasHistory = (
+    await client.query(`SELECT to_regclass('${schema}.engine_key_history') IS NOT NULL AS ok`)
+  ).rows[0].ok;
+  const history = hasHistory
+    ? (await client.query('SELECT from_index, until_index, public_pem FROM engine_key_history ORDER BY from_index')).rows
+    : [];
+  const schedule = [
+    ...history.map((r) => ({ publicKeyPem: r.public_pem, from: Number(r.from_index) })),
+    { publicKeyPem: keys[0].public_pem, from: history.length ? Number(history.at(-1).until_index) : 0 },
+  ];
+  if (!verifyDecisionChain(chain, schedule)) throw new Error('the restored decision chain does NOT verify');
 
   const count = async (t) => Number((await client.query(`SELECT COUNT(*) AS n FROM ${t}`)).rows[0].n);
   const h = createHash('sha256');

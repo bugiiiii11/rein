@@ -5,7 +5,7 @@ import { PolicyEngine, verifyDecisionChain } from '@reinconsole/policy-engine';
 import { openDb, openNetworkDb } from './db.js';
 import type { Db } from './pg-db.js';
 import { openReinStore, type ReinStore } from './index.js';
-import { parseSigningKey, type SigningKeyInput } from './keys.js';
+import { parseSigningKey, readKeyHistory, type SigningKeyInput } from './keys.js';
 
 /**
  * PGlite data directory -> network Postgres (Sprint 11.2).
@@ -37,6 +37,7 @@ import { parseSigningKey, type SigningKeyInput } from './keys.js';
 /** Every table in db.ts, parents of nothing: no foreign keys, so any order works. */
 const TABLES = [
   'engine_keys',
+  'engine_key_history',
   'agents',
   'frozen_agents',
   'policies',
@@ -283,7 +284,8 @@ async function verify(
     const chain = dstDocs.map((doc) => Decision.parse(JSON.parse(doc)));
     const publicKeyPem = (await target.query<{ public_pem: string }>('SELECT public_pem FROM engine_keys'))
       .rows[0]!.public_pem;
-    if (!verifyDecisionChain(chain, publicKeyPem)) {
+    const { retiredKeys, keyFrom } = await readKeyHistory(target);
+    if (!verifyDecisionChain(chain, [...retiredKeys, { publicKeyPem, from: keyFrom }])) {
       throw new Error('migrate: the decision chain on the target does not verify');
     }
   } finally {

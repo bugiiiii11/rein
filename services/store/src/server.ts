@@ -39,6 +39,7 @@ import {
   livenessFromEnv,
   LivenessMonitor,
   PolicyEngine,
+  keyIdOf,
   parseTrustProxy,
   rateLimitFromEnv,
   resolveHost,
@@ -267,9 +268,13 @@ if (isMainModule()) {
       process.exit(1);
     }
   }
+  // REIN_ENGINE_KEY_ROTATE_FROM (S112): the id of the key being retired --
+  // the explicit consent a rotation needs (see rotateKey in keys.ts).
+  const rotateKeyFrom = process.env.REIN_ENGINE_KEY_ROTATE_FROM?.trim() || undefined;
   const store = await openReinStore({
     ...(databaseUrl ? { databaseUrl, ...(schema ? { schema } : {}) } : { dir }),
     ...(signingKey ? { signingKey } : {}),
+    ...(rotateKeyFrom ? { rotateKeyFrom } : {}),
   });
   try {
     const auth = await authFromEnv(process.env, store.apiKeys);
@@ -349,7 +354,14 @@ if (isMainModule()) {
     const where = databaseUrl
       ? `database ${redactUrl(databaseUrl)}${schema ? ` schema ${schema}` : ''}`
       : `data dir ${dir}`;
-    console.log(`[rein] ${where} — ${resumed}; signing key ${store.keySource}`);
+    console.log(
+      `[rein] ${where} — ${resumed}; signing key ${store.keySource} ${keyIdOf(store.publicKeyPem).slice(0, 16)}`,
+    );
+    if (rotateKeyFrom && !store.rotatedFrom) {
+      console.warn(
+        '[rein] REIN_ENGINE_KEY_ROTATE_FROM is set but nothing rotated (the key already matches); remove it',
+      );
+    }
     if (sandbox) console.log(`[rein] sandbox on -- ${sandbox.describe}`);
     console.log(
       geoBlock

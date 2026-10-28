@@ -26,6 +26,7 @@ import {
   type Decision,
 } from '@reinconsole/core';
 import { PolicyEngine, IntentInput } from './engine.js';
+import { keyIdOf } from './decision-log.js';
 import type { ReconcileOptions } from './reconciliation.js';
 import { ApiKeyAuth, AuthError, hashSecret, type ApiKeyStorePort } from '@reinconsole/core/auth';
 import {
@@ -583,6 +584,21 @@ export function buildServer(
   app.get('/health', () => ({
     status: 'ok',
     publicKey: engine.publicKeyPem,
+    keyId: keyIdOf(engine.publicKeyPem),
+    // Present only after a rotation: what a verifier needs to check the OLD
+    // stretch of the chain, and exactly where it ends. A signer pins
+    // `publicKey` alone -- a retired key is never good for a new voucher.
+    ...(engine.keySchedule.length > 1
+      ? {
+          retiredKeys: engine.keySchedule.slice(0, -1).map((epoch, i) => ({
+            publicKey: epoch.publicKeyPem,
+            keyId: keyIdOf(epoch.publicKeyPem),
+            from: epoch.from,
+            // Exclusive: the first link the NEXT key signed.
+            until: engine.keySchedule[i + 1]!.from,
+          })),
+        }
+      : {}),
     // Advertised so a client can tell "this engine wants a key" apart from
     // "my key is wrong" without guessing from a 401.
     auth: auth ? 'api-key' : 'none',

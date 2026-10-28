@@ -559,7 +559,36 @@ the public half. On a data directory that already has a plaintext key, supply TH
 stored copy is erased on the first boot -- because a different one is refused: the resumed
 chain was signed by the old key, and it cannot be continued under a new one. From then on the
 variable is required; a boot without it fails rather than starting a second chain. The boot
-log says which posture is live: `signing key stored` or `signing key external`.
+log says which posture is live: `signing key stored` or `signing key external`, followed by the
+first 16 hex characters of the key id.
+
+### Rotating the signing key (S112)
+
+A leaked private key lets anyone forge `allow` decisions that a signer will accept. Rotation
+retires the old key and continues the SAME chain under a new one: the old key keeps the links
+it already signed, the new key signs everything after, and the first new link's `prevHash` is
+the last old one's hash. The boundary is a chain INDEX, never a time -- a forger can write any
+`decidedAt`, but cannot change what the chain already holds at index N.
+
+1. Generate the new key: `openssl genpkey -algorithm ed25519 -out engine-signing-key-<date>.pem`.
+   Back it up outside the tree, like the first one.
+2. Read the CURRENT key id: `curl -s https://engine.reinconsole.com/health | jq -r .keyId`
+   (sha256 hex of the key's SPKI DER).
+3. On the engine service set, in ONE edit: `REIN_ENGINE_SIGNING_KEY` = the new PEM, and
+   `REIN_ENGINE_KEY_ROTATE_FROM` = the id from step 2. Deploy.
+4. The boot log prints `engine signing key ROTATED at chain index N`. `/health` now serves the
+   new `publicKey` + `keyId`, and `retiredKeys: [{ publicKey, keyId, from, until: N }]`.
+   `GET /v1/chain/verify` must still say `intact: true`.
+5. Remove `REIN_ENGINE_KEY_ROTATE_FROM` (harmless if left: the boot warns that nothing rotated).
+6. Update SECURITY.md "The hosted engine's verification key" in the same commit, and tell every
+   signer operator to re-pin to the new key. A signer still pinned to the old key REFUSES every
+   new decision -- it fails closed, never open.
+
+Without `REIN_ENGINE_KEY_ROTATE_FROM`, or with an id that is not the current key's, a different
+key is refused exactly as before: a wrong secret pasted into a dashboard stops the boot instead
+of starting a new epoch. A retired key can never be rotated back in. Retired public keys live in
+`engine_key_history`; `verify-dump.mjs`, `export-decisions.mjs` and the migration check all
+verify against that schedule.
 
 ## Rate limiting, bounded reads and lifecycle (S57)
 

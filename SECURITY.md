@@ -210,8 +210,15 @@ MCowBQYDK2VwAyEAjlmTGpYwcT7XftjkskXT4xFcKQB9HWnXUZAvRwMxLPQ=
 ```
 
 The key does not rotate on deploys (`REIN_ENGINE_SIGNING_KEY` is external, DEPLOY.md). If it ever
-changes, this section changes in the same commit, and the old key stays listed with the date it
-was retired so decisions signed before then still verify.
+changes, this section changes in the same commit, and the old key stays listed with the chain
+index where it was retired, so decisions signed before then still verify.
+
+A rotation retires a key by chain INDEX (DEPLOY.md "Rotating the signing key"): a retired key
+verifies only links `[from, until)`, so a decision a holder of the old private key signs later
+is rejected wherever the chain is verified. `GET /health` serves `retiredKeys` with those
+indexes. A signer verifies a single voucher with no chain around it, so it trusts ONE key: re-pin
+it to the current key after a rotation. A signer still pinned to a retired key refuses every new
+decision, so it fails closed.
 
 ## Security model in one paragraph
 

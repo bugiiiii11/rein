@@ -34,7 +34,7 @@ export { PgGateStore } from './gate-stores.js';
 export { openDb, openNetworkDb } from './db.js';
 export { PgNetworkDb } from './pg-db.js';
 export type { Db, NetworkDbOptions, Queryable } from './pg-db.js';
-export { loadOrCreateKeyPair, parseSigningKey } from './keys.js';
+export { loadOrCreateKeyPair, parseSigningKey, readKeyHistory, type LoadedKeys } from './keys.js';
 export type { KeySource, SigningKeyInput } from './keys.js';
 // A self-hoster composing their own bin needs the same drain the shipped ones
 // install: without it a container redeploy loses the write-behind tail, and
@@ -73,6 +73,12 @@ export interface ReinStoreOptions {
    * two postures meet on one data dir.
    */
   signingKey?: SigningKeyInput;
+  /**
+   * Retire the chain's current key in favour of `signingKey`: the id
+   * (`keyIdOf`, `/health` `keyId`) of the key being retired. Without it a
+   * different `signingKey` is refused, as it always was. See `rotateKey`.
+   */
+  rotateKeyFrom?: string;
 }
 
 /**
@@ -132,6 +138,8 @@ export interface ReinStore {
   publicKeyPem: string;
   /** `'stored'` (plaintext in `engine_keys`) or `'external'` (`signingKey` supplied). */
   keySource: KeySource;
+  /** Set when this open rotated the signing key: the id of the key it retired. */
+  rotatedFrom?: string;
   /** True when this open CREATED the store (nothing resumed) — callers may seed. */
   fresh: boolean;
   /** Number of decisions resumed from disk (0 on first boot). */
@@ -197,7 +205,11 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
         })
       : await openDb(options.dir);
   try {
-    const { keyPair, created, source } = await loadOrCreateKeyPair(db, options.signingKey);
+    const { keyPair, created, source, retiredKeys, keyFrom, rotatedFrom } = await loadOrCreateKeyPair(
+      db,
+      options.signingKey,
+      options.rotateKeyFrom !== undefined ? { rotateFrom: options.rotateKeyFrom } : {},
+    );
     const agents = await PgAgentRegistry.open(db);
     const policies = await PgPolicyStore.open(db);
     const spend = await PgSpendStore.open(db);
@@ -228,6 +240,8 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
 
     const log = new DecisionLog({
       keyPair,
+      retiredKeys,
+      keyFrom,
       resume,
       attribution,
       persist: async (decision, agentId) => {
@@ -277,6 +291,7 @@ export async function openReinStore(options: ReinStoreOptions = {}): Promise<Rei
       gate,
       publicKeyPem: log.publicKeyPem,
       keySource: source,
+      ...(rotatedFrom !== undefined ? { rotatedFrom } : {}),
       fresh: created,
       resumedDecisions: resume.length,
       resumedSubjects: ledger.size,

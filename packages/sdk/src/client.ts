@@ -66,6 +66,15 @@ const Health = z.object({
   /** "api-key" once the engine demands a credential; "none" while it does not. */
   auth: z.string().optional(),
   approvals: z.string().optional(),
+  /** sha256 hex of the current key's SPKI DER -- what a signer re-pins by after a rotation. */
+  keyId: z.string().optional(),
+  /**
+   * Present only after a key rotation: each retired key and the chain indexes
+   * it signed, `[from, until)`. Good for verifying OLD links -- never pin one.
+   */
+  retiredKeys: z
+    .array(z.object({ publicKey: z.string(), keyId: z.string(), from: z.number(), until: z.number() }))
+    .optional(),
 });
 
 /** What `GET /v1/chain/verify` answers — see {@link EngineClient.verifyChain}. */

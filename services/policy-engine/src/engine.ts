@@ -52,7 +52,7 @@ import {
   type TenantScope,
 } from './tenant.js';
 import type { LivenessAlert, LivenessMonitor, LivenessState } from './liveness.js';
-import { DecisionLog } from './decision-log.js';
+import { DecisionLog, type KeyEpoch } from './decision-log.js';
 import { ApprovalService } from './approvals.js';
 
 /** The shape an SDK/client submits. Server-assigned fields are optional. */
@@ -202,6 +202,11 @@ export class PolicyEngine {
 
   get publicKeyPem(): string {
     return this.log.publicKeyPem;
+  }
+
+  /** Every key that signed the chain, oldest first -- see `KeyEpoch`. */
+  get keySchedule(): readonly KeyEpoch[] {
+    return this.log.keySchedule;
   }
 
   onEvent(handler: (event: ReinEvent) => void): void {

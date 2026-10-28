@@ -39,9 +39,35 @@ export interface DecisionLogKeyPair {
   publicKey: KeyObject;
 }
 
+/**
+ * One signing key's stretch of the chain: it signed links `[from, next
+ * epoch's from)`. A chain that never rotated is one epoch from 0.
+ *
+ * The boundary is a chain INDEX, never a time. A decision carries its own
+ * `decidedAt`, and whoever holds a retired private key can write any date
+ * into a decision they forge -- so "key A is good before the rotation" read
+ * by time would accept exactly the forgery the rotation exists to stop. An
+ * index is the one thing a forger cannot choose: link N is whatever the
+ * chain already holds at N.
+ */
+export interface KeyEpoch {
+  publicKeyPem: string;
+  /** Index of the first link this key signed. */
+  from: number;
+}
+
 export interface DecisionLogOptions {
   /** Signing key. Generated per instance when omitted (prod: KMS / @reinconsole/store). */
   keyPair?: DecisionLogKeyPair;
+  /**
+   * Keys that signed earlier stretches of a resumed chain, oldest first (see
+   * {@link KeyEpoch}). The current `keyPair` signs from the end of the last
+   * one -- `from` of the next epoch, or the chain length at rotation. Omit
+   * for a chain only ever signed by `keyPair`.
+   */
+  retiredKeys?: readonly KeyEpoch[];
+  /** Index of the first link `keyPair` signed. Required with `retiredKeys`; 0 otherwise. */
+  keyFrom?: number;
   /**
    * A previously persisted chain to resume, verbatim (entries are already
    * hashed and signed). New appends continue from the last entry's hash, so
@@ -84,8 +110,10 @@ export interface ChainVerification {
 export class DecisionLog {
   private prevHash: string;
   private readonly privateKey: KeyObject;
-  private readonly publicKey: KeyObject;
   readonly publicKeyPem: string;
+  /** Every key that signed this chain, oldest first; the last is `publicKeyPem`. */
+  readonly keySchedule: readonly KeyEpoch[];
+  private readonly verifyKeys: readonly ParsedEpoch[];
   private readonly chain: Decision[];
   /** Links `[0, verifiedCount)` have been proven; `verify` resumes from here. */
   private verifiedCount = 0;
@@ -102,8 +130,13 @@ export class DecisionLog {
   constructor(options: DecisionLogOptions = {}) {
     const kp = options.keyPair ?? generateKeyPairSync('ed25519');
     this.privateKey = kp.privateKey;
-    this.publicKey = kp.publicKey;
     this.publicKeyPem = kp.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const retired = options.retiredKeys ?? [];
+    if (retired.length > 0 && options.keyFrom === undefined) {
+      throw new TypeError('DecisionLog: retiredKeys needs keyFrom, the index where the current key took over');
+    }
+    this.keySchedule = [...retired, { publicKeyPem: this.publicKeyPem, from: options.keyFrom ?? 0 }];
+    this.verifyKeys = parseSchedule(this.keySchedule);
     this.chain = [...(options.resume ?? [])];
     this.prevHash = this.chain.at(-1)?.hash ?? 'genesis';
     this.persist = options.persist;
@@ -189,7 +222,7 @@ export class DecisionLog {
    */
   verify(at: Date = new Date()): ChainVerification {
     if (this.brokenAt === undefined) {
-      const broke = chainBreakAt(this.chain, this.publicKey, this.verifiedCount, this.verifiedPrev);
+      const broke = chainBreakAt(this.chain, this.verifyKeys, this.verifiedCount, this.verifiedPrev);
       if (broke === undefined) {
         this.verifiedCount = this.chain.length;
         this.verifiedPrev = this.chain[this.verifiedCount - 1]?.hash ?? 'genesis';
@@ -213,17 +246,20 @@ export class DecisionLog {
  */
 export function chainBreakAt(
   decisions: readonly Decision[],
-  publicKey: string | KeyObject,
+  keys: ChainKeys,
   from = 0,
   prev = 'genesis',
 ): number | undefined {
-  const key = typeof publicKey === 'string' ? createPublicKey(publicKey) : publicKey;
+  const schedule = parseSchedule(keys);
   for (let i = from; i < decisions.length; i++) {
     const d = decisions[i];
     if (d === undefined || d.prevHash !== prev) return i;
     const hash = createHash('sha256').update(canonicalDecision(d)).digest('hex');
     if (hash !== d.hash) return i;
-    if (!edVerify(null, Buffer.from(d.hash), key, Buffer.from(d.signature, 'base64'))) {
+    // Exactly one key per index: link i verifies under the epoch that covers
+    // it and under no other, so a retired key's signature on a link past its
+    // epoch is a break -- the forgery a rotation exists to stop.
+    if (!edVerify(null, Buffer.from(d.hash), keyAt(schedule, i), Buffer.from(d.signature, 'base64'))) {
       return i;
     }
     prev = d.hash;
@@ -232,9 +268,54 @@ export function chainBreakAt(
 }
 
 /** Recompute the hash chain and verify every signature. */
-export function verifyDecisionChain(
-  decisions: readonly Decision[],
-  publicKeyPem: string,
-): boolean {
-  return chainBreakAt(decisions, publicKeyPem) === undefined;
+export function verifyDecisionChain(decisions: readonly Decision[], keys: ChainKeys): boolean {
+  return chainBreakAt(decisions, keys) === undefined;
+}
+
+/**
+ * A public key's id: sha256 hex of its SPKI DER. Computed from the parsed key,
+ * so line endings or a trailing newline in the PEM never change it -- unlike a
+ * hash of the PEM text, which is what made the S63 fingerprint recipe fragile.
+ */
+export function keyIdOf(publicKeyPem: string): string {
+  return createHash('sha256')
+    .update(createPublicKey(publicKeyPem).export({ type: 'spki', format: 'der' }))
+    .digest('hex');
+}
+
+/** One key for the whole chain, or a rotation schedule (see {@link KeyEpoch}). */
+export type ChainKeys = string | KeyObject | readonly KeyEpoch[] | readonly ParsedEpoch[];
+
+interface ParsedEpoch {
+  key: KeyObject;
+  from: number;
+}
+
+function parseSchedule(keys: ChainKeys): readonly ParsedEpoch[] {
+  if (typeof keys === 'string') return [{ key: createPublicKey(keys), from: 0 }];
+  if (!Array.isArray(keys)) return [{ key: keys as KeyObject, from: 0 }];
+  const epochs = (keys as readonly (KeyEpoch | ParsedEpoch)[]).map((e) =>
+    'key' in e ? e : { key: createPublicKey(e.publicKeyPem), from: e.from },
+  );
+  // A schedule that does not start at 0, or whose epochs do not strictly
+  // advance, leaves some index with no key or two -- refuse it rather than
+  // guess which one a link was meant to verify under.
+  if (epochs.length === 0 || epochs[0]!.from !== 0) {
+    throw new TypeError('key schedule must start at index 0');
+  }
+  for (let i = 1; i < epochs.length; i++) {
+    if (!Number.isInteger(epochs[i]!.from) || epochs[i]!.from <= epochs[i - 1]!.from) {
+      throw new TypeError('key schedule epochs must start at strictly increasing indexes');
+    }
+  }
+  return epochs;
+}
+
+function keyAt(schedule: readonly ParsedEpoch[], index: number): KeyObject {
+  let key = schedule[0]!.key;
+  for (const epoch of schedule) {
+    if (epoch.from > index) break;
+    key = epoch.key;
+  }
+  return key;
 }

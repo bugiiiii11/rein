@@ -132,7 +132,30 @@ if (decisions.length !== chainLength) {
 
 // Dates arrive as ISO strings over the wire; canonicalDecision hashes the
 // canonical form, which expects them parsed.
-const key = createPublicKey(publicKey);
+// After a key rotation (S112) /health also lists the retired keys and the
+// chain indexes each one signed. On a FULL chain (rooted, every link
+// adjacent) the array index IS the chain index, so each row must verify under
+// exactly the key that covers it -- a retired key past its `until` is a
+// forgery. A scoped export cannot know its rows' chain indexes, so there a row
+// may verify under any advertised key, and the manifest counts how many
+// needed a retired one.
+const retired = Array.isArray(health.retiredKeys) ? health.retiredKeys : [];
+const schedule = [
+  ...retired.map((r) => ({ key: createPublicKey(r.publicKey), from: r.from })),
+  { key: createPublicKey(publicKey), from: retired.length ? retired.at(-1).until : 0 },
+];
+const fullChain =
+  decisions.length > 0 &&
+  decisions[0].prevHash === 'genesis' &&
+  decisions.every((d, i) => i === 0 || d.prevHash === decisions[i - 1].hash);
+const keysFor = (i) => {
+  if (!fullChain) return schedule.map((e) => e.key);
+  let key = schedule[0].key;
+  for (const e of schedule) if (e.from <= i) key = e.key;
+  return [key];
+};
+const current = schedule.at(-1).key;
+let retiredKeySigned = 0;
 let contiguousLinks = 0;
 let prev;
 
@@ -141,9 +164,11 @@ decisions.forEach((d, i) => {
     .update(canonicalDecision({ ...d, decidedAt: new Date(d.decidedAt) }))
     .digest('hex');
   if (hash !== d.hash) die(`decision ${i} (${d.id}): hash mismatch -- nothing written`);
-  if (!edVerify(null, Buffer.from(d.hash), key, Buffer.from(d.signature, 'base64'))) {
-    die(`decision ${i} (${d.id}): signature does not verify -- nothing written`);
-  }
+  const signer = keysFor(i).find((k) =>
+    edVerify(null, Buffer.from(d.hash), k, Buffer.from(d.signature, 'base64')),
+  );
+  if (signer === undefined) die(`decision ${i} (${d.id}): signature does not verify -- nothing written`);
+  if (signer !== current) retiredKeySigned += 1;
   if (prev !== undefined && d.prevHash === prev) contiguousLinks += 1;
   prev = d.hash;
 });
@@ -168,6 +193,10 @@ writeFileSync(
       headHash: head?.hash ?? null,
       headDecidedAt: head?.decidedAt ?? null,
       publicKey,
+      /** Keys retired by a rotation, with the chain indexes they signed. */
+      ...(retired.length ? { retiredKeys: retired } : {}),
+      /** Rows verified under a retired key (all of them inside its stretch on a full chain). */
+      retiredKeySigned,
       file: path.basename(jsonl),
       /** Every record's hash and signature checked. Never written when false. */
       verified: true,

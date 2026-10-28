@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateKeyPairSync } from 'node:crypto';
-import { DecisionLog, chainBreakAt, verifyDecisionChain } from './decision-log.js';
+import { DecisionLog, chainBreakAt, keyIdOf, verifyDecisionChain } from './decision-log.js';
 import { newId, type Decision } from '@reinconsole/core';
 
 function input(i: number) {
@@ -124,5 +124,63 @@ describe('DecisionLog', () => {
     // And a chain signed by another key breaks at its first link.
     const foreign = new DecisionLog({ resume: signed.all() });
     expect(foreign.verify(at)).toMatchObject({ intact: false, brokenAt: 0 });
+  });
+});
+
+describe('key rotation (S112)', () => {
+  const pairOf = () => generateKeyPairSync('ed25519');
+  const pem = (kp: ReturnType<typeof pairOf>) =>
+    kp.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+
+  async function rotated() {
+    const a = pairOf();
+    const b = pairOf();
+    const logA = new DecisionLog({ keyPair: a });
+    await appendSome(logA, 3);
+    const logB = new DecisionLog({
+      keyPair: b,
+      resume: logA.all(),
+      retiredKeys: [{ publicKeyPem: pem(a), from: 0 }],
+      keyFrom: 3,
+    });
+    await appendSome(logB, 2);
+    return { a, b, logB };
+  }
+
+  it('verifies each link under the key that covers its index, and no other', async () => {
+    const { a, b, logB } = await rotated();
+    const chain = logB.all();
+    expect(chain[3]!.prevHash).toBe(chain[2]!.hash);
+    expect(logB.verify().intact).toBe(true);
+    expect(verifyDecisionChain(chain, logB.keySchedule)).toBe(true);
+    expect(chainBreakAt(chain, pem(a))).toBe(3);
+    expect(chainBreakAt(chain, pem(b))).toBe(0);
+  });
+
+  it('rejects a link the retired key signed past its stretch -- the forgery a rotation stops', async () => {
+    const { a, logB } = await rotated();
+    // Whoever holds the leaked key A forks the chain at the rotation point and
+    // appends under A: a well-formed link, correctly hashed and linked.
+    const forger = new DecisionLog({ keyPair: a, resume: logB.all().slice(0, 3) });
+    await forger.append(input(9));
+    expect(chainBreakAt(forger.all(), logB.keySchedule)).toBe(3);
+  });
+
+  it('refuses a schedule that leaves an index with no key or two', () => {
+    const k = pem(pairOf());
+    expect(() => chainBreakAt([], [{ publicKeyPem: k, from: 1 }])).toThrow(/start at index 0/);
+    expect(() =>
+      chainBreakAt([], [
+        { publicKeyPem: k, from: 0 },
+        { publicKeyPem: k, from: 0 },
+      ]),
+    ).toThrow(/strictly increasing/);
+    expect(() => new DecisionLog({ retiredKeys: [{ publicKeyPem: k, from: 0 }] })).toThrow(/keyFrom/);
+  });
+
+  it('ids a key by its DER, whatever the PEM text looks like', () => {
+    const k = pem(pairOf());
+    expect(keyIdOf(k)).toMatch(/^[0-9a-f]{64}$/);
+    expect(keyIdOf(k.replace(/\n/g, '\r\n'))).toBe(keyIdOf(k));
   });
 });

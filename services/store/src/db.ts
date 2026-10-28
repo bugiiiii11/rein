@@ -4,6 +4,11 @@ import { PgNetworkDb, type Db, type NetworkDbOptions } from './pg-db.js';
 
 /**
  * Schema notes:
+ * - `engine_key_history` (S112) holds the PUBLIC half of every retired signing
+ *   key and the chain indexes it signed, `[from_index, until_index)`. The
+ *   current key in `engine_keys` signs from the highest `until_index` (0 when
+ *   the table is empty). Append-only: a retired key's stretch is a fact about
+ *   links already written, and nothing rewrites those.
  * - `decisions.doc` is TEXT, not JSONB: the row is the exact bytes of
  *   JSON.stringify(decision), so the hash-chain content can never be disturbed
  *   by jsonb normalization (key order, numeric formatting).
@@ -74,6 +79,13 @@ CREATE TABLE IF NOT EXISTS engine_keys (
   id          TEXT PRIMARY KEY,
   private_pem TEXT NOT NULL,
   public_pem  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS engine_key_history (
+  from_index  BIGINT PRIMARY KEY,
+  until_index BIGINT NOT NULL,
+  public_pem  TEXT NOT NULL,
+  retired_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS agents (

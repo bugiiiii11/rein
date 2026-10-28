@@ -10,6 +10,8 @@ import {
   LivenessMonitor,
   PolicyEngine,
   ScreeningService,
+  chainBreakAt,
+  keyIdOf,
   signApproval,
   verifyDecisionChain,
 } from '@reinconsole/policy-engine';
@@ -486,6 +488,84 @@ describe('openReinStore', () => {
     // the persisted key: restart left no seam.
     expect(verifyDecisionChain(all, b.publicKeyPem)).toBe(true);
     expect(all.map((d) => d.outcome)).toEqual(['allow', 'deny', 'allow']);
+  });
+
+  // S112: the Railway breach put the hosted engine's key in a stranger's hands.
+  // External keys only, so this runs on PGlite and on a network database alike.
+  describe('rotating the signing key (S112)', () => {
+    const pkcs8 = () =>
+      generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    const openWith = async (dir: string, signingKey: string, rotateKeyFrom?: string) => {
+      const store = await openReinStore({
+        ...(PG_URL ? { databaseUrl: PG_URL, schema: dir } : { dir }),
+        signingKey,
+        ...(rotateKeyFrom !== undefined ? { rotateKeyFrom } : {}),
+      });
+      opened.push(store);
+      return store;
+    };
+    const decide = async (store: ReinStore, n: number) => {
+      const engine = new PolicyEngine(store);
+      if (store.fresh) await engine.addPolicy({ policyId: 'pol_open', rules: [], default: 'allow' });
+      for (let i = 0; i < n; i++) await engine.evaluateIntent(intent(newId('agt'), '1.00'));
+      return engine;
+    };
+
+    it('continues ONE chain under the new key, and only when the old key is named', async () => {
+      const dir = tempDir();
+      const keyA = pkcs8();
+      const keyB = pkcs8();
+      const a = await openWith(dir, keyA);
+      await decide(a, 2);
+      const idA = keyIdOf(a.publicKeyPem);
+      await a.close();
+
+      // A different key alone is still refused, and so is naming the wrong key.
+      await expect(openWith(dir, keyB)).rejects.toThrow(/REIN_ENGINE_KEY_ROTATE_FROM/);
+      await expect(openWith(dir, keyB, 'f'.repeat(64))).rejects.toThrow(/refusing to rotate/);
+
+      const b = await openWith(dir, keyB, idA.toUpperCase());
+      expect(b.rotatedFrom).toBe(idA);
+      const engineB = await decide(b, 2);
+      const chain = engineB.decisions();
+      expect(chain).toHaveLength(4);
+      expect(chain[2]!.prevHash).toBe(chain[1]!.hash);
+      expect(engineB.keySchedule.map((e) => e.from)).toEqual([0, 2]);
+      expect(engineB.verifyChain().intact).toBe(true);
+      // Neither key alone verifies the rotated chain: A breaks where B took over.
+      expect(verifyDecisionChain(chain, engineB.keySchedule)).toBe(true);
+      expect(verifyDecisionChain(chain, b.publicKeyPem)).toBe(false);
+      expect(chainBreakAt(chain, engineB.keySchedule[0]!.publicKeyPem)).toBe(2);
+      await b.close();
+
+      // The rotation is durable: B resumes without the variable, A is refused,
+      // and a retired key can never be rotated back in.
+      const again = await openWith(dir, keyB);
+      expect(again.rotatedFrom).toBeUndefined();
+      expect(new PolicyEngine(again).verifyChain().intact).toBe(true);
+      await again.close();
+      await expect(openWith(dir, keyA)).rejects.toThrow(/does not match/);
+      await expect(openWith(dir, keyA, keyIdOf(b.publicKeyPem))).rejects.toThrow(/already retired/);
+    });
+
+    it('drops a key that signed nothing instead of recording an empty stretch', async () => {
+      const dir = tempDir();
+      const keyA = pkcs8();
+      const keyB = pkcs8();
+      const keyC = pkcs8();
+      const a = await openWith(dir, keyA);
+      await decide(a, 1);
+      const idA = keyIdOf(a.publicKeyPem);
+      await a.close();
+      const b = await openWith(dir, keyB, idA);
+      const idB = keyIdOf(b.publicKeyPem);
+      await b.close();
+      const c = await openWith(dir, keyC, idB);
+      const engine = await decide(c, 1);
+      expect(engine.keySchedule.map((e) => keyIdOf(e.publicKeyPem))).toEqual([idA, keyIdOf(c.publicKeyPem)]);
+      expect(engine.keySchedule.map((e) => e.from)).toEqual([0, 1]);
+      expect(engine.verifyChain().intact).toBe(true);
+    });
   });
 
   // Directory-only: every case but one either needs a key STORED in the data
