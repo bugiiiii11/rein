@@ -101,7 +101,11 @@ accepted and the reason. CI runs `pnpm audit --prod --audit-level=high` on every
 entry in that list is the ONLY way a high-severity production advisory can be in the tree --
 which is why an ignore with no expiry and no stated reason is itself a defect.
 
-_None accepted as of 2026-09-16._
+| GHSA | Accepted | Expires | Reason |
+|---|---|---|---|
+| `GHSA-mrhx-c7xc-m3w5` (zod, high) | 2026-10-29 | the zod 4 migration, or 2026-12-31, whichever is first | The only patched version is zod >= 4.6.6; the whole 3.x line we ship is in range and gets no fix. The attack is a large array against an unbounded `z.array()`, which accumulates one issue per failing element. Every deployed parser is behind a body cap that bounds it: engine `bodyLimit` 64 KB (~32k elements, a few MB of issues, not an OOM), console API 16 KB, console sign-in 8 KB, and the per-IP rate limit before auth. The graph server (fastify default 1 MB) is not deployed. Moving `@reinconsole/core`'s public schemas to zod 4 is a breaking change for consumers and belongs in a release of its own |
+
+_body-parser `GHSA-27r3-jxmh-p828` (high, via `@modelcontextprotocol/sdk` > express) was fixed the same day by a `>=2.4.0` override, not accepted._
 
 ## Review history
 
