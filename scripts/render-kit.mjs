@@ -107,15 +107,18 @@ if (kitKind !== 'mainnet') {
     }
     // The operator's own copy of the signing key, when present (gitignored, repo
     // root), is the real anchor: the live engine must present ITS public half.
-    const keyFile = join(root, 'engine-signing-key.pem');
+    // engine-signing-key.pem was RETIRED at chain index 312 (2026-10-29); the
+    // current key is the next file. Point REIN_ENGINE_KEY_FILE at a later one.
+    const keyName = env.REIN_ENGINE_KEY_FILE || 'engine-signing-key-2026-10.pem';
+    const keyFile = join(root, keyName);
     if (existsSync(keyFile)) {
       const own = createPublicKey(readFileSync(keyFile)).export({ type: 'spki', format: 'pem' }).toString().trim();
       if (own !== health.publicKey.trim()) {
-        console.error(`${engineUrl}/health presents a key that is NOT engine-signing-key.pem's -- not rendering`);
+        console.error(`${engineUrl}/health presents a key that is NOT ${keyName}'s -- not rendering`);
         process.exit(1);
       }
     } else {
-      console.warn(`no engine-signing-key.pem here: pinning the key ${engineUrl}/health presents now, unchecked`);
+      console.warn(`no ${keyName} here: pinning the key ${engineUrl}/health presents now, unchecked`);
     }
     values.ENGINE_PUBLIC_KEY = health.publicKey.trim();
   }

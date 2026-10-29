@@ -209,9 +209,24 @@ key you are about to trust from the server you are verifying is trust on first u
 
 ```
 -----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEApAT4nuJ9vmeerDII8UoG/izc0CC2Bm7+ol1xZvx7Kcg=
+-----END PUBLIC KEY-----
+```
+
+keyId `1b7c9adbdee72106bfe5d48e157b81296e45bd0e6f559d9fcbd5f6f2987fb03e` (sha256 of the SPKI
+DER), signing from chain index 312.
+
+Retired 2026-10-29, after Railway's October 2026 security incident exposed service environment
+variables. It verifies chain links `[0, 312)` only:
+
+```
+-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAjlmTGpYwcT7XftjkskXT4xFcKQB9HWnXUZAvRwMxLPQ=
 -----END PUBLIC KEY-----
 ```
+
+keyId `21eba563e5945efaf379fa846bf9f458a5a41c433652463fc282c2afdbb666c5`. A signer still pinned
+to it refuses every decision made after the rotation; re-pin to the key above.
 
 The key does not rotate on deploys (`REIN_ENGINE_SIGNING_KEY` is external, DEPLOY.md). If it ever
 changes, this section changes in the same commit, and the old key stays listed with the chain
