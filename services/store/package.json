@@ -58,7 +58,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite": "^0.5.11",
     "@reinconsole/core": "workspace:^",
     "@reinconsole/gate": "workspace:^",
     "@reinconsole/graph": "workspace:^",
