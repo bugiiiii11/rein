@@ -109,7 +109,7 @@ if (kitKind !== 'mainnet') {
     // root), is the real anchor: the live engine must present ITS public half.
     // engine-signing-key.pem was RETIRED at chain index 312 (2026-10-29); the
     // current key is the next file. Point REIN_ENGINE_KEY_FILE at a later one.
-    const keyName = env.REIN_ENGINE_KEY_FILE || 'engine-signing-key-2026-10.pem';
+    const keyName = process.env.REIN_ENGINE_KEY_FILE || 'engine-signing-key-2026-10.pem';
     const keyFile = join(root, keyName);
     if (existsSync(keyFile)) {
       const own = createPublicKey(readFileSync(keyFile)).export({ type: 'spki', format: 'pem' }).toString().trim();
