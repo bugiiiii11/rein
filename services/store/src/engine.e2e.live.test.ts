@@ -27,9 +27,10 @@ describe.skipIf(!live)('live: the deployable engine governs a real Base Sepolia 
     { timeout: 180_000 },
     async () => {
       const engine = await engineUnderTest();
+      const admin = new EngineClient({ baseUrl: engine.url, apiKey: engine.adminSecret });
+      let agentKeyId: string | undefined;
       try {
         const wallet = privateKeyToAccount(KEY!).address;
-        const admin = new EngineClient({ baseUrl: engine.url, apiKey: engine.adminSecret });
         // The org is stamped on the policy too: an unscoped key writing a
         // policy without one makes it GLOBAL, and the hosted engine collected
         // one such row per nightly run (S95).
@@ -46,9 +47,17 @@ describe.skipIf(!live)('live: the deployable engine governs a real Base Sepolia 
           rules: [{ id: 'tx-cap', deny: { amountGt: '0.05' } }],
           default: 'allow',
         });
-        const agentSecret = (
-          await admin.issueApiKey({ name: 'e2e-live-agent', scopes: ['read', 'evaluate'] })
-        ).secret;
+        // Scoped to this run's org and agent, and revoked in `finally`: an
+        // unscoped key minted per nightly run reached every tenant and was never
+        // revoked -- the hosted engine held 45 of them by S112.
+        const issued = await admin.issueApiKey({
+          name: 'e2e-live-agent',
+          scopes: ['read', 'evaluate'],
+          orgId,
+          agentIds: [agent.id],
+        });
+        agentKeyId = issued.key.id;
+        const agentSecret = issued.secret;
 
         // The vendor is Rein's own gate on the real facilitator, advertising
         // v2 -- the same composition `packages/gate/src/live.test.ts` proved.
@@ -85,6 +94,7 @@ describe.skipIf(!live)('live: the deployable engine governs a real Base Sepolia 
         );
         expect(report).toMatchObject({ allowed: 1, settled: 1, unsettled: 0 });
       } finally {
+        if (agentKeyId !== undefined) await admin.revokeApiKey(agentKeyId).catch(() => undefined);
         await engine.dispose();
       }
     },
