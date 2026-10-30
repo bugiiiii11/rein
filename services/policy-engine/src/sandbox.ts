@@ -13,9 +13,15 @@ import { TokenBucketLimiter } from './rate-limit.js';
  * Three limits bound what an unauthenticated caller can make this do, and they
  * are layered on purpose:
  * - **per IP** (in memory): a handful per day, so one laptop cannot farm orgs;
+ * - **per minute, globally** (in memory): a burst ceiling. Bots arrived in
+ *   bursts of ~36 orgs in ~25 s from at least 8 addresses (S112), which the
+ *   per-IP limit alone cannot see;
  * - **per day, globally** (durable -- counted from the keys the sandbox has
  *   issued, which survive a restart): the ceiling on total cost, including the
  *   test USDC the drip hands out;
+ * - **drips per day, globally** (durable -- counted from the
+ *   {@link SANDBOX_DRIP_LABEL} on the agents that were given one): the faucet's
+ *   daily spend. Over it the org is still minted, without test USDC;
  * - **per key**: every sandbox key EXPIRES, and a key it mints inherits the
  *   deadline (see `POST /v1/keys`), so nothing minted here outlives the week.
  *
@@ -28,6 +34,12 @@ export const SANDBOX_KEY_NAME = 'sandbox';
 export const DEFAULT_SANDBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_SANDBOX_DAILY_CAP = 200;
 export const DEFAULT_SANDBOX_PER_IP_PER_DAY = 5;
+/** Orgs the sandbox mints per minute across ALL callers. */
+export const DEFAULT_SANDBOX_BURST_PER_MIN = 10;
+/** Test-USDC drips per rolling 24h -- at 0.05 each, a dollar a day. */
+export const DEFAULT_SANDBOX_DRIPS_PER_DAY = 20;
+/** Marks an agent whose create took a drip slot; the durable drip count. */
+export const SANDBOX_DRIP_LABEL = 'sandbox-drip';
 /** Agents one sandbox org may register -- the starter one plus a couple. */
 export const DEFAULT_SANDBOX_MAX_AGENTS = 3;
 /** Decisions per sandbox org per rolling 24h -- the chain is append-only, so rows need a cap too. */
@@ -59,6 +71,8 @@ export interface SandboxOptions {
   ttlMs?: number;
   dailyCap?: number;
   perIpPerDay?: number;
+  burstPerMin?: number;
+  dripsPerDay?: number;
   maxAgents?: number;
   maxDecisionsPerDay?: number;
   drip?: SandboxDrip;
@@ -101,6 +115,8 @@ export class SandboxService {
   private readonly maxAgents: number;
   private readonly maxDecisions: number;
   private readonly perIp: TokenBucketLimiter;
+  private readonly burst: TokenBucketLimiter;
+  private readonly dripsPerDay: number;
   private readonly now: () => number;
   /** Mints one at a time, so the global count cannot be raced past its cap. */
   private chain: Promise<unknown> = Promise.resolve();
@@ -117,6 +133,9 @@ export class SandboxService {
     this.now = options.now ?? Date.now;
     const perDay = options.perIpPerDay ?? DEFAULT_SANDBOX_PER_IP_PER_DAY;
     this.perIp = new TokenBucketLimiter({ capacity: perDay, refillPerSec: perDay / 86_400 });
+    const perMin = options.burstPerMin ?? DEFAULT_SANDBOX_BURST_PER_MIN;
+    this.burst = new TokenBucketLimiter({ capacity: perMin, refillPerSec: perMin / 60 });
+    this.dripsPerDay = options.dripsPerDay ?? DEFAULT_SANDBOX_DRIPS_PER_DAY;
   }
 
   /** True for a key the sandbox issued, or one minted from it. */
@@ -163,13 +182,28 @@ export class SandboxService {
         ipVerdict.retryAfterSec,
       );
     }
+    // After the per-IP check, so one address's refused retries cannot spend
+    // the bucket every other caller shares.
+    const burstVerdict = this.burst.take('global', now);
+    if (!burstVerdict.allowed) {
+      throw new SandboxError(
+        429,
+        'sandbox_busy',
+        'the sandbox is minting too many orgs right now; try again in a minute',
+        burstVerdict.retryAfterSec,
+      );
+    }
+    // The slot is taken before the drip is tried: a failed drip still counts,
+    // or a broken faucet would be retried by every create until it pays.
+    const drip =
+      this.options.drip !== undefined && input.wallet !== undefined && this.dripsToday(since) < this.dripsPerDay;
 
     const orgId = newId('org');
     const agent = await this.engine.registerAgent({
       id: newId('agt'),
       orgId,
       name: input.name ?? 'sandbox-agent',
-      labels: ['sandbox'],
+      labels: drip ? ['sandbox', SANDBOX_DRIP_LABEL] : ['sandbox'],
       wallets: input.wallet ? [{ chain: 'base', address: input.wallet, mode: 'sdk' }] : [],
       status: 'active',
       createdAt: new Date(now),
@@ -193,16 +227,24 @@ export class SandboxService {
       apiKey: issued.secret,
       expiresAt: expiresAt.toISOString(),
     };
-    if (this.options.drip && input.wallet) {
+    if (drip) {
       // A failed drip does not fail the sandbox: the org is real and the
       // advisory path works without money. The caller is told why.
       try {
-        created.drip = await this.options.drip(input.wallet as `0x${string}`);
+        created.drip = await this.options.drip!(input.wallet as `0x${string}`);
       } catch (err) {
         created.drip = { error: err instanceof Error ? err.message : String(err) };
       }
+    } else if (this.options.drip && input.wallet) {
+      created.drip = { error: "the sandbox has handed out all of today's test USDC; try again tomorrow" };
     }
     return created;
+  }
+
+  private dripsToday(since: number): number {
+    return this.engine
+      .visibleAgents()
+      .filter((a) => a.labels.includes(SANDBOX_DRIP_LABEL) && a.createdAt.getTime() >= since).length;
   }
 }
 
@@ -218,10 +260,14 @@ export function sandboxOptionsFromEnv(env: NodeJS.ProcessEnv): SandboxOptions | 
   };
   const dailyCap = num('REIN_SANDBOX_DAILY_CAP');
   const perIpPerDay = num('REIN_SANDBOX_PER_IP_PER_DAY');
+  const burstPerMin = num('REIN_SANDBOX_BURST_PER_MIN');
+  const dripsPerDay = num('REIN_SANDBOX_DRIPS_PER_DAY');
   const ttlDays = num('REIN_SANDBOX_TTL_DAYS');
   return {
     ...(dailyCap !== undefined ? { dailyCap } : {}),
     ...(perIpPerDay !== undefined ? { perIpPerDay } : {}),
+    ...(burstPerMin !== undefined ? { burstPerMin } : {}),
+    ...(dripsPerDay !== undefined ? { dripsPerDay } : {}),
     ...(ttlDays !== undefined ? { ttlMs: ttlDays * 86_400_000 } : {}),
   };
 }

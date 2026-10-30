@@ -191,6 +191,50 @@ describe('POST /v1/sandbox', () => {
     await broken.app.close();
   });
 
+  it('caps bursts across all callers -- many addresses cannot add up past it -- and refills', async () => {
+    const { app, create, advance } = world({ burstPerMin: 3 });
+    for (let i = 1; i <= 3; i += 1) expect((await create({}, `10.0.1.${i}`)).statusCode).toBe(201);
+    const busy = await create({}, '10.0.1.4');
+    expect(busy.statusCode).toBe(429);
+    expect(busy.json().error).toBe('sandbox_busy');
+    expect(busy.headers['retry-after']).toBeDefined();
+    advance(60_000);
+    expect((await create({}, '10.0.1.5')).statusCode).toBe(201);
+    await app.close();
+  });
+
+  it("an address over its own limit does not spend the burst everyone shares", async () => {
+    const { app, create } = world({ perIpPerDay: 1, burstPerMin: 2 });
+    expect((await create({}, '10.0.2.1')).statusCode).toBe(201);
+    for (let i = 0; i < 5; i += 1) expect((await create({}, '10.0.2.1')).json().error).toBe('sandbox_rate_limited');
+    expect((await create({}, '10.0.2.2')).statusCode).toBe(201);
+    await app.close();
+  });
+
+  it('caps drips per day, durably in the agents: over it the org is minted without test USDC', async () => {
+    const drips: string[] = [];
+    const { app, engine, create, advance } = world({
+      dripsPerDay: 2,
+      drip: async (address) => {
+        drips.push(address);
+        if (drips.length === 1) throw new Error('faucet is empty');
+        return { txHash: '0xfeed', amount: '0.05' };
+      },
+    });
+    // A failed drip takes its slot too: a broken faucet must not be retried by every create.
+    expect((await create({ wallet: WALLET }, '10.0.3.1')).json().drip).toEqual({ error: 'faucet is empty' });
+    expect((await create({ wallet: WALLET }, '10.0.3.2')).json().drip.txHash).toBe('0xfeed');
+    const dry = await create({ wallet: WALLET }, '10.0.3.3');
+    expect(dry.statusCode).toBe(201);
+    expect(dry.json().drip.error).toMatch(/all of today's test USDC/);
+    expect(drips).toHaveLength(2);
+    expect(engine.visibleAgents().filter((a) => a.labels.includes('sandbox-drip'))).toHaveLength(2);
+
+    advance(86_400_001);
+    expect((await create({ wallet: WALLET }, '10.0.3.4')).json().drip.txHash).toBe('0xfeed');
+    await app.close();
+  });
+
   it('refuses a malformed wallet', async () => {
     const { app, create } = world();
     expect((await create({ wallet: '0x123' })).statusCode).toBe(400);

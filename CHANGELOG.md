@@ -12,6 +12,7 @@ Notable changes to the published `@reinconsole/*` packages: `core`, `sdk`, `gate
 
 ### Changed
 
+- `@reinconsole/policy-engine`: `POST /v1/sandbox` has two more limits. A global burst ceiling (`REIN_SANDBOX_BURST_PER_MIN` / `burstPerMin`, default 10 orgs a minute across all callers) answers `429 sandbox_busy` with `Retry-After`; it is checked after the per-IP limit, so one address's refused retries do not spend it. A daily drip cap (`REIN_SANDBOX_DRIPS_PER_DAY` / `dripsPerDay`, default 20) is counted durably from a `sandbox-drip` label on each agent that took a drip slot, failed drips included; over it the org is still minted and `drip` is `{ error }`, which every released `init` already prints. No IP or User-Agent is stored.
 - `@reinconsole/policy-engine`: `GET /v1/reconciliation` caps `settlementsSeen` at 1 for a tenant-scoped caller. It still answers "is any settlement reporter connected" (so a tenant's own gaps keep showing), but it no longer exposes how many settlements the whole deployment has seen. Unscoped operator keys keep the real count.
 
 ## [0.8.0] - 2026-10-18
