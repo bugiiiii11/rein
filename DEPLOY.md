@@ -6,7 +6,8 @@ stream from one Node process (`apps/console/server/standalone.ts`, entered throu
 `boot.ts`, which drops root first -- see "The fix that ships (S61)" below).
 
 Live at **app.reinconsole.com**. The landing page (`apps/landing`) deploys separately
-to Vercel at **reinconsole.com**.
+to Vercel at **reinconsole.com**, moving to Cloudflare Pages (S114, see "The landing on
+Cloudflare Pages" below).
 
 ## Build shape
 
@@ -1086,7 +1087,7 @@ the numeric GitHub user id.
 | `REIN_CONSOLE_SESSION_SECRET` | 32 or more random characters (it HMACs the session cookie) |
 | `REIN_CONSOLE_PUBLIC_URL` | `https://app.reinconsole.com` (an origin with no path; also the SIWE domain) |
 | `REIN_CONSOLE_IDENTITY_KEY` | the key minted above |
-| `REIN_GITHUB_CLIENT_ID` / `REIN_GITHUB_CLIENT_SECRET` | both or neither |
+| `REIN_GITHUB_CLIENT_ID` / `REIN_GITHUB_CLIENT_SECRET` | both or neither. The ID is the short `Ov23li...`/`Iv1.` value at the top of the app page, NEVER the 40-hex secret: S112 pasted the secret into the ID, and GitHub answered every sign-in with a 404 (leaking the secret into the URL) until S114 |
 
 Sign-in is off unless the session secret and the public URL are both set. If either one is set
 without a valid value for the other, or without `REIN_CONSOLE_ENGINE_URL` and the identity key,
@@ -1253,6 +1254,26 @@ the mainnet contract rejects at settlement: a failure that appears only with
 real money on the line. `profiles.live.test.ts` reads the name, version and
 decimals off the real contract (`RUN_LIVE_MAINNET=1`, read-only, no key) rather
 than letting a unit test agree with itself.
+
+## The landing on Cloudflare Pages (S114)
+
+Project `rein` (`rein-7u7.pages.dev`), Git-connected to `bugiiiii11/rein`, branch `main`.
+Framework preset None, build command EMPTY, root directory `apps/landing`, output `.`, env
+`SKIP_DEPENDENCY_INSTALL=1` (the folder has a `package.json`; nothing to install). `_headers`
+mirrors the `headers` block of `vercel.json`; Pages does clean URLs by itself. `404.html` must
+exist: without it Pages answers any unknown path with `index.html` and status 200.
+
+- **"This project is disconnected from your Git account"** = Pages builds the commit it was
+  created on and then never sees a push. Fix on GitHub: Settings -> Applications -> Installed
+  GitHub Apps -> Cloudflare Workers and Pages -> repository access includes `bugiiiii11/rein`
+  (installed on the account that OWNS the repo), then Pages -> Settings -> Build -> Git
+  repository -> Manage.
+- `apps/landing` is inside Railway's watch patterns (only `*.md` is skipped), so a landing
+  change also redeploys the three Railway services; a docs-only push does not.
+- DNS move order: zone onto Cloudflare with every record copied and app/engine/vendor DNS
+  ONLY (Railway issues its own certificates), www and apex still pointing at Vercel; switch
+  nameservers (DNSSEC off first); then add `www.reinconsole.com` as a Pages custom domain and
+  redirect the apex to www.
 
 ## Verifying a deploy
 
