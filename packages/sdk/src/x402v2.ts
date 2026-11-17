@@ -34,7 +34,7 @@ export const PaymentRequirementsV2 = z.object({
   asset: z.string().min(1),
   payTo: z.string().min(1),
   maxTimeoutSeconds: z.number().optional(),
-  extra: z.record(z.unknown()).optional(),
+  extra: z.record(z.string(), z.unknown()).optional(),
 });
 export type PaymentRequirementsV2 = z.infer<typeof PaymentRequirementsV2>;
 
@@ -52,7 +52,7 @@ export const PaymentRequiredV2 = z.object({
   error: z.string().optional(),
   resource: ResourceInfoV2.optional(),
   accepts: z.array(PaymentRequirementsV2).min(1),
-  extensions: z.record(z.unknown()).optional(),
+  extensions: z.record(z.string(), z.unknown()).optional(),
 });
 export type PaymentRequiredV2 = z.infer<typeof PaymentRequiredV2>;
 
@@ -161,7 +161,7 @@ const V1Envelope = z.object({
   x402Version: z.literal(1),
   scheme: z.string(),
   network: z.string(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 /**

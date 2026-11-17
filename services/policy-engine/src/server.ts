@@ -1056,7 +1056,6 @@ function resolveOrg(scope: TenantScope | undefined, requested: string | undefine
       {
         code: 'invalid_type',
         expected: 'string',
-        received: 'undefined',
         path: ['orgId'],
         message: 'orgId is required for an unscoped key',
       },

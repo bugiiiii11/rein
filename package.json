@@ -41,11 +41,6 @@
       "find-my-way": ">=9.7.0",
       "proxy-addr": ">=2.0.8",
       "ws": ">=8.21.0"
-    },
-    "auditConfig": {
-      "ignoreGhsas": [
-        "GHSA-mrhx-c7xc-m3w5"
-      ]
     }
   }
 }

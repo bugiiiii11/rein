@@ -14,6 +14,7 @@
 
 import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createGuard, type Guard } from '@reinconsole/sdk';
 import {
@@ -79,6 +80,19 @@ export function createToolContext(config: ReinMcpConfig): ReinToolContext {
   return { guard, client: guard.client, config: resolved };
 }
 
+/**
+ * The advertised JSON Schema says "no other arguments". zod 4 emits an input
+ * schema for a stripping object WITHOUT `additionalProperties: false` (unknown
+ * keys are accepted, then dropped), where zod 3's converter emitted it; the
+ * meta restores the advertised contract. Parsing is unchanged -- unknown keys
+ * are still stripped, not rejected. An empty shape stays a raw `{}`, which the
+ * SDK has always advertised as a bare `{ type: 'object', properties: {} }`.
+ */
+function closedInput(shape: z.ZodRawShape): z.ZodRawShape | z.ZodObject {
+  if (Object.keys(shape).length === 0) return shape;
+  return z.object(shape).meta({ additionalProperties: false });
+}
+
 /** Bind a tool list onto an MCP server. */
 export function registerTools(server: McpServer, tools: ReinTool[]): void {
   for (const tool of tools) {
@@ -87,7 +101,7 @@ export function registerTools(server: McpServer, tools: ReinTool[]): void {
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: closedInput(tool.inputSchema),
         annotations: tool.annotations,
       },
       // The cast is the protocol boundary in both directions: the SDK hands the

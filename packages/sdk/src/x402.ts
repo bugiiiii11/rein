@@ -20,7 +20,7 @@ export const PaymentRequirement = z.object({
   maxTimeoutSeconds: z.number().optional(),
   /** Token contract address — or, mock-first, a plain symbol like "USDC". */
   asset: z.string().min(1),
-  extra: z.record(z.unknown()).optional(),
+  extra: z.record(z.string(), z.unknown()).optional(),
 });
 export type PaymentRequirement = z.infer<typeof PaymentRequirement>;
 

@@ -24,7 +24,7 @@ const Envelope = z.object({
   x402Version: z.literal(1),
   scheme: z.string(),
   network: z.string(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 /**
@@ -47,7 +47,7 @@ const EnvelopeV2 = z
   .object({
     x402Version: z.literal(2),
     accepted: AcceptedV2,
-    payload: z.record(z.unknown()),
+    payload: z.record(z.string(), z.unknown()),
   })
   .passthrough();
 

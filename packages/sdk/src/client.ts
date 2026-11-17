@@ -230,7 +230,7 @@ export class EngineClient {
   private async request<T>(
     method: string,
     path: string,
-    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<T, unknown>,
     body?: unknown,
   ): Promise<T> {
     const res = await this.send(method, path, body);

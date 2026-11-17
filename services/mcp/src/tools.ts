@@ -90,7 +90,7 @@ function fetchTool(ctx: ReinToolContext): ReinTool {
         .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'])
         .optional()
         .describe('HTTP method. Default GET.'),
-      headers: z.record(z.string()).optional().describe('Extra request headers.'),
+      headers: z.record(z.string(), z.string()).optional().describe('Extra request headers.'),
       body: z.string().optional().describe('Request body, already serialized.'),
       taskId: z
         .string()
