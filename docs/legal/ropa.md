@@ -40,7 +40,7 @@ Database: Supabase, EU (Frankfurt). The privacy policy (S110 wording) claims onl
 | Provider | Role | Mechanism (as far as known) | Action |
 |---|---|---|---|
 | Supabase (Supabase Pte. Ltd, Singapore) | Processor (database, AWS eu-central-1) | DPA v1 (2026-08-01), incorporated into the Supabase ToS, no signature: SCCs Module 2 + UK and Swiss addenda, Irish law | Filed (Q3, 2026-10-21). Optional: subscribe to sub-processor notices |
-| Railway (Railway Corporation, US) | Processor (compute, logs, volumes; EU West, Amsterdam; Hobby plan) | DPA binds only once the customer signs its DocuSign form: DPF, else EU SCCs; UK Addendum | Founder to sign as M.D.N Tech FZE (S111) |
+| Railway (Railway Corporation, US) | Processor (compute, logs, volumes; EU West, Amsterdam; Hobby plan) | DPA binds only once the customer signs its DocuSign form: DPF, else EU SCCs; UK Addendum | Signed 2026-11-17 via DocuSign as M.D.N Tech FZE (Railway pre-signed); executed copy held offline with company records, not in this repo |
 | Vercel (Vercel Inc., US) | Processor (website) | Hobby plan: Vercel's DPA covers Pro/Enterprise only, and Hobby is non-commercial use only | Moving the website to Cloudflare Pages (Cloudflare, Inc.; DPA v6.4, 2026-04-03, incorporated by reference into the Self-Serve Subscription Agreement s.6.1: SCCs, UK IDTA, DPF) (Q4) |
 | GitHub | Processor (backups, Actions); independent controller for OAuth | DPF + SCCs in the GitHub DPA; coverage of a personal account unclear | Check which terms govern the backup repo's account |
 | Telegram | Not a processor of user data (operator alerts only) | None | Keep it out of the transfer claim |

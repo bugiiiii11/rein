@@ -17,8 +17,8 @@ CTX=$(jq -r 'select(.isSidechain != true) | .message.usage | select(.input_token
 case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 
 WINDOW="${AUTOWRAP_WINDOW:-1000000}"
-SOFT_PCT="${AUTOWRAP_SOFT_PCT:-20}"
-HARD_PCT="${AUTOWRAP_HARD_PCT:-22}"
+SOFT_PCT="${AUTOWRAP_SOFT_PCT:-28}"
+HARD_PCT="${AUTOWRAP_HARD_PCT:-30}"
 SOFT=$(( WINDOW * SOFT_PCT / 100 ))
 HARD=$(( WINDOW * HARD_PCT / 100 ))
 

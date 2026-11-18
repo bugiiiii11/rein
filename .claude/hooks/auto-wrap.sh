@@ -9,8 +9,8 @@
 # CLAUDE.md, skills, /start reads -- everything).
 #
 # Thresholds (percent of AUTOWRAP_WINDOW, default 1,000,000 tokens):
-#   soft  AUTOWRAP_SOFT_PCT (default 20) -> CHECKPOINT: /handoff docs, keep working
-#   hard  AUTOWRAP_HARD_PCT (default 22) -> stop new work, full /handoff wrap NOW
+#   soft  AUTOWRAP_SOFT_PCT (default 28) -> CHECKPOINT: /handoff docs, keep working
+#   hard  AUTOWRAP_HARD_PCT (default 30) -> stop new work, full /handoff wrap NOW
 # The rungs do different jobs (split on 2026-08-17): soft only PERSISTS state
 # (handoff.md updated, no commit, session continues), hard ENDS the session.
 # Before the split both ended it, which forced a choice between abandoning
@@ -43,8 +43,8 @@ CTX=$(jq -r 'select(.isSidechain != true) | .message.usage | select(.input_token
 case "$CTX" in ''|*[!0-9]*) exit 0 ;; esac
 
 WINDOW="${AUTOWRAP_WINDOW:-1000000}"
-SOFT_PCT="${AUTOWRAP_SOFT_PCT:-20}"
-HARD_PCT="${AUTOWRAP_HARD_PCT:-22}"
+SOFT_PCT="${AUTOWRAP_SOFT_PCT:-28}"
+HARD_PCT="${AUTOWRAP_HARD_PCT:-30}"
 SOFT=$(( WINDOW * SOFT_PCT / 100 ))
 HARD=$(( WINDOW * HARD_PCT / 100 ))
 
