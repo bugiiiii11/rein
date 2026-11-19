@@ -214,6 +214,26 @@ describe('the EEA and the operator bypass (2026-11-18)', () => {
     await app.close();
   });
 
+  it('tells a key who it is on /v1/whoami, and nothing about anyone else', async () => {
+    const { app, keys } = await hosted(true);
+    const who = async (secret: string) =>
+      (await app.inject({ method: 'GET', url: '/v1/whoami', remoteAddress: '8.8.8.8', headers: { authorization: `Bearer ${secret}` } })).json();
+    const operator = await who(keys.operator.secret);
+    expect(operator).toEqual({
+      auth: 'api-key',
+      keyId: keys.operator.key.id,
+      name: 'matt',
+      scopes: ['read'],
+      orgId: keys.operator.key.orgId,
+    });
+    const root = await who(keys.unscoped.secret);
+    expect(root.orgId).toBeUndefined();
+    expect(root.name).toBe('console-read');
+    const none = await app.inject({ method: 'GET', url: '/v1/whoami', remoteAddress: '8.8.8.8' });
+    expect(none.statusCode).toBe(401);
+    await app.close();
+  });
+
   it('never bypasses a sanctioned territory, whatever the key', async () => {
     const { app, keys, get } = await hosted(true);
     for (const secret of [keys.unscoped.secret, keys.operator.secret, keys.session.secret]) {

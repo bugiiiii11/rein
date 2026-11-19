@@ -14,7 +14,8 @@ import { createAccountHandler } from './account';
 import { createOwnerBridge } from './owners';
 import { createSignIn, signInFromEnv } from './signin';
 import { createGeoGate } from './geo';
-import { geoBlockFromEnv } from '@reinconsole/policy-engine';
+import { createOperatorPass } from './operator';
+import { geoBlockFromEnv, geoBlockOperatorOrgsFromEnv } from '@reinconsole/policy-engine';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -137,10 +138,29 @@ try {
   console.error(`[rein] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 }
-const geoGate = createGeoGate(geoBlock);
+// REIN_GEOBLOCK_OPERATOR_ORGS (2026-11-18): the same list the engine holds.
+// Set, it turns on the operator pass at /operator (operator.ts) -- the way the
+// operator's own team gets past a NOT-OFFERED territory, since the gate
+// refuses the sign-in page too. It needs the session secret and the engine.
+const operatorOrgs = geoBlock ? geoBlockOperatorOrgsFromEnv(process.env) : undefined;
+if (operatorOrgs && (!signInConfig || !engineUrl)) {
+  console.error('[rein] REIN_GEOBLOCK_OPERATOR_ORGS is set but sign-in or REIN_CONSOLE_ENGINE_URL is not; the operator pass needs both.');
+  process.exit(1);
+}
+const operatorPass =
+  operatorOrgs && signInConfig && engineUrl
+    ? createOperatorPass({
+        secret: signInConfig.sessionSecret,
+        engineUrl,
+        orgs: operatorOrgs,
+        secure: signInConfig.publicUrl.startsWith('https:'),
+      })
+    : undefined;
+const geoGate = createGeoGate(geoBlock, operatorPass);
 console.log(
   geoBlock
-    ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})`
+    ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})` +
+        (operatorOrgs ? `; operator pass on for ${operatorOrgs.length} org(s) and unscoped admin keys` : '')
     : '[rein] geo-block off',
 );
 

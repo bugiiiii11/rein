@@ -1122,6 +1122,17 @@ other org gets the same 451. A sanctioned territory is never bypassed. The boot 
 list. A refused EEA/UK caller is told the hosted service is not available in the region and where
 to self-host; the console serves that as a page.
 
+**The console's operator pass.** The console refuses every request from a not-offered territory,
+the sign-in page included, so the operator's team gets in by key. Set the SAME
+`REIN_GEOBLOCK_OPERATOR_ORGS` on the console (it needs sign-in and `REIN_CONSOLE_ENGINE_URL`, or
+the boot is refused). Then, from the EEA: open `https://app.reinconsole.com/operator`, paste an
+ADMIN key of a listed org (or the unscoped admin key), Continue. The console asks the engine whose
+key it is (`GET /v1/whoami`) and sets a signed `rein_operator` cookie for 30 days; that browser
+then passes the gate and signs in as usual. The key is sent once in a POST body and not stored; the
+log line names the org, never the key (`[rein] operator pass issued (org_...)`). Five attempts a
+minute across everybody. The page is unlinked and does not exist for a sanctioned territory. To
+revoke every pass at once, rotate `REIN_CONSOLE_SESSION_SECRET` (this also signs everyone out).
+
 **Geo-block.** A request from a refused territory gets `451 restricted_territory`. On the
 engine this applies to every route except `/health`, and runs before the rate limiter and auth.
 On the console it applies to every request, the UI included. The ranges are bundled in
@@ -1149,7 +1160,7 @@ curl -s https://engine.reinconsole.com/v1/screenings?orgId=<org> -H "authorizati
 | Variable | Service | Default | What it does |
 |---|---|---|---|
 | `REIN_GEOBLOCK` | engine, console | on with the sandbox (engine) / sign-in (console) | `off`, `on`, or territory codes, e.g. `CU,IR,KP,SY,UA-43`; in a list `default` = the sanctioned set and `EEA` = the thirty EEA states. A code with no generated ranges refuses the boot |
-| `REIN_GEOBLOCK_OPERATOR_ORGS` | engine | unset = no bypass | Org ids whose keys pass a not-offered territory (never a sanctioned one), with unscoped and `session:` keys; `none` = those two only |
+| `REIN_GEOBLOCK_OPERATOR_ORGS` | engine, console | unset = no bypass | Org ids whose keys pass a not-offered territory (never a sanctioned one), with unscoped and `session:` keys; `none` = those two only |
 | `REIN_SANCTIONS_SCREENING` | engine | on with the sandbox | `off` or `on` |
 | `REIN_SANCTIONS_RPC_URLS` | engine | publicnode, llamarpc, drpc | Ethereum RPCs for the oracle, comma-separated, https only |
 | `REIN_MAINNET_ORGS` | engine | none with the sandbox | Add `screened` to admit every CLAIMED org that passes screening (the self-serve setting). Listed org ids still work beside it and are screened too |

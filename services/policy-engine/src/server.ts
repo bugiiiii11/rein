@@ -308,6 +308,8 @@ export function requiredScope(method: string, pathname: string): ApiKeyScope {
  */
 const TENANT_ROUTES: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: 'GET', path: /^\/health$/ },
+  // Names only the caller's own key.
+  { method: 'GET', path: /^\/v1\/whoami$/ },
   // Unauthenticated, like /health: it mints its own org and returns only that.
   { method: 'POST', path: /^\/v1\/sandbox$/ },
   // A claim starts from the org's own admin key and names nothing but its org.
@@ -610,6 +612,24 @@ export function buildServer(
       return;
     });
   }
+
+  // Who the presented key is: its own public view and nothing else, so a
+  // caller (the console's operator pass, a setup script) can learn a key's org
+  // and scopes without listing anybody's keys. A tenant route by nature -- it
+  // names only the caller.
+  app.get('/v1/whoami', (req) => {
+    const caller = CALLERS.get(req);
+    if (!caller) return { auth: 'none' };
+    return {
+      auth: 'api-key',
+      keyId: caller.id,
+      name: caller.name,
+      scopes: caller.scopes,
+      ...(caller.orgId !== undefined ? { orgId: caller.orgId } : {}),
+      ...(caller.agentIds !== undefined ? { agentIds: caller.agentIds } : {}),
+      ...(caller.expiresAt !== undefined ? { expiresAt: caller.expiresAt } : {}),
+    };
+  });
 
   app.get('/health', () => ({
     status: 'ok',

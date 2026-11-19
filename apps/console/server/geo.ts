@@ -24,6 +24,7 @@ import {
   sanctionedTerritory,
   type GeoBlock,
 } from '@reinconsole/policy-engine';
+import { OPERATOR_PATH, type OperatorPass } from './operator';
 
 /**
  * Self-contained on purpose: every other request from the same address is
@@ -60,12 +61,24 @@ const NOT_OFFERED_PAGE = `<!doctype html>
 `;
 
 /** True when the request was refused and answered. */
-export function createGeoGate(geoBlock: GeoBlock | undefined) {
+export function createGeoGate(geoBlock: GeoBlock | undefined, operatorPass?: OperatorPass) {
   return function refuse(req: IncomingMessage, res: ServerResponse): boolean {
     if (!geoBlock) return false;
     const client = clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for']);
     const territory = geoBlock.territoryOf(client);
     if (territory === undefined) return false;
+    // The operator's own team (operator.ts): a not-offered territory only,
+    // never a sanctioned one.
+    if (operatorPass && !sanctionedTerritory(territory)) {
+      if (operatorPass.holds(req)) return false;
+      if ((req.url ?? '').split('?')[0] === OPERATOR_PATH) {
+        void operatorPass.handle(req, res).catch(() => {
+          if (!res.headersSent) res.writeHead(500);
+          res.end();
+        });
+        return true;
+      }
+    }
     const body = geoBlockBody(territory);
     const wantsJson = (req.url ?? '').startsWith('/api/');
     const page = !wantsJson && !sanctionedTerritory(territory);
