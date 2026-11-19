@@ -628,6 +628,21 @@ export function buildServer(
       ...(caller.orgId !== undefined ? { orgId: caller.orgId } : {}),
       ...(caller.agentIds !== undefined ? { agentIds: caller.agentIds } : {}),
       ...(caller.expiresAt !== undefined ? { expiresAt: caller.expiresAt } : {}),
+      // For the operator only: how this engine sees the caller. It is the one
+      // way to check, on a live deployment, that the address the geo-block and
+      // the per-IP limiter judge is the client's and not the platform proxy's
+      // (2026-11-19: on Railway it was the proxy's, and nothing was refused).
+      ...(caller.orgId === undefined
+        ? {
+            client: {
+              ip: req.ip,
+              socket: req.socket.remoteAddress,
+              forwardedFor: req.headers['x-forwarded-for'] ?? null,
+              realIp: req.headers['x-real-ip'] ?? null,
+              ...(geoBlock ? { refusedTerritory: geoBlock.territoryOf(req.ip) ?? null } : {}),
+            },
+          }
+        : {}),
     };
   });
 

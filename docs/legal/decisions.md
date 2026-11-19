@@ -36,8 +36,11 @@ Founder decision of 2026-11-18 on the Mind Palace launch brief. It replaces the 
 
   | Org id | Who | Since |
   |--------|-----|-------|
-  | (to be confirmed by the founder before the variable is set) | founder / console org | |
+  | `org_01M2R7WZSX0NZDVKR8PEJ97GDM` | founder / console org (the vendor and the mainnet runner use its keys; verified on the engine 2026-11-19) | when the variable is set |
   | `org_01M353YRS7GBCVHG36PX2S9G62` | lead tester, testnet org (confirmed by the founder 2026-11-19) | when the variable is set |
+  | `org_01M56YRD363EJN180QD23QK55S` | lead tester, second mainnet kit (named by him 2026-11-19) | when the variable is set |
+  | `org_01M4H9GAS5CJQTM5JGKMA77QBC` | lead tester, first mainnet kit (named by him 2026-11-19) | when the variable is set |
+  | `org_01M44B9PDD1S19E7CPP7XPZCVF` | lead tester, v3 kit, GitHub sign-in (named by him 2026-11-19) | when the variable is set |
 
 - **Existing EEA tester orgs** get no private exception. They are told before the switch and offered self-hosting.
 - **Terms s.5 and the privacy policy say so** (Terms version 2026-11-19). The policy names no representative.
