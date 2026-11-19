@@ -29,11 +29,45 @@ import { GEO_EDITION, GEO_RANGES } from './geo-data.js';
  */
 export const DEFAULT_GEOBLOCK_TERRITORIES: readonly string[] = ['CU', 'IR', 'KP', 'UA-43', 'UA-40', 'UA-14', 'UA-09'];
 
+/**
+ * The EEA: the 27 EU member states plus Iceland, Liechtenstein and Norway
+ * (docs/legal/decisions.md, 2026-11-18: the hosted service is not offered
+ * there until an Art. 27 representative is engaged). Not in the default set --
+ * a self-hoster has no reason to refuse it -- and written `EEA` in
+ * `REIN_GEOBLOCK`. Switzerland is not EEA.
+ */
+export const EEA_TERRITORIES: readonly string[] = [
+  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT',
+  'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE', 'IS', 'LI', 'NO',
+];
+
 export const GEOBLOCK_STATUS = 451;
+/** What a sanctioned territory is told: the refusal and nothing more. */
 export const GEOBLOCK_BODY = {
   error: 'restricted_territory',
   message: 'Rein is not available in your region.',
 } as const;
+export const SELF_HOST_URL = 'https://reinconsole.com/run-rein-locally';
+/**
+ * What a territory refused for a reason other than sanctions (the EEA, the
+ * UK) is told: the hosted service is closed there, the software is not.
+ */
+export const GEOBLOCK_NOT_OFFERED_BODY = {
+  error: 'restricted_territory',
+  message:
+    'The hosted Rein service is not available in your region yet. ' +
+    `Rein is open source: self-host it -- ${SELF_HOST_URL}`,
+} as const;
+
+/** The comprehensively sanctioned set: no bypass and no self-host pointer ever applies to it. */
+export function sanctionedTerritory(territory: string): boolean {
+  return DEFAULT_GEOBLOCK_TERRITORIES.includes(territory);
+}
+
+/** The 451 body for a refused territory. */
+export function geoBlockBody(territory: string): { error: 'restricted_territory'; message: string } {
+  return sanctionedTerritory(territory) ? GEOBLOCK_BODY : GEOBLOCK_NOT_OFFERED_BODY;
+}
 
 interface Table {
   /** Sorted, non-overlapping starts and their ends, with the territory each belongs to. */
@@ -135,7 +169,7 @@ export class GeoBlock {
     for (const t of territories) {
       const r = GEO_RANGES[t]!;
       for (const [s, e] of parseRanges(r.v4, 8)) v4.push([s, e, t]);
-      for (const [s, e] of parseRanges(r.v6, 32)) v6.push([s, e, t]);
+      for (const [s, e] of parseRanges(r.v6, 16)) v6.push([s, e, t]);
     }
     this.v4 = build(v4);
     this.v6 = build(v6);
@@ -146,7 +180,8 @@ export class GeoBlock {
     if (!ip) return undefined;
     const addr = addressValue(ip);
     if (!addr) return undefined;
-    return find(addr.family === 4 ? this.v4 : this.v6, addr.value);
+    // v6 ranges are /64 prefixes (see geo-data.ts), so only the top half is looked up.
+    return addr.family === 4 ? find(this.v4, addr.value) : find(this.v6, addr.value >> 64n);
   }
 }
 
@@ -184,7 +219,9 @@ export function clientAddress(socketAddress: string | undefined, forwardedFor: s
 
 /**
  * `REIN_GEOBLOCK`: `off`, or a comma-separated list of territory codes (ISO
- * 3166-1 alpha-2, or 3166-2 for a region, e.g. `IR,CU,KP,UA-43`). Unset =
+ * 3166-1 alpha-2, or 3166-2 for a region, e.g. `IR,CU,KP,UA-43`). Inside a
+ * list, `default` stands for the sanctioned set and `EEA` for the thirty EEA
+ * states, so the hosted value is `default,GB,EEA`. Unset =
  * `fallback` decides -- the hosted bins pass true where they serve strangers
  * (the engine with the sandbox on, the console with sign-in), so the hosted
  * posture does not depend on remembering a variable.
@@ -195,10 +232,26 @@ export function geoBlockFromEnv(env: NodeJS.ProcessEnv, fallback: boolean): GeoB
   const value = raw.toLowerCase();
   if (value === 'off' || value === '0' || value === 'false' || value === 'no') return undefined;
   if (value === 'on' || value === '1' || value === 'default') return new GeoBlock();
-  return new GeoBlock(
-    raw
-      .split(',')
-      .map((s) => s.trim().toUpperCase())
-      .filter(Boolean),
-  );
+  const codes = raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+    .flatMap((code) => (code === 'DEFAULT' ? DEFAULT_GEOBLOCK_TERRITORIES : code === 'EEA' ? EEA_TERRITORIES : [code]));
+  return new GeoBlock([...new Set(codes)]);
+}
+
+/**
+ * `REIN_GEOBLOCK_OPERATOR_ORGS`: comma-separated org ids of the operator's own
+ * team, whose keys pass a NON-sanctions refusal (see
+ * `ServerOptions.geoBlockOperatorOrgs` in the engine). Unset = no bypass at
+ * all; `none` = the operator's unscoped and console-session keys only.
+ */
+export function geoBlockOperatorOrgsFromEnv(env: NodeJS.ProcessEnv): readonly string[] | undefined {
+  const raw = env['REIN_GEOBLOCK_OPERATOR_ORGS']?.trim();
+  if (!raw) return undefined;
+  if (raw.toLowerCase() === 'none') return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

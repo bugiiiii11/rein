@@ -7,7 +7,12 @@
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GEOBLOCK_BODY, GeoBlock } from '@reinconsole/policy-engine';
+import {
+  DEFAULT_GEOBLOCK_TERRITORIES,
+  GEOBLOCK_BODY,
+  GEOBLOCK_NOT_OFFERED_BODY,
+  GeoBlock,
+} from '@reinconsole/policy-engine';
 import { createGeoGate } from './geo';
 
 const KP = '175.45.176.1';
@@ -77,6 +82,26 @@ describe('the console geo gate', () => {
       expect(res.type, path).toBe('text/plain; charset=utf-8');
       expect(res.body, path).toBe(`${GEOBLOCK_BODY.message}\n`);
     }
+  });
+
+  it('answers a not-offered territory with a self-host page, and its API calls with the self-host message', async () => {
+    const hosted = new GeoBlock([...DEFAULT_GEOBLOCK_TERRITORIES, 'GB']);
+    const GB = '25.0.0.1';
+    expect(hosted.territoryOf(GB)).toBe('GB');
+    const port = await boot(hosted);
+    const page = await get(port, '/claim', GB);
+    expect(page.status).toBe(451);
+    expect(page.type).toBe('text/html; charset=utf-8');
+    expect(page.cache).toBe('no-store');
+    expect(page.body).toContain('not available in your region yet');
+    expect(page.body).toContain('href="https://reinconsole.com/run-rein-locally"');
+    // Self-contained: every other request from there is refused too.
+    expect(page.body).not.toMatch(/<script|<link|src=/);
+    const api = await get(port, '/api/state', GB);
+    expect(api.status).toBe(451);
+    expect(JSON.parse(api.body)).toEqual(GEOBLOCK_NOT_OFFERED_BODY);
+    // A sanctioned territory still gets the bare line, never the page.
+    expect((await get(port, '/claim', KP)).type).toBe('text/plain; charset=utf-8');
   });
 
   it('passes everyone else through, including a direct connection with no header', async () => {

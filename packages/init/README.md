@@ -20,6 +20,13 @@ It:
 
 Running it again reuses `rein-agent.json`. `--force` creates a new sandbox instead.
 
+**Running it through Claude Code?** Leave auto mode first: press Shift+Tab until the status line
+says "manual mode on". In auto mode the safety classifier refuses the package install and the calls
+to the hosted engine; in manual mode it asks and you approve.
+
+**In the EEA or the UK?** The hosted engine is not offered there yet and answers `451`. Self-host
+instead, same code and no account: https://reinconsole.com/run-rein-locally
+
 By using the hosted sandbox you agree to the [Terms](https://reinconsole.com/terms); see the
 [Privacy Policy](https://reinconsole.com/privacy). The packages themselves are MIT licensed, and an
 engine you run yourself is not covered by either.

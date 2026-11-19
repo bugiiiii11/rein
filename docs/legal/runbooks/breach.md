@@ -6,7 +6,7 @@ A breach is any loss of confidentiality, integrity or availability of personal d
 
 Start it when we have reasonable certainty that personal data was affected ("aware"), not when the investigation ends.
 
-- **72 hours** from aware: notify the supervisory authority (GDPR Art. 33), unless the breach is unlikely to result in a risk to people. With no EU establishment and no representative yet, that means the data protection authority of each EU/EEA member state, and the UK ICO, where affected users live.
+- **72 hours** from aware: notify the supervisory authority (GDPR Art. 33), unless the breach is unlikely to result in a risk to people. With no EU establishment and no representative (the hosted service is not offered in the EEA or the UK since 2026-11-18, so this concerns earlier users and anyone who reached it regardless), that means the data protection authority of each EU/EEA member state, and the UK ICO, where affected users live.
 - **Without undue delay:** the UAE Data Office (PDPL Art. 9).
 - **Without undue delay, to affected users**, when the risk to them is high (GDPR Art. 34): an email or console notice in plain words.
 - Not everything known at 72 hours? Notify with what is known and follow up in phases.

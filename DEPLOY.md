@@ -1104,9 +1104,23 @@ against a local engine and console.
 
 These implement the legal decision of 2026-10-05 (`docs/legal/decisions.md`). Both are ON by
 default wherever strangers are served: the engine turns them on with `REIN_SANDBOX=1`, and the
-console turns its geo-block on with sign-in. The hosted service also refuses the UK (S111, `docs/legal/decisions.md`: no UK GDPR
-representative), which is not in the code default, so set on BOTH `rein-engine` and the console:
-`REIN_GEOBLOCK=CU,IR,KP,UA-43,UA-40,UA-14,UA-09,GB`. Self-hosters keep the sanctions-only default.
+console turns its geo-block on with sign-in. The hosted service also refuses the UK (S111) and the
+EEA (2026-11-18, `docs/legal/decisions.md`: no GDPR representative in either), which are not in the
+code default, so set on BOTH `rein-engine` and the console: `REIN_GEOBLOCK=default,GB,EEA`
+(`default` = the sanctioned set, `EEA` = the 27 EU states + IS, LI, NO). Self-hosters keep the
+sanctions-only default.
+
+**Set the operator bypass BEFORE the EEA goes into `REIN_GEOBLOCK` on the engine.** The console
+and the vendor run in Frankfurt and call the engine over its public URL, so with Germany refused
+the engine would refuse its own console. On `rein-engine` set
+`REIN_GEOBLOCK_OPERATOR_ORGS=<org ids, comma-separated>` (or `none`). With it set, a request from
+a NOT-OFFERED territory (EEA, UK) passes when it carries a valid key that is unscoped (the admin
+key, the console's read and identity keys), a `session:` key (held only by the console), or
+scoped to a listed org. List: the console org (the vendor and the mainnet runner use its keys) and
+each named operator's org; record them in `docs/legal/decisions.md`. No key, a bad key or any
+other org gets the same 451. A sanctioned territory is never bypassed. The boot line prints the
+list. A refused EEA/UK caller is told the hosted service is not available in the region and where
+to self-host; the console serves that as a page.
 
 **Geo-block.** A request from a refused territory gets `451 restricted_territory`. On the
 engine this applies to every route except `/health`, and runs before the rate limiter and auth.
@@ -1134,7 +1148,8 @@ curl -s https://engine.reinconsole.com/v1/screenings?orgId=<org> -H "authorizati
 
 | Variable | Service | Default | What it does |
 |---|---|---|---|
-| `REIN_GEOBLOCK` | engine, console | on with the sandbox (engine) / sign-in (console) | `off`, `on`, or territory codes, e.g. `CU,IR,KP,SY,UA-43`. A code with no generated ranges refuses the boot |
+| `REIN_GEOBLOCK` | engine, console | on with the sandbox (engine) / sign-in (console) | `off`, `on`, or territory codes, e.g. `CU,IR,KP,SY,UA-43`; in a list `default` = the sanctioned set and `EEA` = the thirty EEA states. A code with no generated ranges refuses the boot |
+| `REIN_GEOBLOCK_OPERATOR_ORGS` | engine | unset = no bypass | Org ids whose keys pass a not-offered territory (never a sanctioned one), with unscoped and `session:` keys; `none` = those two only |
 | `REIN_SANCTIONS_SCREENING` | engine | on with the sandbox | `off` or `on` |
 | `REIN_SANCTIONS_RPC_URLS` | engine | publicnode, llamarpc, drpc | Ethereum RPCs for the oracle, comma-separated, https only |
 | `REIN_MAINNET_ORGS` | engine | none with the sandbox | Add `screened` to admit every CLAIMED org that passes screening (the self-serve setting). Listed org ids still work beside it and are screened too |

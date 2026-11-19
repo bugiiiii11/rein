@@ -191,8 +191,14 @@ export {
   clientAddress,
   privateAddress,
   DEFAULT_GEOBLOCK_TERRITORIES,
+  EEA_TERRITORIES,
   GEOBLOCK_STATUS,
   GEOBLOCK_BODY,
+  GEOBLOCK_NOT_OFFERED_BODY,
+  SELF_HOST_URL,
+  geoBlockBody,
+  geoBlockOperatorOrgsFromEnv,
+  sanctionedTerritory,
 } from './geoblock.js';
 export {
   ScreeningService,

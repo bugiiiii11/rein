@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
+import { newId } from '@reinconsole/core';
+import { ApiKeyAuth } from '@reinconsole/core/auth';
+import { SESSION_KEY_PREFIX } from './claims.js';
 import {
   DEFAULT_GEOBLOCK_TERRITORIES,
+  EEA_TERRITORIES,
+  GEOBLOCK_BODY,
+  GEOBLOCK_NOT_OFFERED_BODY,
   GeoBlock,
   addressValue,
   clientAddress,
   geoBlockFromEnv,
+  geoBlockOperatorOrgsFromEnv,
   privateAddress,
 } from './geoblock.js';
 import { GEO_EDITION, GEO_RANGES } from './geo-data.js';
@@ -16,8 +23,9 @@ function firstV4(territory: string): string {
   return [start >>> 24, (start >>> 16) & 255, (start >>> 8) & 255, start & 255].join('.');
 }
 function firstV6(territory: string): string {
-  const hex = GEO_RANGES[territory]!.v6.slice(0, 32);
-  return hex.match(/.{4}/g)!.join(':');
+  // v6 ranges are /64 prefixes: 16 hex chars, the top half of the address.
+  const hex = GEO_RANGES[territory]!.v6.slice(0, 16);
+  return `${hex.match(/.{4}/g)!.join(':')}::1`;
 }
 
 describe('the geo-block lookup', () => {
@@ -126,6 +134,102 @@ describe('the engine geo-block', () => {
       headers: { 'x-forwarded-for': '8.8.8.8, 5.160.0.1' },
     });
     expect(res.statusCode).toBe(451);
+    await app.close();
+  });
+});
+
+describe('the EEA and the operator bypass (2026-11-18)', () => {
+  const DE = firstV4('DE');
+  const KP = '175.45.176.1';
+
+  it('expands `default` and `EEA` inside REIN_GEOBLOCK, with ranges for all thirty states', () => {
+    expect(EEA_TERRITORIES).toHaveLength(30);
+    const hosted = geoBlockFromEnv({ REIN_GEOBLOCK: 'default,GB,EEA' }, false)!;
+    expect(hosted.territories).toEqual([...DEFAULT_GEOBLOCK_TERRITORIES, 'GB', ...EEA_TERRITORIES]);
+    for (const code of [...EEA_TERRITORIES, 'GB']) {
+      expect(hosted.territoryOf(firstV4(code)), code).toBe(code);
+      expect(hosted.territoryOf(firstV6(code)), code).toBe(code);
+    }
+    expect(hosted.territoryOf('8.8.8.8')).toBeUndefined();
+    // Not in the default set: a self-hoster refuses none of it.
+    expect(new GeoBlock().territoryOf(DE)).toBeUndefined();
+  });
+
+  it('reads REIN_GEOBLOCK_OPERATOR_ORGS: unset = no bypass, `none` = an empty list', () => {
+    expect(geoBlockOperatorOrgsFromEnv({})).toBeUndefined();
+    expect(geoBlockOperatorOrgsFromEnv({ REIN_GEOBLOCK_OPERATOR_ORGS: 'none' })).toEqual([]);
+    expect(geoBlockOperatorOrgsFromEnv({ REIN_GEOBLOCK_OPERATOR_ORGS: ' org_a, org_b ' })).toEqual(['org_a', 'org_b']);
+  });
+
+  it('tells a not-offered territory where to self-host, and a sanctioned one nothing', async () => {
+    const app = buildServer(undefined, { geoBlock: new GeoBlock([...DEFAULT_GEOBLOCK_TERRITORIES, 'DE']) });
+    const de = await app.inject({ method: 'GET', url: '/v1/agents', remoteAddress: DE });
+    expect(de.statusCode).toBe(451);
+    expect(de.json()).toEqual(GEOBLOCK_NOT_OFFERED_BODY);
+    expect(de.json().message).toContain('https://reinconsole.com/run-rein-locally');
+    const kp = await app.inject({ method: 'GET', url: '/v1/agents', remoteAddress: KP });
+    expect(kp.json()).toEqual(GEOBLOCK_BODY);
+    await app.close();
+  });
+
+  async function hosted(bypass: boolean) {
+    const auth = new ApiKeyAuth();
+    const operatorOrg = newId('org');
+    const strangerOrg = newId('org');
+    const keys = {
+      unscoped: await auth.issue({ name: 'console-read', scopes: ['read'] }),
+      operator: await auth.issue({ name: 'matt', scopes: ['read'], orgId: operatorOrg }),
+      stranger: await auth.issue({ name: 'someone', scopes: ['read'], orgId: strangerOrg }),
+      session: await auth.issue({ name: `${SESSION_KEY_PREFIX}github:1`, scopes: ['read'], orgId: strangerOrg }),
+      evaluateOnly: await auth.issue({ name: 'matt-runtime', scopes: ['evaluate'], orgId: operatorOrg }),
+    };
+    const app = buildServer(undefined, {
+      auth,
+      geoBlock: new GeoBlock([...DEFAULT_GEOBLOCK_TERRITORIES, 'DE']),
+      ...(bypass ? { geoBlockOperatorOrgs: [operatorOrg] } : {}),
+    });
+    const get = (remoteAddress: string, secret?: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/v1/agents',
+        remoteAddress,
+        headers: secret ? { authorization: `Bearer ${secret}` } : {},
+      });
+    return { app, keys, get };
+  }
+
+  it('lets the operator team through from a not-offered territory, by key and org only', async () => {
+    const { app, keys, get } = await hosted(true);
+    expect((await get(DE, keys.unscoped.secret)).statusCode).toBe(200);
+    expect((await get(DE, keys.operator.secret)).statusCode).toBe(200);
+    expect((await get(DE, keys.session.secret)).statusCode).toBe(200);
+    // Everyone else gets the same 451 as a caller with no key: not a 401, not a 403.
+    for (const secret of [undefined, 'rk_not_a_key', keys.stranger.secret]) {
+      const res = await get(DE, secret);
+      expect(res.statusCode).toBe(451);
+      expect(res.json()).toEqual(GEOBLOCK_NOT_OFFERED_BODY);
+    }
+    // A key that could not make this call anyway does not pass on its org alone.
+    expect((await get(DE, keys.evaluateOnly.secret)).statusCode).toBe(451);
+    await app.close();
+  });
+
+  it('never bypasses a sanctioned territory, whatever the key', async () => {
+    const { app, keys, get } = await hosted(true);
+    for (const secret of [keys.unscoped.secret, keys.operator.secret, keys.session.secret]) {
+      const res = await get(KP, secret);
+      expect(res.statusCode).toBe(451);
+      expect(res.json()).toEqual(GEOBLOCK_BODY);
+    }
+    await app.close();
+  });
+
+  it('has no bypass at all unless the option is given', async () => {
+    const { app, keys, get } = await hosted(false);
+    for (const secret of [keys.unscoped.secret, keys.operator.secret, keys.session.secret]) {
+      expect((await get(DE, secret)).statusCode).toBe(451);
+    }
+    expect((await get('8.8.8.8', keys.stranger.secret)).statusCode).toBe(200);
     await app.close();
   });
 });

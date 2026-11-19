@@ -47,9 +47,9 @@ import {
   SandboxService,
   type SandboxOptions,
 } from './sandbox.js';
-import { ClaimError, ClaimService, reservedKeyName, type ClaimOptions } from './claims.js';
+import { ClaimError, ClaimService, SESSION_KEY_PREFIX, reservedKeyName, type ClaimOptions } from './claims.js';
 import { DEFAULT_REAP_INTERVAL_MS, reapExpired } from './reaper.js';
-import { GEOBLOCK_BODY, GEOBLOCK_STATUS, type GeoBlock } from './geoblock.js';
+import { GEOBLOCK_STATUS, geoBlockBody, sanctionedTerritory, type GeoBlock } from './geoblock.js';
 import { ScreeningError, ownerWallet, type ScreeningService, type ScreeningSubject } from './screening.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
@@ -180,6 +180,22 @@ export interface ServerOptions {
    * unless given; the hosted bin turns it on with the sandbox.
    */
   geoBlock?: GeoBlock;
+  /**
+   * The operator's own access from a territory the hosted service is merely
+   * NOT OFFERED in (the EEA, the UK -- docs/legal/decisions.md 2026-11-18).
+   * Given, a request from such a territory passes the geo-block when it
+   * carries a valid key that is one of:
+   *  - unscoped (the operator's keys, and the hosted console's read and
+   *    identity keys -- the console itself runs in Frankfurt);
+   *  - a `session:` key (minted only by the claim service and held only by
+   *    the console, for a person the console's own geo-block already judged);
+   *  - scoped to one of these org ids (the named operators' orgs).
+   * Anything else -- no key, a wrong key, any other org -- gets the same 451
+   * as before and learns nothing. A SANCTIONED territory is never bypassed,
+   * whatever the key. By key and org only: no address is listed, so nothing
+   * personal is stored for it. Unset = no bypass.
+   */
+  geoBlockOperatorOrgs?: readonly string[];
   /**
    * Wallet sanctions screening at claim and at mainnet (screening.ts), plus
    * the operator's `GET /v1/screenings`. Off unless given; the hosted bin
@@ -514,12 +530,26 @@ export function buildServer(
   // routes exist. `/health` stays open -- a platform probe is not a client.
   const geoBlock = options.geoBlock;
   if (geoBlock) {
-    app.addHook('onRequest', async (req, reply) => {
-      if ((req.url ?? '/').split('?')[0] === '/health') return;
-      if (geoBlock.territoryOf(req.ip) !== undefined) {
-        return reply.status(GEOBLOCK_STATUS).send(GEOBLOCK_BODY);
+    const operatorOrgs = options.geoBlockOperatorOrgs;
+    /** See `ServerOptions.geoBlockOperatorOrgs`. Any failure to authenticate is simply "no". */
+    const operatorKey = (headers: Parameters<ApiKeyAuth['authenticate']>[0], method: string, pathname: string): boolean => {
+      if (!operatorOrgs || !auth) return false;
+      try {
+        const key = auth.authenticate(headers, requiredScope(method, pathname));
+        return (
+          key.orgId === undefined || key.name.startsWith(SESSION_KEY_PREFIX) || operatorOrgs.includes(key.orgId)
+        );
+      } catch {
+        return false;
       }
-      return;
+    };
+    app.addHook('onRequest', async (req, reply) => {
+      const pathname = (req.url ?? '/').split('?')[0] ?? '/';
+      if (pathname === '/health') return;
+      const territory = geoBlock.territoryOf(req.ip);
+      if (territory === undefined) return;
+      if (!sanctionedTerritory(territory) && operatorKey(req.headers, req.method, pathname)) return;
+      return reply.status(GEOBLOCK_STATUS).send(geoBlockBody(territory));
     });
   }
 

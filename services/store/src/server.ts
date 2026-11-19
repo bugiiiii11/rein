@@ -45,6 +45,7 @@ import {
   resolveHost,
   sandboxOptionsFromEnv,
   geoBlockFromEnv,
+  geoBlockOperatorOrgsFromEnv,
   screenerFromEnv,
   ScreeningService,
   type ApiKeyAuth,
@@ -121,6 +122,8 @@ export async function startPersistentEngine(options: {
   mainnetOrgs?: readonly string[] | 'any';
   /** See `ServerOptions.geoBlock` in the engine. */
   geoBlock?: GeoBlock;
+  /** See `ServerOptions.geoBlockOperatorOrgs` in the engine. */
+  geoBlockOperatorOrgs?: readonly string[];
   /** Screens with this, recording into the store's `screenings` table. */
   screener?: SanctionsScreener;
 }): Promise<PersistentEngine> {
@@ -157,6 +160,7 @@ export async function startPersistentEngine(options: {
     ...(options.sandbox ? { sandbox: options.sandbox } : {}),
     ...(options.mainnetOrgs ? { mainnetOrgs: options.mainnetOrgs } : {}),
     ...(options.geoBlock ? { geoBlock: options.geoBlock } : {}),
+    ...(options.geoBlockOperatorOrgs ? { geoBlockOperatorOrgs: options.geoBlockOperatorOrgs } : {}),
     ...(options.screener ? { screening: new ScreeningService(options.screener, store.screenings) } : {}),
   });
   try {
@@ -310,6 +314,9 @@ if (isMainModule()) {
     // at claim and at mainnet (REIN_SANCTIONS_SCREENING). Both default ON with
     // the sandbox, so the hosted posture never rests on remembering a variable.
     const geoBlock = geoBlockFromEnv(process.env, sandbox !== undefined);
+    // The operator's own team passes a not-offered territory (the EEA, the UK)
+    // by key -- never a sanctioned one. See ServerOptions.geoBlockOperatorOrgs.
+    const geoBlockOperatorOrgs = geoBlock ? geoBlockOperatorOrgsFromEnv(process.env) : undefined;
     const screener = screenerFromEnv(process.env, sandbox !== undefined);
     const trustProxy = parseTrustProxy(process.env['REIN_TRUST_PROXY']);
     if (geoBlock && trustProxy === false) {
@@ -331,6 +338,7 @@ if (isMainModule()) {
       ...(sandbox ? { sandbox: sandbox.options } : {}),
       ...(mainnetOrgs ? { mainnetOrgs } : {}),
       ...(geoBlock ? { geoBlock } : {}),
+      ...(geoBlockOperatorOrgs ? { geoBlockOperatorOrgs } : {}),
       ...(screener ? { screener } : {}),
     });
     // Without this the process is SIGKILLed on every redeploy and the
@@ -365,7 +373,11 @@ if (isMainModule()) {
     if (sandbox) console.log(`[rein] sandbox on -- ${sandbox.describe}`);
     console.log(
       geoBlock
-        ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})`
+        ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})` +
+            (geoBlockOperatorOrgs
+              ? `; operator bypass for unscoped and console-session keys and ${geoBlockOperatorOrgs.length} org(s)` +
+                `${geoBlockOperatorOrgs.length > 0 ? `: ${geoBlockOperatorOrgs.join(', ')}` : ''} (never a sanctioned territory)`
+              : '')
         : '[rein] geo-block off',
     );
     console.log(

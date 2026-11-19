@@ -6,7 +6,7 @@ DRAFT -- prepared 2026-10-19 (S109) from the code and `apps/landing/privacy.html
 
 - **Controller:** M.D.N Tech FZE, Al Shmookh Business Center, One UAQ, UAQ Free Trade Zone, Umm Al Quwain, U.A.E., licence 7813.
 - **Contact:** reinconsole@proton.me.
-- **EU representative (Art. 27):** being appointed (S111, 2026-10-21); named in the privacy policy once the written mandate is signed. **UK:** not offered; UK addresses are refused (`REIN_GEOBLOCK` includes GB on the hosted services), so no UK representative.
+- **EU representative (Art. 27):** none. Decided 2026-11-18 (`decisions.md`): the hosted services are not offered to persons in the EEA or the UK, and addresses there are refused (`REIN_GEOBLOCK=default,GB,EEA` on the engine and console), so no EU or UK representative is appointed. Revisit when a representative service is engaged and the EEA opens. The operator's own team reaches the services from the EEA by key (`REIN_GEOBLOCK_OPERATOR_ORGS`); they are not customers.
 - **DPO:** none (L6: no large-scale special-category data; core activity is recording software agents' payment decisions).
 
 ## Scope
