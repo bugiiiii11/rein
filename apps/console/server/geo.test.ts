@@ -118,6 +118,29 @@ describe('the console geo gate', () => {
     expect((await get(port, '/api/state', `${KP}, ${ELSEWHERE}`)).status).toBe(200);
   });
 
+  it('on Railway judges X-Real-IP and ignores X-Forwarded-For, whose last entry is an edge address', async () => {
+    const refuse = createGeoGate(new GeoBlock(), undefined, 'railway');
+    server = createServer((req, res) => {
+      if (refuse(req, res)) return;
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('next');
+    });
+    await new Promise<void>((done) => server!.listen(0, '127.0.0.1', done));
+    const port = (server.address() as AddressInfo).port;
+    const status = (headers: Record<string, string>) =>
+      new Promise<number>((resolve, reject) => {
+        const req = request({ host: '127.0.0.1', port, path: '/api/state', headers }, (res) => {
+          res.resume();
+          res.on('end', () => resolve(res.statusCode ?? 0));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    expect(await status({ 'X-Real-IP': KP, 'X-Forwarded-For': `${KP}, 152.233.12.241` })).toBe(451);
+    expect(await status({ 'X-Real-IP': ELSEWHERE, 'X-Forwarded-For': KP })).toBe(200);
+    expect(await status({})).toBe(200);
+  });
+
   it('refuses nobody when the block is off', async () => {
     const port = await boot(undefined);
     expect((await get(port, '/api/state', KP)).status).toBe(200);

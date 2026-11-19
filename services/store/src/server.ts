@@ -377,7 +377,8 @@ if (isMainModule()) {
             (geoBlockOperatorOrgs
               ? `; operator bypass for unscoped and console-session keys and ${geoBlockOperatorOrgs.length} org(s)` +
                 `${geoBlockOperatorOrgs.length > 0 ? `: ${geoBlockOperatorOrgs.join(', ')}` : ''} (never a sanctioned territory)`
-              : '')
+              : '') +
+            `; client address from ${trustProxy === 'railway' ? 'X-Real-IP (Railway)' : trustProxy === false ? 'the socket' : 'X-Forwarded-For'}`
         : '[rein] geo-block off',
     );
     console.log(

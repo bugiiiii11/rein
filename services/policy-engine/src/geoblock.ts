@@ -217,6 +217,41 @@ export function clientAddress(socketAddress: string | undefined, forwardedFor: s
   return current;
 }
 
+/** A peer a managed platform's proxy reaches us from: private, or the shared 100.64.0.0/10 range. */
+export function platformProxyAddress(ip: string | undefined): boolean {
+  if (!ip) return false;
+  if (privateAddress(ip)) return true;
+  const addr = addressValue(ip);
+  return addr !== undefined && addr.family === 4 && addr.value >> 22n === 0x191n; /* 100.64.0.0/10 */
+}
+
+/**
+ * The client of a request on Railway, MEASURED on the live engine 2026-11-19
+ * (`GET /v1/whoami` with the operator key), not read from a document:
+ *  - the edge connects from 100.64.0.0/10, which is not a private range, so
+ *    the `X-Forwarded-For` walk above stopped at the socket and every caller
+ *    looked like the proxy -- the geo-block refused nobody;
+ *  - `X-Forwarded-For` arrives as `<client>, <a public edge address>`, so its
+ *    right-most entry is Railway's, not the client's;
+ *  - `X-Real-IP` is the client, and the edge OVERWRITES one a client sends
+ *    (as it does a client's `X-Forwarded-For`).
+ * So: believe `X-Real-IP`, and only from a proxy peer. A client that connects
+ * directly is judged by its socket, whatever headers it wrote.
+ */
+export function railwayClientAddress(
+  socketAddress: string | undefined,
+  realIp: string | string[] | undefined,
+): string | undefined {
+  const header = (Array.isArray(realIp) ? realIp[0] : realIp)?.trim();
+  if (platformProxyAddress(socketAddress) && header && isIP(header) !== 0) return header;
+  return socketAddress;
+}
+
+/** True inside a Railway container: Railway injects these into every deployment. */
+export function onRailway(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env['RAILWAY_SERVICE_ID'] || env['RAILWAY_ENVIRONMENT_ID'] || env['RAILWAY_PROJECT_ID']);
+}
+
 /**
  * `REIN_GEOBLOCK`: `off`, or a comma-separated list of territory codes (ISO
  * 3166-1 alpha-2, or 3166-2 for a region, e.g. `IR,CU,KP,UA-43`). Inside a

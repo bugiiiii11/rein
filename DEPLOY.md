@@ -1145,6 +1145,18 @@ Without it the boot logs a WARNING, because every request would look like the pr
 nothing would ever be refused. The console walks `X-Forwarded-For` through private peers itself
 and needs no variable.
 
+**On Railway the client is in `X-Real-IP`, and that was wrong until 2026-11-19.** Measured on the
+live engine: the edge connects from `100.64.0.0/10` (not a private range) and sends
+`X-Forwarded-For: <client>, <a public edge address>`, so the walk above resolved every caller to the
+proxy. The UK block (S111) and the EEA block refused nobody, and the per-address limits counted the
+proxy. `X-Real-IP` is the client and the edge overwrites a forged one (and a forged
+`X-Forwarded-For`). Now `REIN_TRUST_PROXY=1` means the Railway shape whenever a `RAILWAY_*` variable
+is present (`REIN_TRUST_PROXY=railway` forces it): believe `X-Real-IP`, only from a
+`100.64.0.0/10` or private peer. The console applies the same rule. Both boot lines say
+`client address from X-Real-IP (Railway)`. To check a live engine, call `GET /v1/whoami` with the
+unscoped admin key: `client.ip` must be YOUR address, not `100.64.x.x`. Do this after any platform
+or proxy change; a geo-block that sees the proxy fails silently.
+
 **Screening.** At `POST /v1/claims/redeem` and at a tenant's `POST /v1/keys` with
 `mainnet: true`, the engine checks the owner's wallet (for an Ethereum sign-in) and every wallet
 the org's agents registered. It reads the Chainalysis sanctions oracle on Ethereum through public

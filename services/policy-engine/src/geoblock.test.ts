@@ -12,10 +12,13 @@ import {
   clientAddress,
   geoBlockFromEnv,
   geoBlockOperatorOrgsFromEnv,
+  onRailway,
+  platformProxyAddress,
   privateAddress,
+  railwayClientAddress,
 } from './geoblock.js';
 import { GEO_EDITION, GEO_RANGES } from './geo-data.js';
-import { buildServer } from './server.js';
+import { RAILWAY_PROXY, buildServer, parseTrustProxy } from './server.js';
 
 /** The first address of a territory's first range, as text. */
 function firstV4(territory: string): string {
@@ -135,6 +138,67 @@ describe('the engine geo-block', () => {
     });
     expect(res.statusCode).toBe(451);
     await app.close();
+  });
+});
+
+describe('the client address on Railway (measured 2026-11-19)', () => {
+  const DE = firstV4('DE');
+  const EDGE = '100.64.0.10';
+  const world = () => buildServer(undefined, { geoBlock: new GeoBlock([...DEFAULT_GEOBLOCK_TERRITORIES, 'DE']), trustProxy: RAILWAY_PROXY });
+
+  it('resolves `1` to the Railway shape inside a Railway container, and only there', () => {
+    expect(parseTrustProxy('1', {})).toBe('loopback,linklocal,uniquelocal');
+    expect(parseTrustProxy('1', { RAILWAY_SERVICE_ID: 'svc' })).toBe(RAILWAY_PROXY);
+    expect(parseTrustProxy('railway', {})).toBe(RAILWAY_PROXY);
+    expect(parseTrustProxy('off', { RAILWAY_SERVICE_ID: 'svc' })).toBe(false);
+    expect(onRailway({})).toBe(false);
+  });
+
+  it('knows the shared range the edge connects from', () => {
+    for (const ip of ['100.64.0.2', '100.127.255.255', '10.0.0.1', '::1']) expect(platformProxyAddress(ip), ip).toBe(true);
+    for (const ip of ['100.63.255.255', '100.128.0.0', '152.233.12.241', undefined]) expect(platformProxyAddress(ip)).toBe(false);
+  });
+
+  it('judges X-Real-IP from the edge: the exact headers the live engine received', async () => {
+    const app = world();
+    const from = (realIp: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/v1/agents',
+        remoteAddress: EDGE,
+        headers: { 'x-real-ip': realIp, 'x-forwarded-for': `${realIp}, 152.233.12.241` },
+      });
+    expect((await from(DE)).statusCode).toBe(451);
+    expect((await from('8.8.8.8')).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('never believes a client that connects directly, whatever it wrote', async () => {
+    const app = world();
+    const direct = (remoteAddress: string, headers: Record<string, string>) =>
+      app.inject({ method: 'GET', url: '/v1/agents', remoteAddress, headers });
+    // From DE, claiming to be elsewhere.
+    expect((await direct(DE, { 'x-real-ip': '8.8.8.8', 'x-forwarded-for': '8.8.8.8' })).statusCode).toBe(451);
+    // From elsewhere, naming DE: not refused for it.
+    expect((await direct('8.8.8.8', { 'x-real-ip': DE, 'x-forwarded-for': DE })).statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('falls back to the proxy address when the edge names nobody, and ignores X-Forwarded-For', async () => {
+    const app = world();
+    const res = await app.inject({ method: 'GET', url: '/v1/agents', remoteAddress: EDGE, headers: { 'x-forwarded-for': DE } });
+    expect(res.statusCode).toBe(200);
+    const junk = await app.inject({ method: 'GET', url: '/v1/agents', remoteAddress: EDGE, headers: { 'x-real-ip': 'not-an-ip' } });
+    expect(junk.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('is the same rule for the console', () => {
+    expect(railwayClientAddress(EDGE, DE)).toBe(DE);
+    expect(railwayClientAddress(EDGE, [DE, '8.8.8.8'])).toBe(DE);
+    expect(railwayClientAddress(DE, '8.8.8.8')).toBe(DE);
+    expect(railwayClientAddress(EDGE, undefined)).toBe(EDGE);
+    expect(railwayClientAddress(EDGE, 'junk')).toBe(EDGE);
   });
 });
 

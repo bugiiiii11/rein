@@ -15,7 +15,7 @@ import { createOwnerBridge } from './owners';
 import { createSignIn, signInFromEnv } from './signin';
 import { createGeoGate } from './geo';
 import { createOperatorPass } from './operator';
-import { geoBlockFromEnv, geoBlockOperatorOrgsFromEnv } from '@reinconsole/policy-engine';
+import { geoBlockFromEnv, geoBlockOperatorOrgsFromEnv, parseTrustProxy, RAILWAY_PROXY } from '@reinconsole/policy-engine';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const MIME: Record<string, string> = {
@@ -156,10 +156,14 @@ const operatorPass =
         secure: signInConfig.publicUrl.startsWith('https:'),
       })
     : undefined;
-const geoGate = createGeoGate(geoBlock, operatorPass);
+// How the client's address reaches us: on Railway it is `X-Real-IP` (measured
+// 2026-11-19 -- the X-Forwarded-For walk saw only the proxy and refused nobody).
+const proxyShape = parseTrustProxy(process.env.REIN_TRUST_PROXY ?? '1') === RAILWAY_PROXY ? 'railway' : 'forwarded';
+const geoGate = createGeoGate(geoBlock, operatorPass, proxyShape);
 console.log(
   geoBlock
     ? `[rein] geo-block on -- ${geoBlock.territories.join(', ')} (DB-IP edition ${geoBlock.edition})` +
+        `; client address from ${proxyShape === 'railway' ? 'X-Real-IP (Railway)' : 'X-Forwarded-For'}` +
         (operatorOrgs ? `; operator pass on for ${operatorOrgs.length} org(s) and unscoped admin keys` : '')
     : '[rein] geo-block off',
 );

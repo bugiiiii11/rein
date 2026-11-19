@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
-import type { AddressInfo } from 'node:net';
+import { isIP, type AddressInfo } from 'node:net';
 import Fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -49,7 +49,14 @@ import {
 } from './sandbox.js';
 import { ClaimError, ClaimService, SESSION_KEY_PREFIX, reservedKeyName, type ClaimOptions } from './claims.js';
 import { DEFAULT_REAP_INTERVAL_MS, reapExpired } from './reaper.js';
-import { GEOBLOCK_STATUS, geoBlockBody, sanctionedTerritory, type GeoBlock } from './geoblock.js';
+import {
+  GEOBLOCK_STATUS,
+  geoBlockBody,
+  onRailway,
+  platformProxyAddress,
+  sanctionedTerritory,
+  type GeoBlock,
+} from './geoblock.js';
 import { ScreeningError, ownerWallet, type ScreeningService, type ScreeningSubject } from './screening.js';
 import type { LivenessStorePort } from './liveness.js';
 import { LivenessError, LivenessMonitor, type AlertChannel } from './liveness.js';
@@ -406,7 +413,7 @@ export function buildServer(
     logger: false,
     bodyLimit: BODY_LIMIT_BYTES,
     requestTimeout: REQUEST_TIMEOUT_MS,
-    trustProxy: options.trustProxy ?? false,
+    trustProxy: options.trustProxy === RAILWAY_PROXY ? RAILWAY_PEERS : (options.trustProxy ?? false),
     // On `close()`, destroy sockets rather than waiting for keep-alive
     // connections to go away on their own. A shutdown is not the moment to be
     // patient with a client: the process is leaving, and every second spent
@@ -530,6 +537,25 @@ export function buildServer(
   // The geo-block runs FIRST, ahead of the limiter and auth: a refused
   // territory is refused whatever it holds, and learns nothing about which
   // routes exist. `/health` stays open -- a platform probe is not a client.
+  // Railway (see railwayClientAddress in geoblock.ts): the client is in
+  // `X-Real-IP`, and `X-Forwarded-For` ends in an edge address. `req.ip` is
+  // resolved lazily from `X-Forwarded-For`, so this hook -- the FIRST one --
+  // replaces that header with the one value worth trusting when the peer is the
+  // platform's proxy, and removes it otherwise. Everything after it (the
+  // geo-block, the per-IP limiter, the sandbox's per-address limits) then
+  // reads the client from `req.ip` as before.
+  if (options.trustProxy === RAILWAY_PROXY) {
+    app.addHook('onRequest', async (req) => {
+      const real = req.headers['x-real-ip'];
+      const header = (Array.isArray(real) ? real[0] : real)?.trim();
+      if (platformProxyAddress(req.socket.remoteAddress) && header && isIP(header) !== 0) {
+        req.raw.headers['x-forwarded-for'] = header;
+      } else {
+        delete req.raw.headers['x-forwarded-for'];
+      }
+    });
+  }
+
   const geoBlock = options.geoBlock;
   if (geoBlock) {
     const operatorOrgs = options.geoBlockOperatorOrgs;
@@ -1355,6 +1381,14 @@ export function resolveHost(
  * private ranges (10/8, 172.16/12, 192.168/16, fc00::/7).
  */
 const PRIVATE_PEERS = 'loopback,linklocal,uniquelocal';
+/**
+ * `trustProxy: 'railway'`: Railway's edge reaches a container from
+ * 100.64.0.0/10 and names the client in `X-Real-IP` (measured 2026-11-19; see
+ * railwayClientAddress in geoblock.ts). Under `PRIVATE_PEERS` alone every
+ * caller on Railway resolved to the proxy's own address.
+ */
+export const RAILWAY_PROXY = 'railway';
+const RAILWAY_PEERS = `${PRIVATE_PEERS},100.64.0.0/10`;
 
 /** A single trust entry: a proxy-addr preset, or an IP / CIDR. */
 const TRUST_ENTRY = /^(?:loopback|linklocal|uniquelocal|[0-9a-f.:]+(?:\/[0-9]+)?)$/;
@@ -1380,12 +1414,15 @@ const TRUST_ENTRY = /^(?:loopback|linklocal|uniquelocal|[0-9a-f.:]+(?:\/[0-9]+)?
  * configure a proxy, and starting anyway would leave them believing the per-IP
  * limiter buckets by client when it buckets every caller as one.
  */
-export function parseTrustProxy(raw: string | undefined): boolean | string {
+export function parseTrustProxy(raw: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean | string {
   const value = raw?.trim().toLowerCase();
   if (!value || value === '0' || value === 'off' || value === 'false' || value === 'no') {
     return false;
   }
-  if (value === '1' || value === 'private') return PRIVATE_PEERS;
+  if (value === RAILWAY_PROXY) return RAILWAY_PROXY;
+  // `1` is what the hosted services carry. Inside a Railway container it has
+  // to mean Railway's shape, or the resolved address is the proxy's.
+  if (value === '1' || value === 'private') return onRailway(env) ? RAILWAY_PROXY : PRIVATE_PEERS;
   // Deliberately reachable, and deliberately not the meaning of `1`: a chain
   // whose peers cannot be named needs an escape hatch, and spelling it `all`
   // makes a forgeable choice legible in a dashboard instead of hiding it in a

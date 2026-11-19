@@ -20,6 +20,7 @@ import {
   GEOBLOCK_STATUS,
   SELF_HOST_URL,
   clientAddress,
+  railwayClientAddress,
   geoBlockBody,
   sanctionedTerritory,
   type GeoBlock,
@@ -61,10 +62,18 @@ const NOT_OFFERED_PAGE = `<!doctype html>
 `;
 
 /** True when the request was refused and answered. */
-export function createGeoGate(geoBlock: GeoBlock | undefined, operatorPass?: OperatorPass) {
+export function createGeoGate(
+  geoBlock: GeoBlock | undefined,
+  operatorPass?: OperatorPass,
+  /** `railway`: the client is in `X-Real-IP` (railwayClientAddress). Default: the `X-Forwarded-For` walk. */
+  proxy: 'forwarded' | 'railway' = 'forwarded',
+) {
   return function refuse(req: IncomingMessage, res: ServerResponse): boolean {
     if (!geoBlock) return false;
-    const client = clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for']);
+    const client =
+      proxy === 'railway'
+        ? railwayClientAddress(req.socket.remoteAddress, req.headers['x-real-ip'])
+        : clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for']);
     const territory = geoBlock.territoryOf(client);
     if (territory === undefined) return false;
     // The operator's own team (operator.ts): a not-offered territory only,

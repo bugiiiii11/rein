@@ -75,6 +75,7 @@ export {
   livenessFromEnv,
   resolveHost,
   parseTrustProxy,
+  RAILWAY_PROXY,
   MAINNET_SCREENED,
   type ServerOptions,
 } from './server.js';
@@ -189,6 +190,9 @@ export {
   GeoBlock,
   geoBlockFromEnv,
   clientAddress,
+  railwayClientAddress,
+  platformProxyAddress,
+  onRailway,
   privateAddress,
   DEFAULT_GEOBLOCK_TERRITORIES,
   EEA_TERRITORIES,
