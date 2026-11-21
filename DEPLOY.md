@@ -601,7 +601,7 @@ application that owns it.
 | Variable | Default | What it does |
 |---|---|---|
 | `REIN_ENGINE_RATE_LIMIT_PER_KEY` / `_PER_KEY_BURST` | 10 rps / 120 | Per authenticated API key, applied AFTER auth resolves the key id |
-| `REIN_ENGINE_RATE_LIMIT_PER_IP` / `_PER_IP_BURST` | 1 rps / 30 | Per client IP, applied BEFORE auth -- `/health` included |
+| `REIN_ENGINE_RATE_LIMIT_PER_IP` / `_PER_IP_BURST` | 1 rps / 30 | Per client IP, for every request WITHOUT a valid key (none, wrong, lacking the scope) and for `/health` and the sandbox. A request with a valid key is bounded per key only (2026-11-19: the console polls for every owner from one address) |
 | `REIN_ENGINE_RATE_LIMIT=off` | on | The deliberate opt-out, mirroring `REIN_ENGINE_AUTH=off` |
 | `REIN_TRUST_PROXY` | off | Which peers may name the client through `X-Forwarded-For`. `1` (or `private`) trusts a proxy reaching us from inside the network, which is every managed platform; an IP/CIDR list names one explicitly; `all` is the forgeable reading; `0`/`off` is none |
 | `REIN_PRUNE_INTERVAL_MS` | 1800000 | Sweep the TTL'd burn tables this often; `0` disables |
@@ -1125,8 +1125,8 @@ to self-host; the console serves that as a page.
 **The console's operator pass.** The console refuses every request from a not-offered territory,
 the sign-in page included, so the operator's team gets in by key. Set the SAME
 `REIN_GEOBLOCK_OPERATOR_ORGS` on the console (it needs sign-in and `REIN_CONSOLE_ENGINE_URL`, or
-the boot is refused). Then, from the EEA: open `https://app.reinconsole.com/operator`, paste an
-ADMIN key of a listed org (or the unscoped admin key), Continue. The console asks the engine whose
+the boot is refused). Then, from the EEA: open `https://app.reinconsole.com/operator`, paste a
+key of a listed org with read access (or the unscoped admin key), Continue. The console asks the engine whose
 key it is (`GET /v1/whoami`) and sets a signed `rein_operator` cookie for 30 days; that browser
 then passes the gate and signs in as usual. The key is sent once in a POST body and not stored; the
 log line names the org, never the key (`[rein] operator pass issued (org_...)`). Five attempts a

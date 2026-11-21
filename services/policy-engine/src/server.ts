@@ -591,7 +591,24 @@ export function buildServer(
       // this bounds is precisely the work a caller who has proved nothing can
       // make the engine do, and `/health` is in scope because it is the
       // cheapest thing on the surface to hammer.
-      if (limiters) {
+      const open = pathname === '/health' || (sandbox !== undefined && req.method === 'POST' && pathname === '/v1/sandbox');
+      // A request that authenticates is bounded per KEY below, not per IP
+      // (2026-11-19). The per-IP limiter exists for callers who have proved
+      // nothing; a service that holds a key -- the hosted console polls for
+      // every signed-in owner from ONE address -- was refused by it the moment
+      // the engine started seeing real addresses. Everything else still pays
+      // per IP first: no key, a wrong key, a key without the scope, and the
+      // two open routes.
+      let authenticated: ApiKey | undefined;
+      let refusal: unknown;
+      if (auth && !open) {
+        try {
+          authenticated = auth.authenticate(req.headers, requiredScope(req.method, pathname));
+        } catch (err) {
+          refusal = err;
+        }
+      }
+      if (limiters && !authenticated) {
         // `req.ip` reads the socket's remote address (or the proxy header when
         // trustProxy is on) and can be absent on a socket that is already
         // going away. Bucketing those together under one name is right: it is
@@ -599,13 +616,13 @@ export function buildServer(
         const verdict = limiters.perIp.take(req.ip || 'unknown');
         if (!verdict.allowed) return tooManyRequests(reply, verdict.retryAfterSec);
       }
-      if (pathname === '/health') return;
       // The sandbox is how a caller with no key GETS one; it rides the per-IP
       // limiter above plus its own, much tighter, per-day limits.
-      if (sandbox && req.method === 'POST' && pathname === '/v1/sandbox') return;
+      if (open) return;
       if (!auth) return;
       try {
-        const key = auth.authenticate(req.headers, requiredScope(req.method, pathname));
+        if (refusal !== undefined) throw refusal;
+        const key = authenticated!;
         // Per KEY, and only now: the key id exists once auth has resolved it,
         // and bucketing by the presented secret instead would let one caller
         // mint a fresh allowance per header value it invents.

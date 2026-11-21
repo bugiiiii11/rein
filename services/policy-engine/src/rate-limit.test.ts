@@ -201,8 +201,27 @@ describe('the engine under a rate limit', () => {
       401,
     );
     const third = await app.inject({ method: 'GET', url: '/v1/agents', headers: bad });
-    // 429, not 401: the credential was never looked at.
+    // 429, not 401: a caller without a valid key gets no answer about it.
     expect(third.statusCode).toBe(429);
+    await app.close();
+  });
+
+  it('bounds a caller WITH a valid key per key, not per IP -- a console polls from one address', async () => {
+    const { app, admin } = await limitedServer({
+      perKey: { capacity: 100, refillPerSec: 100 },
+      perIp: { capacity: 2, refillPerSec: 0.01 },
+    });
+    const good = { authorization: `Bearer ${admin.secret}` };
+    for (let i = 0; i < 10; i += 1) {
+      expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: good })).statusCode).toBe(200);
+    }
+    // The address's anonymous allowance is untouched by those, and still finite.
+    const bad = { authorization: 'Bearer nonsense' };
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: bad })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: bad })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: bad })).statusCode).toBe(429);
+    // And the valid key is still served from that same address.
+    expect((await app.inject({ method: 'GET', url: '/v1/agents', headers: good })).statusCode).toBe(200);
     await app.close();
   });
 
