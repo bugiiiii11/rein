@@ -133,7 +133,9 @@
         </p>
         <p>
           <b>Application logs.</b> The engine, console and vendor write operational logs, which our host, Railway, keeps for
-          7 days. For your org, engine logs record only the ids of an escalation, not its details.
+          7 days. For your org, engine logs record only the ids of an escalation, not its details. Railway also logs each
+          request to these services, including the IP address it came from and the client's user agent, and keeps those
+          request logs for 7 days.
         </p>
         <p>
           <b>This website</b> sets no cookies, has no forms and runs no analytics. It reads one public status figure from
@@ -206,7 +208,7 @@
           <li><b>Resolved escalations</b>: pruned after they are no longer needed for enforcement.</li>
           <li><b>Screening records</b>: kept indefinitely, as the evidence that a sanctions check ran and what it found.</li>
           <li><b>Unclaimed sandboxes</b>: their keys stop working after 7 days. A month later we delete the org, its agent (including the agent's wallet address), its policy and its keys. Its decisions stay in the decision log.</li>
-          <li><b>IP addresses</b>: our software holds them in memory only. The location check uses an address only while it answers the request; the request and sandbox limits keep it until the limit resets or the service restarts. Our hosting providers (Railway for the engine, console and reference vendor; Vercel for this website) may record IP addresses in their request logs, which they keep for a limited time.</li>
+          <li><b>IP addresses</b>: our software holds them in memory only. The location check uses an address only while it answers the request; the request and sandbox limits keep it until the limit resets or the service restarts. Railway records the IP address of each request to the engine, console and reference vendor in its request logs, which it keeps for 7 days. Cloudflare, which hosts this website, may record IP addresses in its request logs for a limited time.</li>
           <li><b>Console session keys</b>: deleted a day after they expire.</li>
           <li><b>Records of accepting the Terms</b>: kept with the org's owner key for as long as the org exists. If you ask us to delete your data, the record stays but no longer names you.</li>
           <li><b>Sign-in cookies</b>: 7 days at most.</li>
